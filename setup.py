@@ -2,9 +2,9 @@
 
 from setuptools import setup
 setup(
-    name="strange",
-    packages=["strange"],
-    version="0.1",
+    name="phymsim",
+    packages=["phymsim"],
+    version="0.0.1",
     author="Patrick McKenzie",
     author_email="p.mckenzie@columbia.edu",
     install_requires=[
