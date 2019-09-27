@@ -13,6 +13,8 @@ setup(
         "pandas>=0.16",
         "toytree",
         "toyplot",
+        "msprime",
+        # seq-gen (optional)
     ],
     license='GPL',
     classifiers=[
