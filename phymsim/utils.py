@@ -5,9 +5,12 @@ import datetime
 import itertools
 import numpy as np
 import pandas as pd
-
-from ipywidgets import IntProgress, HTML, Box
 from IPython.display import display
+
+try:
+    from ipywidgets import IntProgress, HTML, Box
+except ImportError:
+    pass
 
 
 class SimcatError(Exception):
