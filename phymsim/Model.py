@@ -10,20 +10,21 @@ from __future__ import print_function
 from builtins import range
 
 # imports
+import os
+import re
 import sys
+import tempfile
+import subprocess
+import itertools as itt
+from copy import deepcopy
+
 import toyplot
 import toytree
 import numpy as np
 import pandas as pd
 import msprime as ms
-import os
-import re
-import subprocess
-import tempfile
-import itertools as itt
 from scipy.special import comb
 from _msprime import LibraryError
-from copy import deepcopy
 
 from .jitted import count_matrix_int, mutate_jc
 from .utils import get_all_admix_edges, SimcatError
@@ -354,14 +355,14 @@ class Model:
         """
         returns population_configurations for N tips of a tree
         """
-        Ne_vals = []
-        for node in self.tree.treenode.traverse():
-            if node.is_leaf():
-                Ne_vals.append(node.Ne)
-        inv_Ne_vals = Ne_vals[::-1] # this is so they're added to the tree in the right order...
+        # get Ne values from tips of the tree
+        nes = self.tree.get_node_values("Ne", show_tips=True)
+        nes = nes[-self.tree.ntips:][::-1]
+
+        # list of popconfig objects for each tip
         population_configurations = [
-            ms.PopulationConfiguration(sample_size=1, initial_size=inv_Ne_vals[ntip])
-            for ntip in range(self.ntips)]
+            ms.PopulationConfiguration(sample_size=1, initial_size=nes[i])
+            for i in range(self.ntips)]
         return population_configurations
 
 
@@ -400,6 +401,7 @@ class Model:
         )
         return sim
 
+
     def _get_locus_sim(self, locus_len):
         """
         Performs simulations with params varied across input values.
@@ -407,11 +409,11 @@ class Model:
         # migration scenarios from admixture_edges, used in demography
         migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
         self._mtimes = [
-            self.test_values[evt]['mtimes'][idx] for evt in 
+            self.test_values[evt]['mtimes'][evt] for evt in 
             range(len(self.admixture_edges))
         ] 
         self._mrates = [
-            self.test_values[evt]['mrates'][idx] for evt in 
+            self.test_values[evt]['mrates'][evt] for evt in 
             range(len(self.admixture_edges))
         ]
 
@@ -433,44 +435,77 @@ class Model:
         )
         return sim
 
+
     def run_locus(self, size, results = "both", seqgen = True):
+        """
+        Doc string...
+        """
+
+        # get tree_sequence generator from msprime simulate() call
         msinst = self._get_locus_sim(size)
+
+        # get breakpoints
         msmod = next(msinst)
-        breaks = []
-        for breakpts in msmod.breakpoints():
-            breaks.append(breakpts)
+        breaks = list(msmod.breakpoints())
 
-        starts = breaks[0:(len(breaks)-1)]
+        # get start and stop indices
+        starts = breaks[0:(len(breaks) - 1)]
         stops = breaks[1:len(breaks)]
-        bps = (np.round(stops)-np.round(starts)).astype(int)
 
-        trees = msmod.trees()
+        # what is the appropriate rounding? (some trees will not exist...)
+        bps = (np.round(stops) - np.round(starts)).astype(int)
+
+        # store newick strings
         newicks = []
-        for atree in trees:
-            newicks.append( atree.newick( node_labels=dict(zip([i for i in atree.leaves()],[self.namedict[i] for i in atree.leaves()])) ) )
+        for atree in msmod.trees():
+            nwk = atree.newick(
+                node_labels={i: self.namedict[i] for i in atree.leaves()}
+            )
+            newicks.append(nwk)
+            
+        # init dataframe
+        df = pd.DataFrame({
+            "starts": starts,
+            "stops": stops,
+            "newicks": newicks,
+            "bps": bps,
+            },
+            columns=['starts', 'stops', 'bps', 'newicks'],
+        )
 
-        df = pd.DataFrame({"starts": starts,"stops": stops,"newicks": newicks,"bps": bps},columns = ['starts','stops','bps','newicks'])
+        # mutations from custom model
         if not seqgen:
             sm = SeqModel()
 
         seqlist = []
-        for num in range(len(df)):
+        for num in df.index:
+            
             # get each gene tree
             gtree = toytree.tree(df['newicks'][num])
+
             # convert from generations (msprime) to coalescent units (us)
-            gt_coalunit=gtree.mod.node_scale_root_height( gtree.treenode.height / self._Ne / 2 )
+            # TODO: this doesn't seem right, one global Ne for scaling...
+            maxheight = gtree.treenode.height / self._Ne / 2
+            gt_coalunit = gtree.mod.node_scale_root_height(maxheight)
+
             # get the number of base pairs taken up by this gene tree
             gtlen = df['bps'][num]
+
+            # only simulate data if there is bp 
             if gtlen:
                 if seqgen:
-                    seqdict = self.seqgen_on_tree(newick=gt_coalunit.write(tree_format=5),
+                    seqdict = self.seqgen_on_tree(
+                        newick=gt_coalunit.write(tree_format=5),
                         seqlength=gtlen
                         )
                 else:
                     # simulate the sequence for the gene tree
-                    seqdict=sm.run(ttree=gt_coalunit,seq_length=gtlen,return_leaves=True)
-
-                seqlist.append( seqdict )
+                    seqdict = sm.run(
+                        ttree=gt_coalunit,
+                        seq_length=gtlen,
+                        return_leaves=True,
+                        )
+                seqlist.append(seqdict)
 
         # concatenate the gene tree sequences together
         dnadict = {}
@@ -489,6 +524,7 @@ class Model:
 
         if results == "dnadict":
             return(dnadict)
+
 
     def _get_snps_sim(self):
         """
@@ -587,6 +623,7 @@ class Model:
             if self._debug: 
                 print("\n", file=sys.stderr)
 
+
     def plot_test_values(self):
         """
         Returns a toyplot canvas 
@@ -654,6 +691,7 @@ class Model:
             )
 
         return canvas, (ax0, ax1, ax2)
+
 
     def seqgen_on_tree(self, newick, seqlength):
         fname = os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".tmp")
