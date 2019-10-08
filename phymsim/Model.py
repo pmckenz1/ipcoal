@@ -41,7 +41,7 @@ class Model:
         tree,
         admixture_edges=None,
         admixture_type=0,
-        theta=0.1,
+        Ne=10000,
         recomb=1e-9,
         mut=1e-8,
         ntests=1,
@@ -125,10 +125,14 @@ class Model:
         self._debug = debug
 
         # store sim params: fixed mut; range theta; Ne computed from theta,mut
-        theta = ((theta,) if isinstance(theta, (int, float)) else theta)
-        self.theta = np.array((min(theta), max(theta)))
+        #theta = ((theta,) if isinstance(theta, (int, float)) else theta)
+        #self.theta = np.array((min(theta), max(theta)))
         self.mut = mut
         self.recomb = recomb
+        if Ne:
+            self.Ne = Ne
+        else:
+            self.Ne = None
 
         # dimension of simulations
         self.ntests = ntests
@@ -175,8 +179,8 @@ class Model:
         self._get_test_values()
 
         # Ne is calculated from fixed mut and sampled theta. Used in popconfig
-        self._theta = self.test_values["thetas"][0]
-        self._Ne = int((self._theta / self.mut) / 4.)
+        #self._theta = self.test_values["thetas"][0]
+        #self._Ne = int((self._theta / self.mut) / 4.)
 
         # get demography as msprime input 
         self.ms_demography = self._get_demography()
@@ -187,12 +191,6 @@ class Model:
         # fill the counts matrix or call run later
         if run:
             self.run()
-
-
-    @property
-    def Ne(self):
-        "Ne is calculated from theta and fixed mut (theta=4Neu)"
-        return 
 
 
     def _get_test_values(self): 
@@ -214,10 +212,12 @@ class Model:
         }
         """
         # dictionary to store arrays of params for each admixture scenario
-        self.test_values = {
-            "thetas": self.random.uniform(
-                low=self.theta[0], high=self.theta[1], size=self.ntests), 
-        }
+        #self.test_values = {
+        #    "thetas": self.random.uniform(
+        #        low=self.theta[0], high=self.theta[1], size=self.ntests), 
+        #}
+
+        self.test_values = {}
 
         # sample times and proportions/rates for admixture intervals
         idx = 0
@@ -302,11 +302,16 @@ class Model:
             if node.children:
                 dest = min([i._schild for i in node.children])
                 source = max([i._schild for i in node.children])
-                time = int(node.height * 2. * self._Ne)
+                time = int(node.height)
                 demog.add(ms.MassMigration(time, source, dest))
-                demog.add(ms.PopulationParametersChange(time, 
-                    initial_size=node.Ne,
-                    population=dest))
+                if not self.Ne:
+                    demog.add(ms.PopulationParametersChange(time, 
+                        initial_size=node.Ne,
+                        population=dest))
+                else:
+                    demog.add(ms.PopulationParametersChange(time, 
+                        initial_size=self.Ne,
+                        population=dest))
                 if self._debug:
                     print('div time: {} {} {}'
                         .format(int(time), source, dest), file=sys.stderr)
@@ -315,7 +320,7 @@ class Model:
         if not self.admixture_type:
             for evt in range(self.aedges):
                 rate = self._mrates[evt]
-                time = int(self._mtimes[evt][0] * 2. * self._Ne)
+                time = int(self._mtimes[evt][0])
                 source, dest = self.admixture_edges[evt][:2]
 
                 ## rename nodes at time of admix in case divergences renamed them
@@ -332,7 +337,7 @@ class Model:
         else:
             for evt in range(self.aedges):
                 rate = self._mrates[evt]
-                time = (self._mtimes[evt] * 2. * self._Ne).astype(int)
+                time = (self._mtimes[evt]).astype(int)
                 source, dest = self.admixture_edges[evt][:2]
 
                 ## rename nodes at time of admix in case divergences renamed them
@@ -381,14 +386,10 @@ class Model:
             range(len(self.admixture_edges))
         ]
 
-        # Ne is calculated from fixed mut and sampled theta. Used in popconfig
-        self._theta = self.test_values["thetas"][idx]
-        self._Ne = int((self._theta / self.mut) / 4.)
-
         # debug printer
         if self._debug:
-            print("pop: Ne:{}, theta:{:.3f}, mut:{:.2E}"
-                .format(self._Ne, self._theta, self.mut),
+            print("pop: Ne:{}, mut:{:.2E}"
+                .format(self.Ne, self.mut),
                 file=sys.stderr)
 
         # msprime simulation to make tree_sequence generator
@@ -419,8 +420,8 @@ class Model:
 
         # debug printer
         if self._debug:
-            print("pop: Ne:{}, theta:{:.3f}, mut:{:.2E}"
-                .format(self._Ne, self._theta, self.mut),
+            print("pop: Ne:{}, mut:{:.2E}"
+                .format(self.Ne, self.mut),
                 file=sys.stderr)
 
         # msprime simulation to make tree_sequence generator
@@ -434,7 +435,6 @@ class Model:
             demographic_events=self._get_demography(),        # applies popst. 
         )
         return sim
-
 
     def run_locus(self, size, results = "both", seqgen = True):
         """
@@ -511,19 +511,76 @@ class Model:
         dnadict = {}
         for key in seqlist[0].keys():
             dnadict.update({key:np.concatenate([i[key] for i in seqlist])})
-        #dnadict_fin = {}
-        #for key in dnadict.keys():
-        #    dnadict_fin.update({self.namedict[str(key)]:dnadict[key]})
+
+        df = pd.DataFrame({
+            "locus_idx": np.repeat(locus_idx, len(starts)),
+            "starts": starts,
+            "stops": stops,
+            "newicks": newicks,
+            "bps": bps},
+            columns = ['locus_idx','starts','stops','bps','newicks'])
+        return df
+
+    def run_several_loci(self,
+        num_loci, 
+        size, 
+        outfile=None, 
+        seqgen=True, 
+        return_results=False, 
+        force=False):
+
+        if return_results:
+            loci_list = []
+            seq_list = []
+            for locusrun in range(num_loci):
+                gt_df, seqs = self.run_locus(size=size,
+                    outfile=None,
+                    seqgen=seqgen,
+                    return_results=True,
+                    locus_idx=locusrun)
+                loci_list.append(gt_df)
+                seq_list.append(seqs)
+
+            loci_result = pd.concat(loci_list)
+            seq_result = {}
+            for key in seq_list[0].keys():
+                seq_result.update({key:np.concatenate([i[key] for i in seq_list])})
+
+            cumulative_bps = 0
+            cumulative_list = []
+            for i in loci_result['bps']:
+                cumulative_bps+=i
+                cumulative_list.append(cumulative_bps)
+            loci_result['cumulative_bps'] = cumulative_list
+            return(loci_result,seq_result)
 
 
-        if results == "both":
-            return([df, dnadict])
+        else:
+            if os.path.isfile(outfile):
+                if not force:
+                    raise ValueError('The designated outfile named already exists. Use `force=True` to overwrite.')
+                else:
+                    os.remove(outfile)
+            db = h5py.File(outfile,"w")
 
-        if results == "df":
-            return(df)
+            for locusrun in range(num_loci):
+                gt_df, seqs = self.run_locus(size=size,
+                    outfile=None,
+                    seqgen=seqgen,
+                    return_results=True,
+                    locus_idx=locusrun)
 
-        if results == "dnadict":
-            return(dnadict)
+                newgroup = db.create_group(str(locusrun))
+                newgroup.create_dataset("starts",data = gt_df['starts'])
+                newgroup.create_dataset("stops",data = gt_df['stops'])
+                newgroup.create_dataset("bps",data = gt_df['bps'])
+                newgroup.create_dataset("newicks",data = gt_df['newicks'].astype('S'))
+                newergroup = newgroup.create_group("seqs")
+                for i in seqs.keys():
+                    newergroup.create_dataset(i,data=seqs[i])
+
+            db.close()
+
 
 
     def _get_snps_sim(self):
@@ -543,8 +600,8 @@ class Model:
 
         # debug printer
         if self._debug:
-            print("pop: Ne:{}, theta:{:.3f}, mut:{:.2E}"
-                .format(self._Ne, self._theta, self.mut),
+            print("pop: Ne:{}, mut:{:.2E}"
+                .format(self.Ne, self.mut),
                 file=sys.stderr)
 
         # msprime simulation to make tree_sequence generator
@@ -703,7 +760,7 @@ class Model:
             "seq-gen",
             "-m", "GTR", 
             "-l", str(seqlength),# seq length
-        #    "-s", str(1e-8), # mutation rate
+            "-s", str(self.mut), # mutation rate
             fname,
             # ... other model params...,
             ],
