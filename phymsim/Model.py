@@ -359,15 +359,20 @@ class Model:
     def _get_popconfig(self):
         """
         returns population_configurations for N tips of a tree
-        """
-        # get Ne values from tips of the tree
-        nes = self.tree.get_node_values("Ne", show_tips=True)
-        nes = nes[-self.tree.ntips:][::-1]
+        """       
+        if not self.Ne:
+            # get Ne values from tips of the tree
+            nes = self.tree.get_node_values("Ne", show_tips=True)
+            nes = nes[-self.tree.ntips:][::-1]
 
-        # list of popconfig objects for each tip
-        population_configurations = [
-            ms.PopulationConfiguration(sample_size=1, initial_size=nes[i])
-            for i in range(self.ntips)]
+            # list of popconfig objects for each tip
+            population_configurations = [
+                ms.PopulationConfiguration(sample_size=1, initial_size=nes[i])
+                for i in range(self.ntips)]
+        else:
+            population_configurations = [
+                ms.PopulationConfiguration(sample_size=1, initial_size=self.Ne)
+                for ntip in range(self.ntips)]
         return population_configurations
 
 
@@ -436,12 +441,22 @@ class Model:
         )
         return sim
 
-    def run_locus(self, size, results = "both", seqgen = True):
+    def run_locus(self, size, seqgen=True, force=False, locus_idx=0):
         """
         Doc string...
         """
 
         # get tree_sequence generator from msprime simulate() call
+        if outfile:
+            # check if outfile already exists
+            outfile_exists = 0
+            if os.path.isfile(outfile):
+                outfile_exists = 1
+                if not force:
+                    raise ValueError(
+                        'The designated outfile named already exists. '
+                        'Use `force=True` to overwrite.')
+
         msinst = self._get_locus_sim(size)
 
         # get breakpoints
@@ -510,76 +525,95 @@ class Model:
         # concatenate the gene tree sequences together
         dnadict = {}
         for key in seqlist[0].keys():
-            dnadict.update({key:np.concatenate([i[key] for i in seqlist])})
+            dnadict.update({key: np.concatenate([i[key] for i in seqlist])})
+
+        # # write out results to a file
+        # if outfile:
+        #     if outfile_exists:
+        #         os.remove(outfile)
+        #     with h5py.File(outfile,'w') as f:
+        #         f.create_dataset('starts',shape=(len(starts),),data = starts)
+        #         f.create_dataset('stops',shape=(len(stops),),data = stops)
+        #         f.create_dataset('bps',shape=(len(bps),),data = bps)
+        #         f.create_dataset('newicks',shape=(len(newicks),),data = np.array(newicks).astype('S'))
+        #         seqs = f.create_group('seqs')
+        #         for i in dnadict.keys():
+        #             seqs.create_dataset(i,data=dnadict[i])
+        # #dnadict_fin = {}
+        # #for key in dnadict.keys():
+        # #    dnadict_fin.update({self.namedict[str(key)]:dnadict[key]})
 
         df = pd.DataFrame({
             "locus_idx": np.repeat(locus_idx, len(starts)),
             "starts": starts,
             "stops": stops,
             "newicks": newicks,
-            "bps": bps},
-            columns = ['locus_idx','starts','stops','bps','newicks'])
-        return df
+            "bps": bps,
+            },
+            columns=['locus_idx', 'starts', 'stops', 'bps', 'newicks'])
 
-    def run_several_loci(self,
-        num_loci, 
-        size, 
-        outfile=None, 
-        seqgen=True, 
-        return_results=False, 
-        force=False):
-
-        if return_results:
-            loci_list = []
-            seq_list = []
-            for locusrun in range(num_loci):
-                gt_df, seqs = self.run_locus(size=size,
-                    outfile=None,
-                    seqgen=seqgen,
-                    return_results=True,
-                    locus_idx=locusrun)
-                loci_list.append(gt_df)
-                seq_list.append(seqs)
-
-            loci_result = pd.concat(loci_list)
-            seq_result = {}
-            for key in seq_list[0].keys():
-                seq_result.update({key:np.concatenate([i[key] for i in seq_list])})
-
-            cumulative_bps = 0
-            cumulative_list = []
-            for i in loci_result['bps']:
-                cumulative_bps+=i
-                cumulative_list.append(cumulative_bps)
-            loci_result['cumulative_bps'] = cumulative_list
-            return(loci_result,seq_result)
+        return([df, dnadict])
 
 
-        else:
-            if os.path.isfile(outfile):
-                if not force:
-                    raise ValueError('The designated outfile named already exists. Use `force=True` to overwrite.')
-                else:
-                    os.remove(outfile)
-            db = h5py.File(outfile,"w")
+    # def run_several_loci(self,
+    #     num_loci, 
+    #     size, 
+    #     outfile=None, 
+    #     seqgen=True, 
+    #     return_results=False, 
+    #     force=False):
 
-            for locusrun in range(num_loci):
-                gt_df, seqs = self.run_locus(size=size,
-                    outfile=None,
-                    seqgen=seqgen,
-                    return_results=True,
-                    locus_idx=locusrun)
+    #     if return_results:
+    #         loci_list = []
+    #         seq_list = []
+    #         for locusrun in range(num_loci):
+    #             gt_df, seqs = self.run_locus(size=size,
+    #                 outfile=None,
+    #                 seqgen=seqgen,
+    #                 return_results=True,
+    #                 locus_idx=locusrun)
+    #             loci_list.append(gt_df)
+    #             seq_list.append(seqs)
 
-                newgroup = db.create_group(str(locusrun))
-                newgroup.create_dataset("starts",data = gt_df['starts'])
-                newgroup.create_dataset("stops",data = gt_df['stops'])
-                newgroup.create_dataset("bps",data = gt_df['bps'])
-                newgroup.create_dataset("newicks",data = gt_df['newicks'].astype('S'))
-                newergroup = newgroup.create_group("seqs")
-                for i in seqs.keys():
-                    newergroup.create_dataset(i,data=seqs[i])
+    #         loci_result = pd.concat(loci_list)
+    #         seq_result = {}
+    #         for key in seq_list[0].keys():
+    #             seq_result.update({key:np.concatenate([i[key] for i in seq_list])})
 
-            db.close()
+    #         cumulative_bps = 0
+    #         cumulative_list = []
+    #         for i in loci_result['bps']:
+    #             cumulative_bps+=i
+    #             cumulative_list.append(cumulative_bps)
+    #         loci_result['cumulative_bps'] = cumulative_list
+    #         return(loci_result,seq_result)
+
+
+    #     else:
+    #         if os.path.isfile(outfile):
+    #             if not force:
+    #                 raise ValueError('The designated outfile named already exists. Use `force=True` to overwrite.')
+    #             else:
+    #                 os.remove(outfile)
+    #         db = h5py.File(outfile,"w")
+
+    #         for locusrun in range(num_loci):
+    #             gt_df, seqs = self.run_locus(size=size,
+    #                 outfile=None,
+    #                 seqgen=seqgen,
+    #                 return_results=True,
+    #                 locus_idx=locusrun)
+
+    #             newgroup = db.create_group(str(locusrun))
+    #             newgroup.create_dataset("starts",data = gt_df['starts'])
+    #             newgroup.create_dataset("stops",data = gt_df['stops'])
+    #             newgroup.create_dataset("bps",data = gt_df['bps'])
+    #             newgroup.create_dataset("newicks",data = gt_df['newicks'].astype('S'))
+    #             newergroup = newgroup.create_group("seqs")
+    #             for i in seqs.keys():
+    #                 newergroup.create_dataset(i,data=seqs[i])
+
+    #         db.close()
 
 
 
@@ -590,11 +624,11 @@ class Model:
         # migration scenarios from admixture_edges, used in demography
         migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
         self._mtimes = [
-            self.test_values[evt]['mtimes'][idx] for evt in 
+            self.test_values[evt]['mtimes'][evt] for evt in 
             range(len(self.admixture_edges))
         ] 
         self._mrates = [
-            self.test_values[evt]['mrates'][idx] for evt in 
+            self.test_values[evt]['mrates'][evt] for evt in 
             range(len(self.admixture_edges))
         ]
 
