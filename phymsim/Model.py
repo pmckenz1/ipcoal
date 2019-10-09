@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import msprime as ms
 import os
+import glob
 import re
 import subprocess
 import tempfile
@@ -119,6 +120,9 @@ class Model:
         """
         # init random seed: all np and ms random draws proceed from this.
         # TODO: still not working...
+
+        self.newicklist = []
+
         self.random = np.random.RandomState()
 
         # hidden argument to turn on debugging
@@ -161,6 +165,7 @@ class Model:
                 # store old name and set new one
                 self.namedict[node.idx] = node.name
                 node.name = node.idx
+        self.names = np.sort(list(self.namedict.values()))
 
         # check formats of admixture args
         self.admixture_edges = (admixture_edges if admixture_edges else [])
@@ -187,6 +192,10 @@ class Model:
 
         # get popconfig as msprime input
         self.ms_popconfig = self._get_popconfig()
+
+        # hold the model outputs
+        self.df = None
+        self.seqs = None
 
         # fill the counts matrix or call run later
         if run:
@@ -498,13 +507,15 @@ class Model:
             if outfile_exists:
                 os.remove(outfile)
             with h5py.File(outfile,'w') as f:
-                f.create_dataset('starts',shape=(len(starts),),data = starts)
-                f.create_dataset('stops',shape=(len(stops),),data = stops)
-                f.create_dataset('bps',shape=(len(bps),),data = bps)
-                f.create_dataset('newicks',shape=(len(newicks),),data = np.array(newicks).astype('S'))
+                #f.create_dataset('starts',shape=(len(starts),),data = starts)
+                #f.create_dataset('stops',shape=(len(stops),),data = stops)
+                #f.create_dataset('bps',shape=(len(bps),),data = bps)
+                #f.create_dataset('newicks',shape=(len(newicks),),data = np.array(newicks).astype('S'))
                 seqs = f.create_group('seqs')
                 for i in dnadict.keys():
                     seqs.create_dataset(i,data=dnadict[i])
+            df = pd.DataFrame({"locus_idx":np.repeat(locus_idx,len(starts)),"starts": starts,"stops": stops,"newicks": newicks,"bps": bps},columns = ['locus_idx','starts','stops','bps','newicks'])
+            df.to_hdf(outfile, "df", format='table', mode='a',data_columns=True)
         #dnadict_fin = {}
         #for key in dnadict.keys():
         #    dnadict_fin.update({self.namedict[str(key)]:dnadict[key]})
@@ -514,7 +525,7 @@ class Model:
             df = pd.DataFrame({"locus_idx":np.repeat(locus_idx,len(starts)),"starts": starts,"stops": stops,"newicks": newicks,"bps": bps},columns = ['locus_idx','starts','stops','bps','newicks'])
             return([df, dnadict])
 
-    def run_several_loci(self,
+    def run(self,
         num_loci, 
         size, 
         outfile=None, 
@@ -525,6 +536,7 @@ class Model:
         if return_results:
             loci_list = []
             seq_list = []
+            res_arr = np.zeros((num_loci,self.ntips,size),dtype=np.int8)
             for locusrun in range(num_loci):
                 gt_df, seqs = self.run_locus(size=size,
                     outfile=None,
@@ -533,11 +545,10 @@ class Model:
                     locus_idx=locusrun)
                 loci_list.append(gt_df)
                 seq_list.append(seqs)
+                for keyidx, key in enumerate(self.names):
+                    res_arr[locusrun,keyidx,:] = seqs[key]
 
             loci_result = pd.concat(loci_list)
-            seq_result = {}
-            for key in seq_list[0].keys():
-                seq_result.update({key:np.concatenate([i[key] for i in seq_list])})
 
             cumulative_bps = 0
             cumulative_list = []
@@ -545,7 +556,9 @@ class Model:
                 cumulative_bps+=i
                 cumulative_list.append(cumulative_bps)
             loci_result['cumulative_bps'] = cumulative_list
-            return(loci_result,seq_result)
+            loci_result['inferred_trees'] = np.repeat(None,len(cumulative_list))
+            self.df = loci_result
+            self.seqs = res_arr
 
 
         else:
@@ -564,10 +577,12 @@ class Model:
                     locus_idx=locusrun)
 
                 newgroup = db.create_group(str(locusrun))
-                newgroup.create_dataset("starts",data = gt_df['starts'])
-                newgroup.create_dataset("stops",data = gt_df['stops'])
-                newgroup.create_dataset("bps",data = gt_df['bps'])
-                newgroup.create_dataset("newicks",data = gt_df['newicks'].astype('S'))
+                df = pd.DataFrame({"locus_idx":gt_df['locus_idx'],"starts": gt_df['starts'],"stops": gt_df['stops'],"newicks": gt_df['newicks'],"bps": gt_df['bps']},columns = ['locus_idx','starts','stops','bps','newicks'])
+                df.to_hdf(outfile, str(locusrun)+"/df", format='table', mode='a',data_columns=True)
+                #newgroup.create_dataset("starts",data = gt_df['starts'])
+                #newgroup.create_dataset("stops",data = gt_df['stops'])
+                #newgroup.create_dataset("bps",data = gt_df['bps'])
+                #newgroup.create_dataset("newicks",data = gt_df['newicks'].astype('S'))
                 newergroup = newgroup.create_group("seqs")
                 for i in seqs.keys():
                     newergroup.create_dataset(i,data=seqs[i])
@@ -607,70 +622,70 @@ class Model:
         return sim
 
 
-    def run(self):
-        """
-        run and parse results for nsamples simulations.
-        """
-        # iterate over ntests (different sampled simulation parameters)
-        gidx = 0
-        for ridx in range(self.ntests):
-            
-            # get tree_sequence generator for this set of params
-            sims = self._get_tree_sequence(ridx)
-
-            # repeat draws from this generator for each technical rep
-            for rep in range(self.nreps):
-
-                # store results (nsnps, ntips); def. 1000 SNPs
-                snparr = np.zeros((self.nsnps, self.ntips), dtype=np.int64)
-
-                # continue until all SNPs are sampled from generator
-                nsnps = 0
-                nfail = 0
-                while nsnps < self.nsnps:
-
-                    # wrap for _msprime.LibraryError
-                    try:
-                        # get next tree and drop mutations 
-                        muts = ms.mutate(
-                            tree_sequence=next(sims), 
-                            rate=self.mut, 
-                            random_seed=self.random.randint(1e9))
-                        bingenos = muts.genotype_matrix()
-
-                        # convert binary SNPs to {0,1,2,3} using JC 
-                        if bingenos.size:
-                            sitegenos = mutate_jc(bingenos, self.ntips)
-                            snparr[nsnps] = sitegenos
-                            nsnps += 1
-                        else:
-                            nfail += 1
-
-                    # this can occur with v. small Ne, skip to next.
-                    except LibraryError:
-                        pass
-
-                if self._debug:
-                    print("{} trees to get {} with mutations"
-                        .format(nsnps + nfail, self.nsnps), file=sys.stderr)
-
-                # organize SNPs array into multiple 16x16 arrays
-                # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
-                quartidx = 0
-                qiter = itt.combinations(range(self.ntips), 4)
-                for currquart in qiter:
-                    # cols indices match tip labels b/c we named tips node.idx
-                    quartsnps = snparr[:, currquart]
-                    self.counts[gidx, quartidx] = count_matrix_int(quartsnps)                    
-                    # self.counts[gidx, quartidx] = count_matrix_float(quartsnps)
-                    quartidx += 1
-
-                # scale by max count for this rep
-                # self.counts[gidx, ...] /= self.counts[gidx, ...].max()
-                gidx += 1
-
-            if self._debug: 
-                print("\n", file=sys.stderr)
+#    def run(self):
+#        """
+#        run and parse results for nsamples simulations.
+#        """
+#        # iterate over ntests (different sampled simulation parameters)
+#        gidx = 0
+#        for ridx in range(self.ntests):
+#            
+#            # get tree_sequence generator for this set of params
+#            sims = self._get_tree_sequence(ridx)
+#
+#            # repeat draws from this generator for each technical rep
+#            for rep in range(self.nreps):
+#
+#                # store results (nsnps, ntips); def. 1000 SNPs
+#                snparr = np.zeros((self.nsnps, self.ntips), dtype=np.int64)
+#
+#                # continue until all SNPs are sampled from generator
+#                nsnps = 0
+#                nfail = 0
+#                while nsnps < self.nsnps:
+#
+#                    # wrap for _msprime.LibraryError
+#                    try:
+#                        # get next tree and drop mutations 
+#                        muts = ms.mutate(
+#                            tree_sequence=next(sims), 
+#                            rate=self.mut, 
+#                            random_seed=self.random.randint(1e9))
+#                        bingenos = muts.genotype_matrix()
+#
+#                        # convert binary SNPs to {0,1,2,3} using JC 
+#                        if bingenos.size:
+#                            sitegenos = mutate_jc(bingenos, self.ntips)
+#                            snparr[nsnps] = sitegenos
+#                            nsnps += 1
+#                        else:
+#                            nfail += 1
+#
+#                    # this can occur with v. small Ne, skip to next.
+#                    except LibraryError:
+#                        pass
+#
+#                if self._debug:
+#                    print("{} trees to get {} with mutations"
+#                        .format(nsnps + nfail, self.nsnps), file=sys.stderr)
+#
+#                # organize SNPs array into multiple 16x16 arrays
+#                # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
+#                quartidx = 0
+#                qiter = itt.combinations(range(self.ntips), 4)
+#                for currquart in qiter:
+#                    # cols indices match tip labels b/c we named tips node.idx
+#                    quartsnps = snparr[:, currquart]
+#                    self.counts[gidx, quartidx] = count_matrix_int(quartsnps)                    
+#                    # self.counts[gidx, quartidx] = count_matrix_float(quartsnps)
+#                    quartidx += 1
+#
+#                # scale by max count for this rep
+#                # self.counts[gidx, ...] /= self.counts[gidx, ...].max()
+#                gidx += 1
+#
+#            if self._debug: 
+#                print("\n", file=sys.stderr)
 
     def plot_test_values(self):
         """
@@ -786,3 +801,51 @@ class Model:
             final_seqs.append(arrseq)
 
         return( dict(zip(names,final_seqs)) )
+
+    def write_fasta(self, loc, path):
+        fastaseq = deepcopy(self.seqs[loc]).astype(str)
+
+        fastaseq[fastaseq=='0'] ="A"
+        fastaseq[fastaseq=='1'] ="C"
+        fastaseq[fastaseq=='2'] ="G"
+        fastaseq[fastaseq=='3'] ="T"
+
+        fasta = []
+        for idx, name in enumerate(self.names):
+            fasta.append(('>'+name +'\n'))
+            fasta.append("".join(fastaseq[idx])+'\n')
+            
+        with open(path,'w') as file:
+            for line in fasta:
+                file.write(line)
+
+    def _call_iq(self,command_list):
+        """ call the command as sps """
+        proc = subprocess.Popen(
+            command_list,
+            stderr=subprocess.STDOUT, 
+            stdout=subprocess.PIPE
+            )
+        comm = proc.communicate()
+        #if proc.returncode:
+        #    raise IPyradError(comm[0].decode())
+        return comm[0].decode()
+
+    def infer_trees(self):
+        fastaslist = []
+        for seqnum in range(len(self.seqs)):
+            fastapath="tempfile.fasta"
+            self.write_fasta(seqnum,fastapath)
+
+            # debugging
+            with open(fastapath,'r') as f:
+                fastaslist.append(f.read())
+
+            iq = self._call_iq(['iqtree','-s',fastapath])
+            with open(fastapath+".treefile",'r') as treefile:
+                newick = treefile.read()
+            self.df.loc[(self.df['locus_idx'] == seqnum),'inferred_trees'] = newick
+            self.newicklist.append(newick)
+            for filename in glob.glob(fastapath+"*"):
+                os.remove(filename) 
+        return(fastaslist)
