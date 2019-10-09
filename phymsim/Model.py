@@ -386,7 +386,7 @@ class Model:
         return population_configurations
 
 
-    def _get_tree_sequence(self, idx):
+    def _get_SNP_sims(self, idx):
         """
         Performs simulations with params varied across input values.
         """       
@@ -411,7 +411,7 @@ class Model:
         sim = ms.simulate(
             random_seed=self.random.randint(1e9),
             migration_matrix=migmat,
-            num_replicates=self.nsnps * 1000,                 # ensures SNPs 
+            num_replicates=self.nsnps * 10000,                 # ensures SNPs 
             population_configurations=self._get_popconfig(),  # applies Ne
             demographic_events=self._get_demography(),        # applies popst. 
         )
@@ -851,59 +851,58 @@ class Model:
         return(fastaslist)
 
     def _run_snps():
-        for idx in range(self.nvalues):
 
-            # temporarily format these as stacked matrices
-            tmpcounts = np.zeros((self.nquarts,16,16),dtype= np.int64)
+        # temporarily format these as stacked matrices
+        tmpcounts = np.zeros((self.nquarts,16,16),dtype= np.int64)
 
-            # get tree_sequence for this set
-            sims = self._get_tree_sequence(idx)
+        # get tree_sequence for this set
+        sims = self._get_SNP_sims(idx)
 
-            # store results (nsnps, ntips); def. 1000 SNPs
-            snparr = np.zeros((self.nsnps, self.ntips), dtype=np.int64)
+        # store results (nsnps, ntips); def. 1000 SNPs
+        snparr = np.zeros((self.nsnps, self.ntips), dtype=np.int64)
 
-            # continue until all SNPs are sampled from generator
-            nsnps = 0
+        # continue until all SNPs are sampled from generator
+        nsnps = 0
 
-            countem = 0
-            while nsnps < self.nsnps:
-                try:
-                    newtree = next(next(sims).trees()).newick()
-                    print(newtree)
-                    filename = str(np.random.randint(1e5)) +'.newick'
-                    filename = str(np.random.randint(1e10)) +'.newick'
-                    with open(filename,'w') as f:
-                        f.write(str(newtree))
-                    #ordered = 0
-                    #while len(np.unique(ordered)) < 2:
-                    process = Popen(['seq-gen', '-m','GTR','-l','1','-s',str(self.mut),filename,'-or','-q'], stdout=PIPE, stderr=PIPE)
-                    stdout, stderr = process.communicate()
-                    result=stdout.decode("utf-8").split('\n')[:-1]
-                    geno = dict([i.split(' ') for i in result[1:]])
-                    ordered = [geno[np.str(i)] for i in range(1,len(geno)+1)]
-                    if len(np.unique(ordered)) > 1:
-                        snparr[nsnps] = base_to_int(ordered)
-                        nsnps += 1
-                        countem += 1
-                    if os.path.isfile(filename):
-                        os.remove(filename)
-                    else:    ## Show an error ##
-                        print("Error: %s file not found" % filename)
-                except:
-                    print(countem)
+        countem = 0
+        while nsnps < self.nsnps:
+            try:
+                newtree = next(next(sims).trees()).newick()
+                print(newtree)
+                #filename = str(np.random.randint(1e5)) +'.newick'
+                filename = str(np.random.randint(1e10)) +'.newick'
+                with open(filename,'w') as f:
+                    f.write(str(newtree))
+                #ordered = 0
+                #while len(np.unique(ordered)) < 2:
+                process = Popen(['seq-gen', '-m','GTR','-l','1','-s',str(self.mut),filename,'-or','-q'], stdout=PIPE, stderr=PIPE)
+                stdout, stderr = process.communicate()
+                result=stdout.decode("utf-8").split('\n')[:-1]
+                geno = dict([i.split(' ') for i in result[1:]])
+                ordered = [geno[np.str(i)] for i in range(1,len(geno)+1)]
+                if len(np.unique(ordered)) > 1:
+                    snparr[nsnps] = base_to_int(ordered)
+                    nsnps += 1
                     countem += 1
-                    pass
+                if os.path.isfile(filename):
+                    os.remove(filename)
+                else:    ## Show an error ##
+                    print("Error: %s file not found" % filename)
+            except:
+                print(countem)
+                countem += 1
+                pass
 
 
 
-            # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
-            quartidx = 0
-            qiter = itt.combinations(range(self.ntips), 4)
-            for currquart in qiter:
-                # cols indices match tip labels b/c we named tips node.idx
-                quartsnps = snparr[:, currquart]
-                # save as stacked matrices
-                tmpcounts[quartidx] = count_matrix_int(quartsnps)
-                # save flattened to counts
-                self.counts[idx] = np.ravel(tmpcounts)
-                quartidx += 1
+        # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
+        quartidx = 0
+        qiter = itt.combinations(range(self.ntips), 4)
+        for currquart in qiter:
+            # cols indices match tip labels b/c we named tips node.idx
+            quartsnps = snparr[:, currquart]
+            # save as stacked matrices
+            tmpcounts[quartidx] = count_matrix_int(quartsnps)
+            # save flattened to counts
+            self.counts[idx] = np.ravel(tmpcounts)
+            quartidx += 1
