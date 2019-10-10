@@ -27,10 +27,9 @@ from scipy.special import comb
 from _msprime import LibraryError
 from copy import deepcopy
 
-from .jitted import count_matrix_int, mutate_jc
+from .jitted import count_matrix_int, mutate_jc,base_to_int
 from .utils import get_all_admix_edges, SimcatError
 from .SeqModel import SeqModel
-
 
 
 class Model:
@@ -45,7 +44,6 @@ class Model:
         Ne=10000,
         recomb=1e-9,
         mut=1e-8,
-        ntests=1,
         nreps=1,
         seed=None,        
         debug=False,
@@ -139,7 +137,6 @@ class Model:
             self.Ne = None
 
         # dimension of simulations
-        self.ntests = ntests
         self.nreps = nreps
 
         # parse the input tree
@@ -155,8 +152,8 @@ class Model:
 
         ## storage for output
         self.nquarts = int(comb(N=self.ntips, k=4))  # scipy.special.comb
-        self.counts = np.zeros(
-            (self.ntests * self.nreps, self.nquarts, 16, 16), dtype=np.int64)
+        #self.counts = np.zeros(
+            #(self.nquarts, 16*16), dtype=np.int64)
 
         # store node.name as node.idx, save old names in a dict.
         self.namedict = {}
@@ -255,23 +252,24 @@ class Model:
             # if an iterable then sample from range
             else:
                 mr = iedge[3]
-            mrates = self.random.uniform(mr[0], mr[1], size=self.ntests)
+            mrates = self.random.uniform(mr[0], mr[1], size=1)[0]
 
             # intervals are overlapping edges where admixture can occur. 
             # lower and upper restrict the range along intervals for each 
             snode = self.tree.treenode.search_nodes(idx=iedge[0])[0]
             dnode = self.tree.treenode.search_nodes(idx=iedge[1])[0]
             ival = intervals.get((snode.idx, dnode.idx))
+            dist_ival = ival[1]-ival[0]
             # intervals mode
             if self.admixture_type:
-                ui = self.random.uniform(ival[0], ival[1], self.ntests * 2)
-                ui = ui.reshape((self.ntests, 2))
+                ui = self.random.uniform(ival[0]+mi[0]*dist_ival, ival[0]+mi[1]*dist_ival, 2)
+                ui = ui.reshape((1, 2))
                 mtimes = np.sort(ui, axis=1)
             # pulsed mode
             else:
-                ui = self.random.uniform(ival[0], ival[1], self.ntests)
-                null = np.repeat(None, self.ntests)
-                mtimes = np.stack((ui, null), axis=1)
+                ui = self.random.uniform(ival[0]+mi[0]*dist_ival, ival[0]+mi[1]*dist_ival, 1)
+                #null = np.repeat(None, 1)
+                mtimes = int(ui[0])#np.stack((ui, null), axis=1)
 
             # store values only if migration is high enough to be detectable
             self.test_values[idx] = {
@@ -328,8 +326,8 @@ class Model:
         ## Add migration pulses
         if not self.admixture_type:
             for evt in range(self.aedges):
-                rate = self._mrates[evt]
-                time = int(self._mtimes[evt][0])
+                rate = self.test_values[evt]['mrates']
+                time = int(self.test_values[evt]['mtimes'])
                 source, dest = self.admixture_edges[evt][:2]
 
                 ## rename nodes at time of admix in case divergences renamed them
@@ -345,8 +343,8 @@ class Model:
         ## Add migration intervals
         else:
             for evt in range(self.aedges):
-                rate = self._mrates[evt]
-                time = (self._mtimes[evt]).astype(int)
+                rate = self.test_values[evt]['mrates']
+                time = (self.test_values[evt]['mtimes']).astype(int)
                 source, dest = self.admixture_edges[evt][:2]
 
                 ## rename nodes at time of admix in case divergences renamed them
@@ -386,18 +384,18 @@ class Model:
         return population_configurations
 
 
-    def _get_SNP_sims(self, idx):
+    def _get_SNP_sims(self, nsnps):
         """
         Performs simulations with params varied across input values.
         """       
         # migration scenarios from admixture_edges, used in demography
         migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
         self._mtimes = [
-            self.test_values[evt]['mtimes'][idx] for evt in 
+            self.test_values[evt]['mtimes'] for evt in 
             range(len(self.admixture_edges))
         ] 
         self._mrates = [
-            self.test_values[evt]['mrates'][idx] for evt in 
+            self.test_values[evt]['mrates'] for evt in 
             range(len(self.admixture_edges))
         ]
 
@@ -411,7 +409,7 @@ class Model:
         sim = ms.simulate(
             random_seed=self.random.randint(1e9),
             migration_matrix=migmat,
-            num_replicates=self.nsnps * 10000,                 # ensures SNPs 
+            num_replicates=nsnps * 10000,                 # ensures SNPs 
             population_configurations=self._get_popconfig(),  # applies Ne
             demographic_events=self._get_demography(),        # applies popst. 
         )
@@ -424,11 +422,11 @@ class Model:
         # migration scenarios from admixture_edges, used in demography
         migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
         self._mtimes = [
-            self.test_values[evt]['mtimes'][idx] for evt in 
+            self.test_values[evt]['mtimes'] for evt in 
             range(len(self.admixture_edges))
         ] 
         self._mrates = [
-            self.test_values[evt]['mrates'][idx] for evt in 
+            self.test_values[evt]['mrates'] for evt in 
             range(len(self.admixture_edges))
         ]
 
@@ -530,7 +528,7 @@ class Model:
         size, 
         outfile=None, 
         seqgen=True, 
-        return_results=False, 
+        return_results=True, 
         force=False):
 
         if return_results:
@@ -589,37 +587,6 @@ class Model:
 
             db.close()
 
-
-    def _get_snps_sim(self):
-        """
-        Performs simulations with params varied across input values.
-        """       
-        # migration scenarios from admixture_edges, used in demography
-        migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
-        self._mtimes = [
-            self.test_values[evt]['mtimes'][idx] for evt in 
-            range(len(self.admixture_edges))
-        ] 
-        self._mrates = [
-            self.test_values[evt]['mrates'][idx] for evt in 
-            range(len(self.admixture_edges))
-        ]
-
-        # debug printer
-        if self._debug:
-            print("pop: Ne:{}, mut:{:.2E}"
-                .format(self.Ne, self.mut),
-                file=sys.stderr)
-
-        # msprime simulation to make tree_sequence generator
-        sim = ms.simulate(
-            random_seed=self.random.randint(1e9),
-            migration_matrix=migmat,
-            num_replicates=self.nsnps * 1000,                 # ensures SNPs 
-            population_configurations=self._get_popconfig(),  # applies Ne
-            demographic_events=self._get_demography(),        # applies popst. 
-        )
-        return sim
 
 
 #    def run(self):
@@ -831,15 +798,10 @@ class Model:
         #    raise IPyradError(comm[0].decode())
         return comm[0].decode()
 
-    def infer_trees(self):
-        fastaslist = []
+    def infer_trees(self, method = 'iqtree'):
         for seqnum in range(len(self.seqs)):
             fastapath="tempfile.fasta"
             self.write_fasta(seqnum,fastapath)
-
-            # debugging
-            with open(fastapath,'r') as f:
-                fastaslist.append(f.read())
 
             iq = self._call_iq(['iqtree','-s',fastapath,'-m', 'MFP','-bb', '1000'])
             with open(fastapath+".treefile",'r') as treefile:
@@ -848,48 +810,50 @@ class Model:
             self.newicklist.append(newick)
             for filename in glob.glob(fastapath+"*"):
                 os.remove(filename) 
-        return(fastaslist)
 
-    def _run_snps():
+    def _run_snps(self,nsnps):
 
         # temporarily format these as stacked matrices
         tmpcounts = np.zeros((self.nquarts,16,16),dtype= np.int64)
 
         # get tree_sequence for this set
-        sims = self._get_SNP_sims(idx)
+        sims = self._get_SNP_sims(nsnps)
 
         # store results (nsnps, ntips); def. 1000 SNPs
-        snparr = np.zeros((self.nsnps, self.ntips), dtype=np.int64)
+        snparr = np.zeros((nsnps, self.ntips), dtype=np.int64)
 
         # continue until all SNPs are sampled from generator
-        nsnps = 0
+        n_counted_snps = 0
 
         countem = 0
-        while nsnps < self.nsnps:
+        while n_counted_snps < nsnps:
             try:
                 newtree = next(next(sims).trees()).newick()
-                print(newtree)
-                #filename = str(np.random.randint(1e5)) +'.newick'
+
                 filename = str(np.random.randint(1e10)) +'.newick'
                 with open(filename,'w') as f:
                     f.write(str(newtree))
                 #ordered = 0
                 #while len(np.unique(ordered)) < 2:
-                process = Popen(['seq-gen', '-m','GTR','-l','1','-s',str(self.mut),filename,'-or','-q'], stdout=PIPE, stderr=PIPE)
+                process = subprocess.Popen(['seq-gen', '-m','GTR','-l','1','-s',str(self.mut),filename,'-or','-q'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 stdout, stderr = process.communicate()
+
                 result=stdout.decode("utf-8").split('\n')[:-1]
                 geno = dict([i.split(' ') for i in result[1:]])
+
                 ordered = [geno[np.str(i)] for i in range(1,len(geno)+1)]
+
                 if len(np.unique(ordered)) > 1:
-                    snparr[nsnps] = base_to_int(ordered)
-                    nsnps += 1
+                    snparr[n_counted_snps] = base_to_int(ordered)
+                    n_counted_snps += 1
+
                     countem += 1
                 if os.path.isfile(filename):
                     os.remove(filename)
                 else:    ## Show an error ##
                     print("Error: %s file not found" % filename)
             except:
-                print(countem)
+
                 countem += 1
                 pass
 
@@ -904,5 +868,5 @@ class Model:
             # save as stacked matrices
             tmpcounts[quartidx] = count_matrix_int(quartsnps)
             # save flattened to counts
-            self.counts[idx] = np.ravel(tmpcounts)
             quartidx += 1
+        return(np.ravel(tmpcounts))
