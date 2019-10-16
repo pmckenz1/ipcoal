@@ -1,9 +1,0 @@
-name: physim
-channels:
-    - eaton-lab
-    - conda-forge
-dependencies:
-    - python>=3
-    - toytree
-    - msprime
-

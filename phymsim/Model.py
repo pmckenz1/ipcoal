@@ -10,26 +10,26 @@ from __future__ import print_function
 from builtins import range
 
 # imports
-import os
-import re
 import sys
-import tempfile
-import subprocess
-import itertools as itt
-from copy import deepcopy
-
 import toyplot
 import toytree
 import numpy as np
 import pandas as pd
 import msprime as ms
+import os
+import glob
+import re
+import subprocess
+import tempfile
+import itertools as itt
+import h5py
 from scipy.special import comb
 from _msprime import LibraryError
+from copy import deepcopy
 
-from .jitted import count_matrix_int, mutate_jc
+from .jitted import count_matrix_int, mutate_jc,base_to_int
 from .utils import get_all_admix_edges, SimcatError
 from .SeqModel import SeqModel
-
 
 
 class Model:
@@ -44,7 +44,6 @@ class Model:
         Ne=10000,
         recomb=1e-9,
         mut=1e-8,
-        ntests=1,
         nreps=1,
         seed=None,        
         debug=False,
@@ -119,6 +118,9 @@ class Model:
         """
         # init random seed: all np and ms random draws proceed from this.
         # TODO: still not working...
+
+        self.newicklist = []
+
         self.random = np.random.RandomState()
 
         # hidden argument to turn on debugging
@@ -135,7 +137,6 @@ class Model:
             self.Ne = None
 
         # dimension of simulations
-        self.ntests = ntests
         self.nreps = nreps
 
         # parse the input tree
@@ -151,8 +152,8 @@ class Model:
 
         ## storage for output
         self.nquarts = int(comb(N=self.ntips, k=4))  # scipy.special.comb
-        self.counts = np.zeros(
-            (self.ntests * self.nreps, self.nquarts, 16, 16), dtype=np.int64)
+        #self.counts = np.zeros(
+            #(self.nquarts, 16*16), dtype=np.int64)
 
         # store node.name as node.idx, save old names in a dict.
         self.namedict = {}
@@ -161,6 +162,7 @@ class Model:
                 # store old name and set new one
                 self.namedict[node.idx] = node.name
                 node.name = node.idx
+        self.names = np.sort(list(self.namedict.values()))
 
         # check formats of admixture args
         self.admixture_edges = (admixture_edges if admixture_edges else [])
@@ -187,6 +189,10 @@ class Model:
 
         # get popconfig as msprime input
         self.ms_popconfig = self._get_popconfig()
+
+        # hold the model outputs
+        self.df = None
+        self.seqs = None
 
         # fill the counts matrix or call run later
         if run:
@@ -246,23 +252,24 @@ class Model:
             # if an iterable then sample from range
             else:
                 mr = iedge[3]
-            mrates = self.random.uniform(mr[0], mr[1], size=self.ntests)
+            mrates = self.random.uniform(mr[0], mr[1], size=1)[0]
 
             # intervals are overlapping edges where admixture can occur. 
             # lower and upper restrict the range along intervals for each 
             snode = self.tree.treenode.search_nodes(idx=iedge[0])[0]
             dnode = self.tree.treenode.search_nodes(idx=iedge[1])[0]
             ival = intervals.get((snode.idx, dnode.idx))
+            dist_ival = ival[1]-ival[0]
             # intervals mode
             if self.admixture_type:
-                ui = self.random.uniform(ival[0], ival[1], self.ntests * 2)
-                ui = ui.reshape((self.ntests, 2))
+                ui = self.random.uniform(ival[0]+mi[0]*dist_ival, ival[0]+mi[1]*dist_ival, 2)
+                ui = ui.reshape((1, 2))
                 mtimes = np.sort(ui, axis=1)
             # pulsed mode
             else:
-                ui = self.random.uniform(ival[0], ival[1], self.ntests)
-                null = np.repeat(None, self.ntests)
-                mtimes = np.stack((ui, null), axis=1)
+                ui = self.random.uniform(ival[0]+mi[0]*dist_ival, ival[0]+mi[1]*dist_ival, 1)
+                #null = np.repeat(None, 1)
+                mtimes = int(ui[0])#np.stack((ui, null), axis=1)
 
             # store values only if migration is high enough to be detectable
             self.test_values[idx] = {
@@ -319,8 +326,8 @@ class Model:
         ## Add migration pulses
         if not self.admixture_type:
             for evt in range(self.aedges):
-                rate = self._mrates[evt]
-                time = int(self._mtimes[evt][0])
+                rate = self.test_values[evt]['mrates']
+                time = int(self.test_values[evt]['mtimes'])
                 source, dest = self.admixture_edges[evt][:2]
 
                 ## rename nodes at time of admix in case divergences renamed them
@@ -336,8 +343,8 @@ class Model:
         ## Add migration intervals
         else:
             for evt in range(self.aedges):
-                rate = self._mrates[evt]
-                time = (self._mtimes[evt]).astype(int)
+                rate = self.test_values[evt]['mrates']
+                time = (self.test_values[evt]['mtimes']).astype(int)
                 source, dest = self.admixture_edges[evt][:2]
 
                 ## rename nodes at time of admix in case divergences renamed them
@@ -359,35 +366,36 @@ class Model:
     def _get_popconfig(self):
         """
         returns population_configurations for N tips of a tree
-        """       
+        """
         if not self.Ne:
-            # get Ne values from tips of the tree
-            nes = self.tree.get_node_values("Ne", show_tips=True)
-            nes = nes[-self.tree.ntips:][::-1]
-
-            # list of popconfig objects for each tip
+            Ne_vals = []
+            for node in self.tree.treenode.traverse():
+                if node.is_leaf():
+                    Ne_vals.append(node.Ne)
+            inv_Ne_vals = Ne_vals[::-1] # this is so they're added to the tree in the right order...
             population_configurations = [
-                ms.PopulationConfiguration(sample_size=1, initial_size=nes[i])
-                for i in range(self.ntips)]
+                ms.PopulationConfiguration(sample_size=1, initial_size=inv_Ne_vals[ntip])
+                for ntip in range(self.ntips)]
         else:
             population_configurations = [
                 ms.PopulationConfiguration(sample_size=1, initial_size=self.Ne)
                 for ntip in range(self.ntips)]
+
         return population_configurations
 
 
-    def _get_tree_sequence(self, idx):
+    def _get_SNP_sims(self, nsnps):
         """
         Performs simulations with params varied across input values.
         """       
         # migration scenarios from admixture_edges, used in demography
         migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
         self._mtimes = [
-            self.test_values[evt]['mtimes'][idx] for evt in 
+            self.test_values[evt]['mtimes'] for evt in 
             range(len(self.admixture_edges))
         ] 
         self._mrates = [
-            self.test_values[evt]['mrates'][idx] for evt in 
+            self.test_values[evt]['mrates'] for evt in 
             range(len(self.admixture_edges))
         ]
 
@@ -401,12 +409,11 @@ class Model:
         sim = ms.simulate(
             random_seed=self.random.randint(1e9),
             migration_matrix=migmat,
-            num_replicates=self.nsnps * 1000,                 # ensures SNPs 
+            num_replicates=nsnps * 10000,                 # ensures SNPs 
             population_configurations=self._get_popconfig(),  # applies Ne
             demographic_events=self._get_demography(),        # applies popst. 
         )
         return sim
-
 
     def _get_locus_sim(self, locus_len):
         """
@@ -415,11 +422,11 @@ class Model:
         # migration scenarios from admixture_edges, used in demography
         migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
         self._mtimes = [
-            self.test_values[evt]['mtimes'][evt] for evt in 
+            self.test_values[evt]['mtimes'] for evt in 
             range(len(self.admixture_edges))
         ] 
         self._mrates = [
-            self.test_values[evt]['mrates'][evt] for evt in 
+            self.test_values[evt]['mrates'] for evt in 
             range(len(self.admixture_edges))
         ]
 
@@ -441,279 +448,211 @@ class Model:
         )
         return sim
 
-    def run_locus(self, size, seqgen=True, force=False, locus_idx=0):
-        """
-        Doc string...
-        """
-
-        # get tree_sequence generator from msprime simulate() call
+    def run_locus(self, size, outfile, seqgen = True, return_results = False, force = False, locus_idx=0):
         if outfile:
             # check if outfile already exists
             outfile_exists = 0
             if os.path.isfile(outfile):
                 outfile_exists = 1
                 if not force:
-                    raise ValueError(
-                        'The designated outfile named already exists. '
-                        'Use `force=True` to overwrite.')
+                    raise ValueError('The designated outfile named already exists. Use `force=True` to overwrite.')
 
         msinst = self._get_locus_sim(size)
-
-        # get breakpoints
         msmod = next(msinst)
-        breaks = list(msmod.breakpoints())
+        breaks = []
+        for breakpts in msmod.breakpoints():
+            breaks.append(breakpts)
 
-        # get start and stop indices
-        starts = breaks[0:(len(breaks) - 1)]
+        starts = breaks[0:(len(breaks)-1)]
         stops = breaks[1:len(breaks)]
+        bps = (np.round(stops)-np.round(starts)).astype(int)
 
-        # what is the appropriate rounding? (some trees will not exist...)
-        bps = (np.round(stops) - np.round(starts)).astype(int)
-
-        # store newick strings
+        trees = msmod.trees()
         newicks = []
-        for atree in msmod.trees():
-            nwk = atree.newick(
-                node_labels={i: self.namedict[i] for i in atree.leaves()}
-            )
-            newicks.append(nwk)
-            
-        # init dataframe
-        df = pd.DataFrame({
-            "starts": starts,
-            "stops": stops,
-            "newicks": newicks,
-            "bps": bps,
-            },
-            columns=['starts', 'stops', 'bps', 'newicks'],
-        )
+        for atree in trees:
+            newicks.append( atree.newick( node_labels=dict(zip([i for i in atree.leaves()],[self.namedict[i] for i in atree.leaves()])) ) )
 
-        # mutations from custom model
+
         if not seqgen:
             sm = SeqModel()
 
         seqlist = []
-        for num in df.index:
-            
+        for num in range(len(newicks)):
             # get each gene tree
-            gtree = toytree.tree(df['newicks'][num])
-
+            gtree = toytree.tree(newicks[num])
             # convert from generations (msprime) to coalescent units (us)
-            # TODO: this doesn't seem right, one global Ne for scaling...
-            maxheight = gtree.treenode.height / self._Ne / 2
-            gt_coalunit = gtree.mod.node_scale_root_height(maxheight)
-
+            #gt_coalunit=gtree.mod.node_scale_root_height( gtree.treenode.height / self._Ne / 2 )
             # get the number of base pairs taken up by this gene tree
-            gtlen = df['bps'][num]
-
-            # only simulate data if there is bp 
+            gtlen = bps[num]
             if gtlen:
                 if seqgen:
-                    seqdict = self.seqgen_on_tree(
-                        newick=gt_coalunit.write(tree_format=5),
+                    seqdict = self.seqgen_on_tree(newick=gtree.write(tree_format=5),
                         seqlength=gtlen
                         )
                 else:
                     # simulate the sequence for the gene tree
-                    seqdict = sm.run(
-                        ttree=gt_coalunit,
-                        seq_length=gtlen,
-                        return_leaves=True,
-                        )
-                seqlist.append(seqdict)
+                    seqdict=sm.run(ttree=gtree,seq_length=gtlen,return_leaves=True)
+
+                seqlist.append( seqdict )
 
         # concatenate the gene tree sequences together
         dnadict = {}
         for key in seqlist[0].keys():
-            dnadict.update({key: np.concatenate([i[key] for i in seqlist])})
+            dnadict.update({key:np.concatenate([i[key] for i in seqlist])})
 
-        # # write out results to a file
-        # if outfile:
-        #     if outfile_exists:
-        #         os.remove(outfile)
-        #     with h5py.File(outfile,'w') as f:
-        #         f.create_dataset('starts',shape=(len(starts),),data = starts)
-        #         f.create_dataset('stops',shape=(len(stops),),data = stops)
-        #         f.create_dataset('bps',shape=(len(bps),),data = bps)
-        #         f.create_dataset('newicks',shape=(len(newicks),),data = np.array(newicks).astype('S'))
-        #         seqs = f.create_group('seqs')
-        #         for i in dnadict.keys():
-        #             seqs.create_dataset(i,data=dnadict[i])
-        # #dnadict_fin = {}
-        # #for key in dnadict.keys():
-        # #    dnadict_fin.update({self.namedict[str(key)]:dnadict[key]})
-
-        df = pd.DataFrame({
-            "locus_idx": np.repeat(locus_idx, len(starts)),
-            "starts": starts,
-            "stops": stops,
-            "newicks": newicks,
-            "bps": bps,
-            },
-            columns=['locus_idx', 'starts', 'stops', 'bps', 'newicks'])
-
-        return([df, dnadict])
+        # write out results to a file
+        if outfile:
+            if outfile_exists:
+                os.remove(outfile)
+            with h5py.File(outfile,'w') as f:
+                #f.create_dataset('starts',shape=(len(starts),),data = starts)
+                #f.create_dataset('stops',shape=(len(stops),),data = stops)
+                #f.create_dataset('bps',shape=(len(bps),),data = bps)
+                #f.create_dataset('newicks',shape=(len(newicks),),data = np.array(newicks).astype('S'))
+                seqs = f.create_group('seqs')
+                for i in dnadict.keys():
+                    seqs.create_dataset(i,data=dnadict[i])
+            df = pd.DataFrame({"locus_idx":np.repeat(locus_idx,len(starts)),"starts": starts,"stops": stops,"newicks": newicks,"bps": bps},columns = ['locus_idx','starts','stops','bps','newicks'])
+            df.to_hdf(outfile, "df", format='table', mode='a',data_columns=True)
+        #dnadict_fin = {}
+        #for key in dnadict.keys():
+        #    dnadict_fin.update({self.namedict[str(key)]:dnadict[key]})
 
 
-    # def run_several_loci(self,
-    #     num_loci, 
-    #     size, 
-    #     outfile=None, 
-    #     seqgen=True, 
-    #     return_results=False, 
-    #     force=False):
+        if return_results:
+            df = pd.DataFrame({"locus_idx":np.repeat(locus_idx,len(starts)),"starts": starts,"stops": stops,"newicks": newicks,"bps": bps},columns = ['locus_idx','starts','stops','bps','newicks'])
+            return([df, dnadict])
 
-    #     if return_results:
-    #         loci_list = []
-    #         seq_list = []
-    #         for locusrun in range(num_loci):
-    #             gt_df, seqs = self.run_locus(size=size,
-    #                 outfile=None,
-    #                 seqgen=seqgen,
-    #                 return_results=True,
-    #                 locus_idx=locusrun)
-    #             loci_list.append(gt_df)
-    #             seq_list.append(seqs)
+    def run(self,
+        num_loci, 
+        size, 
+        outfile=None, 
+        seqgen=True, 
+        return_results=True, 
+        force=False):
 
-    #         loci_result = pd.concat(loci_list)
-    #         seq_result = {}
-    #         for key in seq_list[0].keys():
-    #             seq_result.update({key:np.concatenate([i[key] for i in seq_list])})
+        if return_results:
+            loci_list = []
+            seq_list = []
+            res_arr = np.zeros((num_loci,self.ntips,size),dtype=np.int8)
+            for locusrun in range(num_loci):
+                gt_df, seqs = self.run_locus(size=size,
+                    outfile=None,
+                    seqgen=seqgen,
+                    return_results=True,
+                    locus_idx=locusrun)
+                loci_list.append(gt_df)
+                seq_list.append(seqs)
+                for keyidx, key in enumerate(self.names):
+                    res_arr[locusrun,keyidx,:] = seqs[key]
 
-    #         cumulative_bps = 0
-    #         cumulative_list = []
-    #         for i in loci_result['bps']:
-    #             cumulative_bps+=i
-    #             cumulative_list.append(cumulative_bps)
-    #         loci_result['cumulative_bps'] = cumulative_list
-    #         return(loci_result,seq_result)
+            loci_result = pd.concat(loci_list)
 
-
-    #     else:
-    #         if os.path.isfile(outfile):
-    #             if not force:
-    #                 raise ValueError('The designated outfile named already exists. Use `force=True` to overwrite.')
-    #             else:
-    #                 os.remove(outfile)
-    #         db = h5py.File(outfile,"w")
-
-    #         for locusrun in range(num_loci):
-    #             gt_df, seqs = self.run_locus(size=size,
-    #                 outfile=None,
-    #                 seqgen=seqgen,
-    #                 return_results=True,
-    #                 locus_idx=locusrun)
-
-    #             newgroup = db.create_group(str(locusrun))
-    #             newgroup.create_dataset("starts",data = gt_df['starts'])
-    #             newgroup.create_dataset("stops",data = gt_df['stops'])
-    #             newgroup.create_dataset("bps",data = gt_df['bps'])
-    #             newgroup.create_dataset("newicks",data = gt_df['newicks'].astype('S'))
-    #             newergroup = newgroup.create_group("seqs")
-    #             for i in seqs.keys():
-    #                 newergroup.create_dataset(i,data=seqs[i])
-
-    #         db.close()
+            cumulative_bps = 0
+            cumulative_list = []
+            for i in loci_result['bps']:
+                cumulative_bps+=i
+                cumulative_list.append(cumulative_bps)
+            loci_result['cumulative_bps'] = cumulative_list
+            loci_result['inferred_trees'] = np.repeat(None,len(cumulative_list))
+            self.df = loci_result
+            self.seqs = res_arr
 
 
+        else:
+            if os.path.isfile(outfile):
+                if not force:
+                    raise ValueError('The designated outfile named already exists. Use `force=True` to overwrite.')
+                else:
+                    os.remove(outfile)
+            db = h5py.File(outfile,"w")
 
-    def _get_snps_sim(self):
-        """
-        Performs simulations with params varied across input values.
-        """       
-        # migration scenarios from admixture_edges, used in demography
-        migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
-        self._mtimes = [
-            self.test_values[evt]['mtimes'][evt] for evt in 
-            range(len(self.admixture_edges))
-        ] 
-        self._mrates = [
-            self.test_values[evt]['mrates'][evt] for evt in 
-            range(len(self.admixture_edges))
-        ]
+            for locusrun in range(num_loci):
+                gt_df, seqs = self.run_locus(size=size,
+                    outfile=None,
+                    seqgen=seqgen,
+                    return_results=True,
+                    locus_idx=locusrun)
 
-        # debug printer
-        if self._debug:
-            print("pop: Ne:{}, mut:{:.2E}"
-                .format(self.Ne, self.mut),
-                file=sys.stderr)
+                newgroup = db.create_group(str(locusrun))
+                df = pd.DataFrame({"locus_idx":gt_df['locus_idx'],"starts": gt_df['starts'],"stops": gt_df['stops'],"newicks": gt_df['newicks'],"bps": gt_df['bps']},columns = ['locus_idx','starts','stops','bps','newicks'])
+                df.to_hdf(outfile, str(locusrun)+"/df", format='table', mode='a',data_columns=True)
+                #newgroup.create_dataset("starts",data = gt_df['starts'])
+                #newgroup.create_dataset("stops",data = gt_df['stops'])
+                #newgroup.create_dataset("bps",data = gt_df['bps'])
+                #newgroup.create_dataset("newicks",data = gt_df['newicks'].astype('S'))
+                newergroup = newgroup.create_group("seqs")
+                for i in seqs.keys():
+                    newergroup.create_dataset(i,data=seqs[i])
 
-        # msprime simulation to make tree_sequence generator
-        sim = ms.simulate(
-            random_seed=self.random.randint(1e9),
-            migration_matrix=migmat,
-            num_replicates=self.nsnps * 1000,                 # ensures SNPs 
-            population_configurations=self._get_popconfig(),  # applies Ne
-            demographic_events=self._get_demography(),        # applies popst. 
-        )
-        return sim
+            db.close()
 
 
-    def run(self):
-        """
-        run and parse results for nsamples simulations.
-        """
-        # iterate over ntests (different sampled simulation parameters)
-        gidx = 0
-        for ridx in range(self.ntests):
-            
-            # get tree_sequence generator for this set of params
-            sims = self._get_tree_sequence(ridx)
 
-            # repeat draws from this generator for each technical rep
-            for rep in range(self.nreps):
-
-                # store results (nsnps, ntips); def. 1000 SNPs
-                snparr = np.zeros((self.nsnps, self.ntips), dtype=np.int64)
-
-                # continue until all SNPs are sampled from generator
-                nsnps = 0
-                nfail = 0
-                while nsnps < self.nsnps:
-
-                    # wrap for _msprime.LibraryError
-                    try:
-                        # get next tree and drop mutations 
-                        muts = ms.mutate(
-                            tree_sequence=next(sims), 
-                            rate=self.mut, 
-                            random_seed=self.random.randint(1e9))
-                        bingenos = muts.genotype_matrix()
-
-                        # convert binary SNPs to {0,1,2,3} using JC 
-                        if bingenos.size:
-                            sitegenos = mutate_jc(bingenos, self.ntips)
-                            snparr[nsnps] = sitegenos
-                            nsnps += 1
-                        else:
-                            nfail += 1
-
-                    # this can occur with v. small Ne, skip to next.
-                    except LibraryError:
-                        pass
-
-                if self._debug:
-                    print("{} trees to get {} with mutations"
-                        .format(nsnps + nfail, self.nsnps), file=sys.stderr)
-
-                # organize SNPs array into multiple 16x16 arrays
-                # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
-                quartidx = 0
-                qiter = itt.combinations(range(self.ntips), 4)
-                for currquart in qiter:
-                    # cols indices match tip labels b/c we named tips node.idx
-                    quartsnps = snparr[:, currquart]
-                    self.counts[gidx, quartidx] = count_matrix_int(quartsnps)                    
-                    # self.counts[gidx, quartidx] = count_matrix_float(quartsnps)
-                    quartidx += 1
-
-                # scale by max count for this rep
-                # self.counts[gidx, ...] /= self.counts[gidx, ...].max()
-                gidx += 1
-
-            if self._debug: 
-                print("\n", file=sys.stderr)
-
+#    def run(self):
+#        """
+#        run and parse results for nsamples simulations.
+#        """
+#        # iterate over ntests (different sampled simulation parameters)
+#        gidx = 0
+#        for ridx in range(self.ntests):
+#            
+#            # get tree_sequence generator for this set of params
+#            sims = self._get_tree_sequence(ridx)
+#
+#            # repeat draws from this generator for each technical rep
+#            for rep in range(self.nreps):
+#
+#                # store results (nsnps, ntips); def. 1000 SNPs
+#                snparr = np.zeros((self.nsnps, self.ntips), dtype=np.int64)
+#
+#                # continue until all SNPs are sampled from generator
+#                nsnps = 0
+#                nfail = 0
+#                while nsnps < self.nsnps:
+#
+#                    # wrap for _msprime.LibraryError
+#                    try:
+#                        # get next tree and drop mutations 
+#                        muts = ms.mutate(
+#                            tree_sequence=next(sims), 
+#                            rate=self.mut, 
+#                            random_seed=self.random.randint(1e9))
+#                        bingenos = muts.genotype_matrix()
+#
+#                        # convert binary SNPs to {0,1,2,3} using JC 
+#                        if bingenos.size:
+#                            sitegenos = mutate_jc(bingenos, self.ntips)
+#                            snparr[nsnps] = sitegenos
+#                            nsnps += 1
+#                        else:
+#                            nfail += 1
+#
+#                    # this can occur with v. small Ne, skip to next.
+#                    except LibraryError:
+#                        pass
+#
+#                if self._debug:
+#                    print("{} trees to get {} with mutations"
+#                        .format(nsnps + nfail, self.nsnps), file=sys.stderr)
+#
+#                # organize SNPs array into multiple 16x16 arrays
+#                # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
+#                quartidx = 0
+#                qiter = itt.combinations(range(self.ntips), 4)
+#                for currquart in qiter:
+#                    # cols indices match tip labels b/c we named tips node.idx
+#                    quartsnps = snparr[:, currquart]
+#                    self.counts[gidx, quartidx] = count_matrix_int(quartsnps)                    
+#                    # self.counts[gidx, quartidx] = count_matrix_float(quartsnps)
+#                    quartidx += 1
+#
+#                # scale by max count for this rep
+#                # self.counts[gidx, ...] /= self.counts[gidx, ...].max()
+#                gidx += 1
+#
+#            if self._debug: 
+#                print("\n", file=sys.stderr)
 
     def plot_test_values(self):
         """
@@ -783,7 +722,6 @@ class Model:
 
         return canvas, (ax0, ax1, ax2)
 
-
     def seqgen_on_tree(self, newick, seqlength):
         fname = os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".tmp")
         with open(fname, 'w') as temp:
@@ -830,3 +768,105 @@ class Model:
             final_seqs.append(arrseq)
 
         return( dict(zip(names,final_seqs)) )
+
+    def write_fasta(self, loc, path):
+        fastaseq = deepcopy(self.seqs[loc]).astype(str)
+
+        fastaseq[fastaseq=='0'] ="A"
+        fastaseq[fastaseq=='1'] ="C"
+        fastaseq[fastaseq=='2'] ="G"
+        fastaseq[fastaseq=='3'] ="T"
+
+        fasta = []
+        for idx, name in enumerate(self.names):
+            fasta.append(('>'+name +'\n'))
+            fasta.append("".join(fastaseq[idx])+'\n')
+            
+        with open(path,'w') as file:
+            for line in fasta:
+                file.write(line)
+
+    def _call_iq(self,command_list):
+        """ call the command as sps """
+        proc = subprocess.Popen(
+            command_list,
+            stderr=subprocess.STDOUT, 
+            stdout=subprocess.PIPE
+            )
+        comm = proc.communicate()
+        #if proc.returncode:
+        #    raise IPyradError(comm[0].decode())
+        return comm[0].decode()
+
+    def infer_trees(self, method = 'iqtree'):
+        for seqnum in range(len(self.seqs)):
+            fastapath="tempfile.fasta"
+            self.write_fasta(seqnum,fastapath)
+
+            iq = self._call_iq(['iqtree','-s',fastapath,'-m', 'MFP','-bb', '1000'])
+            with open(fastapath+".treefile",'r') as treefile:
+                newick = treefile.read()
+            self.df.loc[(self.df['locus_idx'] == seqnum),'inferred_trees'] = newick
+            self.newicklist.append(newick)
+            for filename in glob.glob(fastapath+"*"):
+                os.remove(filename) 
+
+    def _run_snps(self,nsnps):
+
+        # temporarily format these as stacked matrices
+        tmpcounts = np.zeros((self.nquarts,16,16),dtype= np.int64)
+
+        # get tree_sequence for this set
+        sims = self._get_SNP_sims(nsnps)
+
+        # store results (nsnps, ntips); def. 1000 SNPs
+        snparr = np.zeros((nsnps, self.ntips), dtype=np.int64)
+
+        # continue until all SNPs are sampled from generator
+        n_counted_snps = 0
+
+        countem = 0
+        while n_counted_snps < nsnps:
+            try:
+                newtree = next(next(sims).trees()).newick()
+
+                filename = str(np.random.randint(1e10)) +'.newick'
+                with open(filename,'w') as f:
+                    f.write(str(newtree))
+                #ordered = 0
+                #while len(np.unique(ordered)) < 2:
+                process = subprocess.Popen(['seq-gen', '-m','GTR','-l','1','-s',str(self.mut),filename,'-or','-q'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                stdout, stderr = process.communicate()
+
+                result=stdout.decode("utf-8").split('\n')[:-1]
+                geno = dict([i.split(' ') for i in result[1:]])
+
+                ordered = [geno[np.str(i)] for i in range(1,len(geno)+1)]
+
+                if len(np.unique(ordered)) > 1:
+                    snparr[n_counted_snps] = base_to_int(ordered)
+                    n_counted_snps += 1
+
+                    countem += 1
+                if os.path.isfile(filename):
+                    os.remove(filename)
+                else:    ## Show an error ##
+                    print("Error: %s file not found" % filename)
+            except:
+
+                countem += 1
+                pass
+
+
+
+        # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
+        quartidx = 0
+        qiter = itt.combinations(range(self.ntips), 4)
+        for currquart in qiter:
+            # cols indices match tip labels b/c we named tips node.idx
+            quartsnps = snparr[:, currquart]
+            # save as stacked matrices
+            tmpcounts[quartidx] = count_matrix_int(quartsnps)
+            # save flattened to counts
+            quartidx += 1
+        return(np.ravel(tmpcounts))
