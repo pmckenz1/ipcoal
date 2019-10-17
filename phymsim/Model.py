@@ -24,10 +24,9 @@ import tempfile
 import itertools as itt
 import h5py
 from scipy.special import comb
-from _msprime import LibraryError
 from copy import deepcopy
 
-from .jitted import count_matrix_int, mutate_jc,base_to_int
+from .jitted import count_matrix_int, base_to_int
 from .utils import get_all_admix_edges, SimcatError
 from .SeqModel import SeqModel
 
@@ -37,7 +36,7 @@ class Model:
     A coalescent model for returning ms simulations.
     """
     def __init__(
-        self, 
+        self,
         tree,
         admixture_edges=None,
         admixture_type=0,
@@ -45,21 +44,22 @@ class Model:
         recomb=1e-9,
         mut=1e-8,
         nreps=1,
-        seed=None,        
+        seed=None,
         debug=False,
         run=False,
         ):
+
         """
         An object used for demonstration and testing only. The real simulations
         use the similar object Simulator.
 
-        Takes an input topology with edge lengths in coalescent units (2N) 
+        Takes an input topology with edge lengths in coalescent units (2N)
         entered as either a newick string or as a Toytree object,
-        and generates 'ntests' parameter sets for running msprime simulations 
-        which are stored in the the '.test_values' dictionary. The .run() 
-        command can be used to execute simulations to fill count matrices 
+        and generates 'ntests' parameter sets for running msprime simulations
+        which are stored in the the '.test_values' dictionary. The .run()
+        command can be used to execute simulations to fill count matrices
         stored in .counts. Admixture events (intervals or pulses) from source
-        to dest are described as viewed backwards in time. 
+        to dest are described as viewed backwards in time.
 
         Parameters:
         -----------
@@ -68,45 +68,45 @@ class Model:
             coalescent units.
 
         admixture_edges (list, tuple):
-            A list of admixture events in the 'admixture interval' format:           
-            (source, dest, (edge_min, edge_max), (rate_min, rate_max)). 
+            A list of admixture events in the 'admixture interval' format:
+            (source, dest, (edge_min, edge_max), (rate_min, rate_max)).
             e.g., (3, 5, 0.5, 0.01)
             e.g., (3, 5, (0.5, 0.5), (0.05, 0.5))
             e.g., (1, 3, (0.1, 0.9), 0.05)
             The source sends migrants to destination **backwards in time.**
-            The edge min, max are *proportions* of the length of the edge that 
+            The edge min, max are *proportions* of the length of the edge that
             overlaps between source and dest edges over which admixture can
-            occur. If None then default values of 0.25 and 0.75 are used, 
-            meaning introgression can occur over the middle 50% of the edge. 
+            occur. If None then default values of 0.25 and 0.75 are used,
+            meaning introgression can occur over the middle 50% of the edge.
             The rate min, max are migration rates or proportions that will be
-            either a single value or sampled from a range. For 'rate' details 
+            either a single value or sampled from a range. For 'rate' details
             see the 'admixture type' parameter.
 
         admixture_type (str, int):
-            Either "pulsed" (0; default) or "interval" (1). 
+            Either "pulsed" (0; default) or "interval" (1).
             If "pulsed" then admixture occurs at a single time point
-            selected uniformly from the admixture interval (e.g., (0.1, 0.9) 
+            selected uniformly from the admixture interval (e.g., (0.1, 0.9)
             can select over 90% of the overlapping edge; (0.5, 0.5) would only
-            allow admixture at the midpoint). The 'rate' parameter is the 
-            proportion of one population that will be introgressed into the 
-            other. 
-            If "interval" then admixture occurs uniformly over the entire 
-            admixture interval and 'rate' is a constant migration rate over 
+            allow admixture at the midpoint). The 'rate' parameter is the
+            proportion of one population that will be introgressed into the
+            other.
+            If "interval" then admixture occurs uniformly over the entire
+            admixture interval and 'rate' is a constant migration rate over
             this time period.
 
         theta (float, tuple):
             Mutation parameter. Enter a float, or a tuple of floats to supply
             a range to sample from over ntests. If None then values will be
-            extracted from the Toytree if it has a 'theta' feature on each 
+            extracted from the Toytree if it has a 'theta' feature on each
             internal node. Else an errror will be raise if no thetas found.
 
         nsnps (int):
             Number of unlinked SNPs simulated (e.g., counts is (nsnps, 16, 16))
 
         ntests (int):
-            Number of parameter sets to sample for each event, i.e., given 
+            Number of parameter sets to sample for each event, i.e., given
             a theta range and admixture events range multiple sets of parameter
-            values could be sampled. The counts array is expanded to be 
+            values could be sampled. The counts array is expanded to be
             (ntests, nsnps, 16, 16)
 
         nreps (int):
@@ -126,9 +126,7 @@ class Model:
         # hidden argument to turn on debugging
         self._debug = debug
 
-        # store sim params: fixed mut; range theta; Ne computed from theta,mut
-        #theta = ((theta,) if isinstance(theta, (int, float)) else theta)
-        #self.theta = np.array((min(theta), max(theta)))
+        # store sim params: fixed mut, Ne, recomb
         self.mut = mut
         self.recomb = recomb
         if Ne:
@@ -150,10 +148,8 @@ class Model:
             raise TypeError("input tree must be newick str or Toytree object")
         self.ntips = len(self.tree)
 
-        ## storage for output
+        # storage for output
         self.nquarts = int(comb(N=self.ntips, k=4))  # scipy.special.comb
-        #self.counts = np.zeros(
-            #(self.nquarts, 16*16), dtype=np.int64)
 
         # store node.name as node.idx, save old names in a dict.
         self.namedict = {}
@@ -180,11 +176,7 @@ class Model:
         # stores in self.sims 'mrates' and 'mtimes'
         self._get_test_values()
 
-        # Ne is calculated from fixed mut and sampled theta. Used in popconfig
-        #self._theta = self.test_values["thetas"][0]
-        #self._Ne = int((self._theta / self.mut) / 4.)
-
-        # get demography as msprime input 
+        # get demography as msprime input
         self.ms_demography = self._get_demography()
 
         # get popconfig as msprime input
@@ -198,30 +190,24 @@ class Model:
         if run:
             self.run()
 
-
-    def _get_test_values(self): 
+    def _get_test_values(self):
         """
-        Generates mrates, mtimes, and thetas arrays for simulations. 
+        Generates mrates, mtimes, and thetas arrays for simulations.
 
         Migration times are uniformly sampled between start and end points that
         are constrained by the overlap in edge lengths, which is automatically
-        inferred from 'get_all_admix_edges()'. migration rates are drawn 
-        uniformly between 0.0 and 0.5. thetas are drawn uniformly between 
-        theta0 and theta1, and Ne is just theta divided by a constant. 
+        inferred from 'get_all_admix_edges()'. migration rates are drawn
+        uniformly between 0.0 and 0.5. thetas are drawn uniformly between
+        theta0 and theta1, and Ne is just theta divided by a constant.
 
         self.test_values = {
-            thetas: [1, 2, 0.2, .1, .5], 
-            1: {mrates: [.5, .2, .3], mtimes: [(2, 3), (4, 5), (1, 2)]}, 
+            thetas: [1, 2, 0.2, .1, .5],
+            1: {mrates: [.5, .2, .3], mtimes: [(2, 3), (4, 5), (1, 2)]},
             2: {mrates: [.01, .05,], mtimes: [(0.5, None), 0.1, None)]
             3: {...}
             ...
         }
         """
-        # dictionary to store arrays of params for each admixture scenario
-        #self.test_values = {
-        #    "thetas": self.random.uniform(
-        #        low=self.theta[0], high=self.theta[1], size=self.ntests), 
-        #}
 
         self.test_values = {}
 
@@ -231,7 +217,7 @@ class Model:
 
             # mtimes: if None then sample from uniform.
             if iedge[2] is None:
-                mi = (0.0, 1.0)                  
+                mi = (0.0, 1.0)
             # if int or float then sample from one position
             elif isinstance(iedge[2], (float, int)):
                 mi = (iedge[2], iedge[2])
@@ -246,7 +232,7 @@ class Model:
                     mr = (0.0, 0.1)
                 else:
                     mr = (0.05, 0.5)
-            # if a float then use same for all            
+            # if a float then use same for all
             elif isinstance(iedge[3], (float, int)):
                 mr = (iedge[3], iedge[3])
             # if an iterable then sample from range
@@ -254,26 +240,27 @@ class Model:
                 mr = iedge[3]
             mrates = self.random.uniform(mr[0], mr[1], size=1)[0]
 
-            # intervals are overlapping edges where admixture can occur. 
-            # lower and upper restrict the range along intervals for each 
+            # intervals are overlapping edges where admixture can occur.
+            # lower and upper restrict the range along intervals for each
             snode = self.tree.treenode.search_nodes(idx=iedge[0])[0]
             dnode = self.tree.treenode.search_nodes(idx=iedge[1])[0]
             ival = intervals.get((snode.idx, dnode.idx))
             dist_ival = ival[1]-ival[0]
             # intervals mode
             if self.admixture_type:
-                ui = self.random.uniform(ival[0]+mi[0]*dist_ival, ival[0]+mi[1]*dist_ival, 2)
+                ui = self.random.uniform(ival[0]+mi[0]*dist_ival,
+                                         ival[0]+mi[1]*dist_ival, 2)
                 ui = ui.reshape((1, 2))
                 mtimes = np.sort(ui, axis=1)
             # pulsed mode
             else:
-                ui = self.random.uniform(ival[0]+mi[0]*dist_ival, ival[0]+mi[1]*dist_ival, 1)
-                #null = np.repeat(None, 1)
-                mtimes = int(ui[0])#np.stack((ui, null), axis=1)
+                ui = self.random.uniform(ival[0]+mi[0]*dist_ival,
+                                         ival[0]+mi[1]*dist_ival, 1)
+                mtimes = int(ui[0])
 
             # store values only if migration is high enough to be detectable
             self.test_values[idx] = {
-                "mrates": mrates, 
+                "mrates": mrates,
                 "mtimes": mtimes,
             }
             idx += 1
@@ -470,8 +457,7 @@ class Model:
         trees = msmod.trees()
         newicks = []
         for atree in trees:
-            newicks.append( atree.newick( node_labels=dict(zip([i for i in atree.leaves()],[self.namedict[i] for i in atree.leaves()])) ) )
-
+            newicks.append(atree.newick(node_labels=dict(zip([i for i in atree.leaves()], [self.namedict[i] for i in atree.leaves()]))))
 
         if not seqgen:
             sm = SeqModel()
@@ -481,112 +467,115 @@ class Model:
             # get each gene tree
             gtree = toytree.tree(newicks[num])
             # convert from generations (msprime) to coalescent units (us)
-            #gt_coalunit=gtree.mod.node_scale_root_height( gtree.treenode.height / self._Ne / 2 )
+            # gt_coalunit=gtree.mod.node_scale_root_height( gtree.treenode.height / self._Ne / 2 )
             # get the number of base pairs taken up by this gene tree
             gtlen = bps[num]
             if gtlen:
                 if seqgen:
                     seqdict = self.seqgen_on_tree(newick=gtree.write(tree_format=5),
-                        seqlength=gtlen
-                        )
+                                                  seqlength=gtlen)
                 else:
                     # simulate the sequence for the gene tree
-                    seqdict=sm.run(ttree=gtree,seq_length=gtlen,return_leaves=True)
+                    seqdict = sm.run(ttree=gtree,
+                                     seq_length=gtlen,
+                                     return_leaves=True)
 
-                seqlist.append( seqdict )
+                seqlist.append(seqdict)
 
         # concatenate the gene tree sequences together
         dnadict = {}
         for key in seqlist[0].keys():
-            dnadict.update({key:np.concatenate([i[key] for i in seqlist])})
+            dnadict.update({key: np.concatenate([i[key] for i in seqlist])})
 
         # write out results to a file
         if outfile:
             if outfile_exists:
                 os.remove(outfile)
-            with h5py.File(outfile,'w') as f:
-                #f.create_dataset('starts',shape=(len(starts),),data = starts)
-                #f.create_dataset('stops',shape=(len(stops),),data = stops)
-                #f.create_dataset('bps',shape=(len(bps),),data = bps)
-                #f.create_dataset('newicks',shape=(len(newicks),),data = np.array(newicks).astype('S'))
+            with h5py.File(outfile, 'w') as f:
+                # f.create_dataset('starts',shape=(len(starts),),data = starts)
+                # f.create_dataset('stops',shape=(len(stops),),data = stops)
+                # f.create_dataset('bps',shape=(len(bps),),data = bps)
+                # f.create_dataset('newicks',shape=(len(newicks),),data = np.array(newicks).astype('S'))
                 seqs = f.create_group('seqs')
                 for i in dnadict.keys():
-                    seqs.create_dataset(i,data=dnadict[i])
-            df = pd.DataFrame({"locus_idx":np.repeat(locus_idx,len(starts)),"starts": starts,"stops": stops,"newicks": newicks,"bps": bps},columns = ['locus_idx','starts','stops','bps','newicks'])
-            df.to_hdf(outfile, "df", format='table', mode='a',data_columns=True)
-        #dnadict_fin = {}
-        #for key in dnadict.keys():
-        #    dnadict_fin.update({self.namedict[str(key)]:dnadict[key]})
-
+                    seqs.create_dataset(i, data=dnadict[i])
+            df = pd.DataFrame({"locus_idx": np.repeat(locus_idx, len(starts)),
+                               "starts": starts,
+                               "stops": stops,
+                               "genealogies": newicks,
+                               "bps": bps},
+                              columns=['locus_idx',
+                                       'starts',
+                                       'stops',
+                                       'bps',
+                                       'genealogies'])
+            df.to_hdf(outfile,
+                      "df",
+                      format='table',
+                      mode='a',
+                      data_columns=True)
+        # dnadict_fin = {}
+        # for key in dnadict.keys():
+        #     dnadict_fin.update({self.namedict[str(key)]:dnadict[key]})
 
         if return_results:
-            df = pd.DataFrame({"locus_idx":np.repeat(locus_idx,len(starts)),"starts": starts,"stops": stops,"newicks": newicks,"bps": bps},columns = ['locus_idx','starts','stops','bps','newicks'])
+            df = pd.DataFrame({"locus_idx": np.repeat(locus_idx, len(starts)),
+                               "starts": starts,
+                               "stops": stops,
+                               "genealogies": newicks,
+                               "bps": bps},
+                              columns=['locus_idx',
+                                       'starts',
+                                       'stops',
+                                       'bps',
+                                       'genealogies'])
             return([df, dnadict])
 
     def run(self,
-        num_loci, 
-        size, 
-        outfile=None, 
-        seqgen=True, 
-        return_results=True, 
-        force=False):
+            num_loci,
+            size,
+            outfile=None,
+            seqgen=True,
+            force=False):
 
-        if return_results:
-            loci_list = []
-            seq_list = []
-            res_arr = np.zeros((num_loci,self.ntips,size),dtype=np.int8)
-            for locusrun in range(num_loci):
-                gt_df, seqs = self.run_locus(size=size,
-                    outfile=None,
-                    seqgen=seqgen,
-                    return_results=True,
-                    locus_idx=locusrun)
-                loci_list.append(gt_df)
-                seq_list.append(seqs)
-                for keyidx, key in enumerate(self.names):
-                    res_arr[locusrun,keyidx,:] = seqs[key]
+        loci_list = []
+        seq_list = []
+        res_arr = np.zeros((num_loci, self.ntips, size), dtype=np.int8)
+        for locusrun in range(num_loci):
+            gt_df, seqs = self.run_locus(size=size,
+                                         outfile=None,
+                                         seqgen=seqgen,
+                                         return_results=True,
+                                         locus_idx=locusrun)
 
-            loci_result = pd.concat(loci_list)
+            seq_list.append(seqs)
+            for keyidx, key in enumerate(self.names):
+                res_arr[locusrun, keyidx, :] = seqs[key]
 
-            cumulative_bps = 0
-            cumulative_list = []
-            for i in loci_result['bps']:
-                cumulative_bps+=i
-                cumulative_list.append(cumulative_bps)
-            loci_result['cumulative_bps'] = cumulative_list
-            loci_result['inferred_trees'] = np.repeat(None,len(cumulative_list))
-            self.df = loci_result
-            self.seqs = res_arr
+            # count the number of snps in this locus
+            _nsnps = 0
+            for column in res_arr[locusrun].T:
+                if len(np.unique(column)) > 1:
+                    _nsnps += 1
 
+            gt_df['nsnps'] = np.repeat(_nsnps, len(gt_df))
+            loci_list.append(gt_df)
 
-        else:
-            if os.path.isfile(outfile):
-                if not force:
-                    raise ValueError('The designated outfile named already exists. Use `force=True` to overwrite.')
-                else:
-                    os.remove(outfile)
-            db = h5py.File(outfile,"w")
+        loci_result = pd.concat(loci_list)
 
-            for locusrun in range(num_loci):
-                gt_df, seqs = self.run_locus(size=size,
-                    outfile=None,
-                    seqgen=seqgen,
-                    return_results=True,
-                    locus_idx=locusrun)
+        cumulative_bps = 0
+        cumulative_list = []
+        for i in loci_result['bps']:
+            cumulative_bps += i
+            cumulative_list.append(cumulative_bps)
+        loci_result['cumulative_bps'] = cumulative_list
+        loci_result['inferred_trees'] = np.repeat(None, len(cumulative_list))
 
-                newgroup = db.create_group(str(locusrun))
-                df = pd.DataFrame({"locus_idx":gt_df['locus_idx'],"starts": gt_df['starts'],"stops": gt_df['stops'],"newicks": gt_df['newicks'],"bps": gt_df['bps']},columns = ['locus_idx','starts','stops','bps','newicks'])
-                df.to_hdf(outfile, str(locusrun)+"/df", format='table', mode='a',data_columns=True)
-                #newgroup.create_dataset("starts",data = gt_df['starts'])
-                #newgroup.create_dataset("stops",data = gt_df['stops'])
-                #newgroup.create_dataset("bps",data = gt_df['bps'])
-                #newgroup.create_dataset("newicks",data = gt_df['newicks'].astype('S'))
-                newergroup = newgroup.create_group("seqs")
-                for i in seqs.keys():
-                    newergroup.create_dataset(i,data=seqs[i])
+        # reindex
+        loci_result.set_index(pd.Series(range(len(loci_result))))
 
-            db.close()
-
+        self.df = loci_result
+        self.seqs = res_arr
 
 
 #    def run(self):
@@ -596,7 +585,7 @@ class Model:
 #        # iterate over ntests (different sampled simulation parameters)
 #        gidx = 0
 #        for ridx in range(self.ntests):
-#            
+#
 #            # get tree_sequence generator for this set of params
 #            sims = self._get_tree_sequence(ridx)
 #
@@ -613,14 +602,14 @@ class Model:
 #
 #                    # wrap for _msprime.LibraryError
 #                    try:
-#                        # get next tree and drop mutations 
+#                        # get next tree and drop mutations
 #                        muts = ms.mutate(
-#                            tree_sequence=next(sims), 
-#                            rate=self.mut, 
+#                            tree_sequence=next(sims),
+#                            rate=self.mut,
 #                            random_seed=self.random.randint(1e9))
 #                        bingenos = muts.genotype_matrix()
 #
-#                        # convert binary SNPs to {0,1,2,3} using JC 
+#                        # convert binary SNPs to {0,1,2,3} using JC
 #                        if bingenos.size:
 #                            sitegenos = mutate_jc(bingenos, self.ntips)
 #                            snparr[nsnps] = sitegenos
@@ -643,7 +632,7 @@ class Model:
 #                for currquart in qiter:
 #                    # cols indices match tip labels b/c we named tips node.idx
 #                    quartsnps = snparr[:, currquart]
-#                    self.counts[gidx, quartidx] = count_matrix_int(quartsnps)                    
+#                    self.counts[gidx, quartidx] = count_matrix_int(quartsnps)
 #                    # self.counts[gidx, quartidx] = count_matrix_float(quartsnps)
 #                    quartidx += 1
 #
@@ -651,7 +640,7 @@ class Model:
 #                # self.counts[gidx, ...] /= self.counts[gidx, ...].max()
 #                gidx += 1
 #
-#            if self._debug: 
+#            if self._debug:
 #                print("\n", file=sys.stderr)
 
     def plot_test_values(self):
