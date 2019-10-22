@@ -276,14 +276,14 @@ class Model:
         """
         returns demography scenario based on an input tree and admixture
         edge list with events in the format (source, dest, start, end, rate).
-        Time on the tree is defined in coalescent units, which here is 
+        Time on the tree is defined in coalescent units, which here is
         converted to time in 2Ne generations as an int.
         """
         # Define demographic events for msprime
         demog = set()
 
-        # tag min index child for each node, since at the time the node is 
-        # called it may already be renamed by its child index b/c of 
+        # tag min index child for each node, since at the time the node is
+        # called it may already be renamed by its child index b/c of
         # divergence events.
         for node in self.tree.treenode.traverse():
             if node.children:
@@ -340,10 +340,9 @@ class Model:
                         time[0], time[1], children[0], children[1], rate),
                         file=sys.stderr)
 
-        ## sort events by type (so that mass migrations come before pop size changes) and time
+        # sort events by type (so that mass migrations come before pop size changes) and time
         demog = sorted(sorted(list(demog), key=lambda x: x.type), key=lambda x: x.time)
         return demog
-
 
     def _get_popconfig(self):
         """
@@ -527,72 +526,6 @@ class Model:
 
         self.df = loci_result
         self.seqs = res_arr
-
-
-#    def run(self):
-#        """
-#        run and parse results for nsamples simulations.
-#        """
-#        # iterate over ntests (different sampled simulation parameters)
-#        gidx = 0
-#        for ridx in range(self.ntests):
-#
-#            # get tree_sequence generator for this set of params
-#            sims = self._get_tree_sequence(ridx)
-#
-#            # repeat draws from this generator for each technical rep
-#            for rep in range(self.nreps):
-#
-#                # store results (nsnps, ntips); def. 1000 SNPs
-#                snparr = np.zeros((self.nsnps, self.ntips), dtype=np.int64)
-#
-#                # continue until all SNPs are sampled from generator
-#                nsnps = 0
-#                nfail = 0
-#                while nsnps < self.nsnps:
-#
-#                    # wrap for _msprime.LibraryError
-#                    try:
-#                        # get next tree and drop mutations
-#                        muts = ms.mutate(
-#                            tree_sequence=next(sims),
-#                            rate=self.mut,
-#                            random_seed=self.random.randint(1e9))
-#                        bingenos = muts.genotype_matrix()
-#
-#                        # convert binary SNPs to {0,1,2,3} using JC
-#                        if bingenos.size:
-#                            sitegenos = mutate_jc(bingenos, self.ntips)
-#                            snparr[nsnps] = sitegenos
-#                            nsnps += 1
-#                        else:
-#                            nfail += 1
-#
-#                    # this can occur with v. small Ne, skip to next.
-#                    except LibraryError:
-#                        pass
-#
-#                if self._debug:
-#                    print("{} trees to get {} with mutations"
-#                        .format(nsnps + nfail, self.nsnps), file=sys.stderr)
-#
-#                # organize SNPs array into multiple 16x16 arrays
-#                # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
-#                quartidx = 0
-#                qiter = itt.combinations(range(self.ntips), 4)
-#                for currquart in qiter:
-#                    # cols indices match tip labels b/c we named tips node.idx
-#                    quartsnps = snparr[:, currquart]
-#                    self.counts[gidx, quartidx] = count_matrix_int(quartsnps)
-#                    # self.counts[gidx, quartidx] = count_matrix_float(quartsnps)
-#                    quartidx += 1
-#
-#                # scale by max count for this rep
-#                # self.counts[gidx, ...] /= self.counts[gidx, ...].max()
-#                gidx += 1
-#
-#            if self._debug:
-#                print("\n", file=sys.stderr)
 
     def plot_test_values(self):
 
@@ -804,7 +737,6 @@ class Model:
                 else:  # Show an error
                     print("Error: %s file not found" % filename)
             except:
-
                 countem += 1
                 pass
 
