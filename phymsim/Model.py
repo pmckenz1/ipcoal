@@ -22,7 +22,6 @@ import re
 import subprocess
 import tempfile
 import itertools as itt
-import h5py
 from scipy.special import comb
 from copy import deepcopy
 
@@ -394,15 +393,15 @@ class Model:
     def _get_locus_sim(self, locus_len):
         """
         Performs simulations with params varied across input values.
-        """       
+        """
         # migration scenarios from admixture_edges, used in demography
         migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
         self._mtimes = [
-            self.test_values[evt]['mtimes'] for evt in 
+            self.test_values[evt]['mtimes'] for evt in
             range(len(self.admixture_edges))
-        ] 
+        ]
         self._mrates = [
-            self.test_values[evt]['mrates'] for evt in 
+            self.test_values[evt]['mrates'] for evt in
             range(len(self.admixture_edges))
         ]
 
