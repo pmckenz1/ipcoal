@@ -126,17 +126,6 @@ class Model:
         # hidden argument to turn on debugging
         self._debug = debug
 
-        # store sim params: fixed mut, Ne, recomb
-        self.mut = mut
-        self.recomb = recomb
-        if Ne:
-            self.Ne = Ne
-        else:
-            self.Ne = None
-
-        # dimension of simulations
-        self.nreps = nreps
-
         # parse the input tree
         if isinstance(tree, toytree.Toytree.ToyTree):
             self.treeorig = tree
@@ -147,6 +136,18 @@ class Model:
         else:
             raise TypeError("input tree must be newick str or Toytree object")
         self.ntips = len(self.tree)
+
+        if Ne:
+            for node in tree.treenode.traverse():
+                node.add_feature('Ne', Ne)
+
+        # store sim params: fixed mut, Ne, recomb
+        self.mut = mut
+        self.recomb = recomb
+        if Ne:
+            self.Ne = Ne
+        else:
+            self.Ne = None
 
         # storage for output
         self.nquarts = int(comb(N=self.ntips, k=4))  # scipy.special.comb
@@ -268,9 +269,8 @@ class Model:
             # print info
             if self._debug:
                 print("migration: edge({}->{}) time({:.3f}, {:.3f}), rate({:.3f}, {:.3f})"
-                    .format(snode.idx, dnode.idx, ival[0], ival[1], mr[0], mr[1]),
-                    file=sys.stderr)
-
+                      .format(snode.idx, dnode.idx, ival[0], ival[1], mr[0], mr[1]),
+                      file=sys.stderr)
 
     def _get_demography(self):
         """
@@ -279,45 +279,40 @@ class Model:
         Time on the tree is defined in coalescent units, which here is 
         converted to time in 2Ne generations as an int.
         """
-        ## Define demographic events for msprime
+        # Define demographic events for msprime
         demog = set()
 
-        ## tag min index child for each node, since at the time the node is 
-        ## called it may already be renamed by its child index b/c of 
-        ## divergence events.
+        # tag min index child for each node, since at the time the node is 
+        # called it may already be renamed by its child index b/c of 
+        # divergence events.
         for node in self.tree.treenode.traverse():
             if node.children:
                 node._schild = min([i.idx for i in node.get_descendants()])
             else:
                 node._schild = node.idx
 
-        ## Add divergence events (converts time to N generations)
+        # Add divergence events (converts time to N generations)
         for node in self.tree.treenode.traverse():
             if node.children:
                 dest = min([i._schild for i in node.children])
                 source = max([i._schild for i in node.children])
                 time = int(node.height)
                 demog.add(ms.MassMigration(time, source, dest))
-                if not self.Ne:
-                    demog.add(ms.PopulationParametersChange(time, 
-                        initial_size=node.Ne,
-                        population=dest))
-                else:
-                    demog.add(ms.PopulationParametersChange(time, 
-                        initial_size=self.Ne,
-                        population=dest))
+                demog.add(ms.PopulationParametersChange(time,
+                          initial_size=node.Ne,
+                          population=dest))
                 if self._debug:
                     print('div time: {} {} {}'
-                        .format(int(time), source, dest), file=sys.stderr)
+                          .format(int(time), source, dest), file=sys.stderr)
 
-        ## Add migration pulses
+        # Add migration pulses
         if not self.admixture_type:
             for evt in range(self.aedges):
                 rate = self.test_values[evt]['mrates']
                 time = int(self.test_values[evt]['mtimes'])
                 source, dest = self.admixture_edges[evt][:2]
 
-                ## rename nodes at time of admix in case divergences renamed them
+                # rename nodes at time of admix in case divergences renamed them
                 snode = self.tree.treenode.search_nodes(idx=source)[0]
                 dnode = self.tree.treenode.search_nodes(idx=dest)[0]
                 children = (snode._schild, dnode._schild)
@@ -327,14 +322,14 @@ class Model:
                         time, self._mtimes[evt][0], source, dest, rate),
                         file=sys.stderr)
 
-        ## Add migration intervals
+        # Add migration intervals
         else:
             for evt in range(self.aedges):
                 rate = self.test_values[evt]['mrates']
                 time = (self.test_values[evt]['mtimes']).astype(int)
                 source, dest = self.admixture_edges[evt][:2]
 
-                ## rename nodes at time of admix in case divergences renamed them
+                # rename nodes at time of admix in case divergences renamed them
                 snode = self.tree.treenode.search_nodes(idx=source)[0]
                 dnode = self.tree.treenode.search_nodes(idx=dest)[0]
                 children = (snode._schild, dnode._schild)
@@ -354,51 +349,46 @@ class Model:
         """
         returns population_configurations for N tips of a tree
         """
-        if not self.Ne:
-            Ne_vals = []
-            for node in self.tree.treenode.traverse():
-                if node.is_leaf():
-                    Ne_vals.append(node.Ne)
-            inv_Ne_vals = Ne_vals[::-1] # this is so they're added to the tree in the right order...
-            population_configurations = [
-                ms.PopulationConfiguration(sample_size=1, initial_size=inv_Ne_vals[ntip])
-                for ntip in range(self.ntips)]
-        else:
-            population_configurations = [
-                ms.PopulationConfiguration(sample_size=1, initial_size=self.Ne)
-                for ntip in range(self.ntips)]
+        Ne_vals = []
+        for node in self.tree.treenode.traverse():
+            if node.is_leaf():
+                Ne_vals.append(node.Ne)
+        inv_Ne_vals = Ne_vals[::-1]  # this is so they're added to the tree in the right order...
+        population_configurations = [
+            ms.PopulationConfiguration(sample_size=1,
+                                       initial_size=inv_Ne_vals[ntip])
+            for ntip in range(self.ntips)]
 
         return population_configurations
-
 
     def _get_SNP_sims(self, nsnps):
         """
         Performs simulations with params varied across input values.
-        """       
+        """
         # migration scenarios from admixture_edges, used in demography
         migmat = np.zeros((self.ntips, self.ntips), dtype=int).tolist()
         self._mtimes = [
-            self.test_values[evt]['mtimes'] for evt in 
+            self.test_values[evt]['mtimes'] for evt in
             range(len(self.admixture_edges))
-        ] 
+        ]
         self._mrates = [
-            self.test_values[evt]['mrates'] for evt in 
+            self.test_values[evt]['mrates'] for evt in
             range(len(self.admixture_edges))
         ]
 
         # debug printer
         if self._debug:
             print("pop: Ne:{}, mut:{:.2E}"
-                .format(self.Ne, self.mut),
-                file=sys.stderr)
+                  .format(self.Ne, self.mut),
+                  file=sys.stderr)
 
         # msprime simulation to make tree_sequence generator
         sim = ms.simulate(
             random_seed=self.random.randint(1e9),
             migration_matrix=migmat,
-            num_replicates=nsnps * 10000,                 # ensures SNPs 
+            num_replicates=nsnps * 10000,                 # ensures SNPs
             population_configurations=self._get_popconfig(),  # applies Ne
-            demographic_events=self._get_demography(),        # applies popst. 
+            demographic_events=self._get_demography(),        # applies popst.
         )
         return sim
 
@@ -420,8 +410,8 @@ class Model:
         # debug printer
         if self._debug:
             print("pop: Ne:{}, mut:{:.2E}"
-                .format(self.Ne, self.mut),
-                        file=sys.stderr)
+                  .format(self.Ne, self.mut),
+                  file=sys.stderr)
 
         # msprime simulation to make tree_sequence generator
         sim = ms.simulate(
