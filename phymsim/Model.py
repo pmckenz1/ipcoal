@@ -678,7 +678,7 @@ class Model:
 
     def infer_trees(self, method='iqtree'):
         for seqnum in range(len(self.seqs)):
-            fastapath = "tempfile.fasta"
+            fastapath = "tempfile" + str(np.random.randint(0, 99999)) + ".fasta"
             self.write_fasta(seqnum, fastapath)
 
             self._call_iq(['iqtree',
