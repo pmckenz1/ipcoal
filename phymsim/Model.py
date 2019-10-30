@@ -598,8 +598,7 @@ class Model:
 
     def seqgen_on_tree(self, newick, seqlength):
         fname = os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".tmp")
-        with open("tmploc.txt","w") as f:
-            f.write(fname)
+
         with open(fname, 'w') as temp:
             temp.write(newick)
 
@@ -621,8 +620,6 @@ class Model:
         if proc1.returncode:
             raise Exception("seq-gen error: {}".format(out.decode()))
 
-        with open("rawseq.txt","w") as f:
-            f.write(out.decode())
         # remove the "Time taken: 0.0000 seconds" bug in seq-gen
         physeq = re.sub(
             pattern=r"Time\s\w+:\s\d.\d+\s\w+\n",
@@ -635,8 +632,7 @@ class Model:
 
         # make seqs into array, sort it, and count differences
         physeq = physeq.strip().split("\n")[-(self.ntips + 1):]
-        with open("seqlook.txt", "w") as f:
-            f.write(str(physeq))
+
         arr = np.array([list(i.split()[-2:]) for i in physeq[1:]], dtype=bytes)
         names = [arr_ele[0].astype(str) for arr_ele in arr]
         seqs = [arr_ele[1].astype(str) for arr_ele in arr]
