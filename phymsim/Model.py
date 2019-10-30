@@ -628,6 +628,10 @@ class Model:
             pattern=r"Time\s\w+:\s\d.\d+\s\w+\n",
             repl="",
             string=out.decode())
+        physeq = re.sub(
+            pattern=r"Time\s\w+:\s\d+\s\w+\n",
+            repl="",
+            string=physeq)
 
         # make seqs into array, sort it, and count differences
         physeq = physeq.strip().split("\n")[-(self.ntips + 1):]
