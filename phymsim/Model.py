@@ -629,6 +629,8 @@ class Model:
 
         # make seqs into array, sort it, and count differences
         physeq = physeq.strip().split("\n")[-(self.ntips + 1):]
+        with open("seqlook.txt", "w") as f:
+            f.write(physeq)
         arr = np.array([list(i.split()[-2:]) for i in physeq[1:]], dtype=bytes)
         names = [arr_ele[0].astype(str) for arr_ele in arr]
         seqs = [arr_ele[1].astype(str) for arr_ele in arr]
