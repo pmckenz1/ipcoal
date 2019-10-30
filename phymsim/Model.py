@@ -598,6 +598,8 @@ class Model:
 
     def seqgen_on_tree(self, newick, seqlength):
         fname = os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".tmp")
+        with open("tmploc.txt","w") as f:
+            f.write(fname)
         with open(fname, 'w') as temp:
             temp.write(newick)
 
