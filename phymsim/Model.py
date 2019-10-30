@@ -621,6 +621,8 @@ class Model:
         if proc1.returncode:
             raise Exception("seq-gen error: {}".format(out.decode()))
 
+        with open("rawseq.txt","w") as f:
+            f.write(out.decode())
         # remove the "Time taken: 0.0000 seconds" bug in seq-gen
         physeq = re.sub(
             pattern=r"Time\s\w+:\s\d.\d+\s\w+\n",
