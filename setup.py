@@ -5,7 +5,7 @@ setup(
     name="phymsim",
     packages=["phymsim"],
     version="0.0.1",
-    author="Patrick McKenzie",
+    author="Patrick McKenzie and Deren Eaton",
     author_email="p.mckenzie@columbia.edu",
     install_requires=[
         "scipy>0.10",

@@ -136,10 +136,6 @@ class Model:
             raise TypeError("input tree must be newick str or Toytree object")
         self.ntips = len(self.tree)
 
-        if Ne:
-            for node in tree.treenode.traverse():
-                node.add_feature('Ne', Ne)
-
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
         self.recomb = recomb
@@ -147,6 +143,10 @@ class Model:
             self.Ne = Ne
         else:
             self.Ne = None
+
+        if self.Ne:
+            for node in self.tree.treenode.traverse():
+                node.add_feature('Ne', Ne)
 
         # storage for output
         self.nquarts = int(comb(N=self.ntips, k=4))  # scipy.special.comb
@@ -521,7 +521,7 @@ class Model:
         loci_result['inferred_trees'] = np.repeat(None, len(cumulative_list))
 
         # reindex
-        loci_result.set_index(pd.Series(range(len(loci_result))))
+        loci_result = loci_result.set_index(pd.Series(range(len(loci_result))))
 
         self.df = loci_result
         self.seqs = res_arr
