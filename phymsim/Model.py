@@ -685,11 +685,12 @@ class Model:
                            '-s', fastapath,
                            '-m', 'MFP',
                            '-bb', '1000'])
-            with open(fastapath+".treefile", 'r') as treefile:
-                newick = treefile.read()
-            self.df.loc[(self.df['locus_idx'] == seqnum),
-                        'inferred_trees'] = newick
-            self.newicklist.append(newick)
+            if os.path.isfile(fastapath+".treefile"):
+                with open(fastapath+".treefile", 'r') as treefile:
+                    newick = treefile.read()
+                self.df.loc[(self.df['locus_idx'] == seqnum),
+                            'inferred_trees'] = newick
+                self.newicklist.append(newick)
             for filename in glob.glob(fastapath+"*"):
                 os.remove(filename)
 
