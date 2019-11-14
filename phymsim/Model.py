@@ -737,10 +737,10 @@ class Model:
                     n_counted_snps += 1
 
                     countem += 1
-                if os.path.isfile(filename):
-                    os.remove(filename)
-                else:  # Show an error
-                    print("Error: %s file not found" % filename)
+                #if os.path.isfile(filename):
+                os.remove(filename)
+                #else:  # Show an error
+                #    print("Error: %s file not found" % filename)
             except:
                 countem += 1
                 pass
