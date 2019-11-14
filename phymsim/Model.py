@@ -742,9 +742,9 @@ class Model:
                 os.remove(filename)
                 #else:  # Show an error
                 #    print("Error: %s file not found" % filename)
-            except:
-                countem += 1
-                pass
+            #except:
+            #    countem += 1
+            #    pass
 
         # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
         quartidx = 0
