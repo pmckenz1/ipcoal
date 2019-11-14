@@ -709,43 +709,43 @@ class Model:
         n_counted_snps = 0
 
         countem = 0
-        while n_counted_snps < nsnps:
-            try:
-                newtree = next(next(sims).trees()).newick()
+        while (n_counted_snps < nsnps):
+            # try:
+            newtree = next(next(sims).trees()).newick()
 
-                filename = str(np.random.randint(1e10)) + '.newick'
-                with open(filename, 'w') as f:
-                    f.write(str(newtree))
+            filename = str(np.random.randint(1e10)) + '.newick'
+            with open(filename, 'w') as f:
+                f.write(str(newtree))
 
-                process = subprocess.Popen(['seq-gen',
-                                            '-m', 'GTR',
-                                            '-l', '1',
-                                            '-s', str(self.mut),
-                                            filename,
-                                            '-or',
-                                            '-q'],
-                                           stdout=subprocess.PIPE,
-                                           stderr=subprocess.PIPE)
-                stdout, stderr = process.communicate()
+            process = subprocess.Popen(['seq-gen',
+                                        '-m', 'GTR',
+                                        '-l', '1',
+                                        '-s', str(self.mut),
+                                        filename,
+                                        '-or',
+                                        '-q'],
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
 
-                result = stdout.decode("utf-8").split('\n')[:-1]
-                geno = dict([i.split(' ') for i in result[1:]])
+            result = stdout.decode("utf-8").split('\n')[:-1]
+            geno = dict([i.split(' ') for i in result[1:]])
 
-                ordered = [geno[np.str(i)] for i in range(1, len(geno)+1)]
+            ordered = [geno[np.str(i)] for i in range(1, len(geno)+1)]
 
-                if len(np.unique(ordered)) > 1:
-                    snparr[n_counted_snps] = base_to_int(ordered)
-                    n_counted_snps += 1
+            if len(np.unique(ordered)) > 1:
+                snparr[n_counted_snps] = base_to_int(ordered)
+                n_counted_snps += 1
 
-                    countem += 1
-                #if os.path.isfile(filename):
-                os.remove(filename)
-                #else:  # Show an error
-                #    print("Error: %s file not found" % filename)
-            #except:
+                countem += 1
+            # if os.path.isfile(filename):
+            os.remove(filename)
+            # else:  # Show an error
+            # print("Error: %s file not found" % filename)
+            # except:
+            #    pass
             #    countem += 1
             #    pass
-
         # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
         quartidx = 0
         qiter = itt.combinations(range(self.ntips), 4)
