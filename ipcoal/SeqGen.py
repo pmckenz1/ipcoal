@@ -50,7 +50,7 @@ class SeqGen:
         """
         # command string
         cmd = (
-            "{} -mGTR -l {} -s {} -z {} <<< \"{}\"; echo done\n"
+            "{} -mGTR -l {} -s {} -z {} -q <<< \"{}\"; echo done\n"
             .format(self.binary, nsites, mut, seed, newick)
         )
 
