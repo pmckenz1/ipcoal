@@ -4,7 +4,7 @@ from setuptools import setup
 setup(
     name="ipcoal",
     packages=["ipcoal"],
-    version="0.0.2",
+    version="0.0.3",
     author="Patrick McKenzie and Deren Eaton",
     author_email="p.mckenzie@columbia.edu",
     install_requires=[
@@ -12,9 +12,9 @@ setup(
         "numpy>=1.9",
         "pandas>=0.16",
         "numba",
-        "toytree",
+        "toytree>=1.0.3",
         "msprime",
-        "ipyparallel",
+        # "ipyparallel",
         # seq-gen (optional)
     ],
     license='GPL',
