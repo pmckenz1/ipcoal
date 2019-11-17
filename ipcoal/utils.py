@@ -5,15 +5,15 @@ import datetime
 import itertools
 import numpy as np
 import pandas as pd
-from IPython.display import display
 
 try:
+    from IPython.display import display
     from ipywidgets import IntProgress, HTML, Box
 except ImportError:
     pass
 
 
-class SimcatError(Exception):
+class ipcoalError(Exception):
     def __init__(self, *args, **kwargs):
         Exception.__init__(self, *args, **kwargs)
 
@@ -77,6 +77,77 @@ def tile_reps(array, nreps):
         .reshape((nr, ts))
         .T.flatten())
     return result
+
+
+
+def plot_test_values(self):
+
+    """
+    Returns a toyplot canvas
+    """
+    # canvas, axes = plot_test_values(self.tree)
+    if not self.counts.sum():
+        raise SimcatError("No mutations generated. First call '.run()'")
+
+    # setup canvas
+    canvas = toyplot.Canvas(height=250, width=800)
+
+    ax0 = canvas.cartesian(
+        grid=(1, 3, 0))
+    ax1 = canvas.cartesian(
+        grid=(1, 3, 1),
+        xlabel="simulation index",
+        ylabel="migration intervals",
+        ymin=0,
+        ymax=self.tree.treenode.height)  # * 2 * self._Ne)
+    ax2 = canvas.cartesian(
+        grid=(1, 3, 2),
+        xlabel="proportion migrants",
+        # xlabel="N migrants (M)",
+        ylabel="frequency")
+
+    # advance colors for different edges starting from 1
+    colors = iter(toyplot.color.Palette())
+
+    # draw tree
+    self.tree.draw(
+        tree_style='c',
+        node_labels=self.tree.get_node_values("idx", 1, 1),
+        tip_labels=False,
+        axes=ax0,
+        node_sizes=16,
+        padding=50)
+    ax0.show = False
+
+    # iterate over edges
+    for tidx in range(self.aedges):
+        color = next(colors)
+
+        # get values for the first admixture edge
+        mtimes = self.test_values[tidx]["mtimes"]
+        mrates = self.test_values[tidx]["mrates"]
+        mt = mtimes[mtimes[:, 0].argsort()]
+        boundaries = np.column_stack((mt[:, 0], mt[:, 1]))
+
+        # plot
+        for idx in range(boundaries.shape[0]):
+            ax1.fill(
+                # boundaries[idx],
+                (boundaries[idx][0], boundaries[idx][0] + 0.1),
+                (idx, idx),
+                (idx + 0.5, idx + 0.5),
+                along='y',
+                color=color,
+                opacity=0.5)
+
+        # migration rates/props
+        ax2.bars(
+            np.histogram(mrates, bins=20),
+            color=color,
+            opacity=0.5,
+        )
+
+    return canvas, (ax0, ax1, ax2)
 
 
 # def progress_bar(njobs, nfinished, start, message=""):
@@ -250,36 +321,33 @@ class Progress(object):
         self.label.value = self.printstr
 
 
-class Params(object):
-    """ 
-    A dict-like object for storing params values with a custom repr
-    that shortens file paths, and which makes attributes easily viewable
-    through tab completion in a notebook while hiding other funcs, attrs, that
-    are in normal dicts. 
-    """
-    def __len__(self):
-        return len(self.__dict__)
 
-    def __iter__(self):
-        for attr, value in self.__dict__.items():
-            yield attr, value
+# class Params(object):
+#     """ 
+#     A dict-like object for storing params values with a custom repr
+#     that shortens file paths, and which makes attributes easily viewable
+#     through tab completion in a notebook while hiding other funcs, attrs, that
+#     are in normal dicts. 
+#     """
+#     def __len__(self):
+#         return len(self.__dict__)
 
-    def __getitem__(self, key):
-        return self.__dict__[key]
+#     def __iter__(self):
+#         for attr, value in self.__dict__.items():
+#             yield attr, value
 
-    def __setitem__(self, key, value):
-        self.__dict__[key] = value
+#     def __getitem__(self, key):
+#         return self.__dict__[key]
 
-    def __repr__(self):
-        _repr = ""
-        keys = sorted(self.__dict__.keys())
-        if keys:
-            _printstr = "{:<" + str(2 + max([len(i) for i in keys])) + "} {:<20}\n"
-            for key in keys:
-                _val = str(self[key]).replace(os.path.expanduser("~"), "~")
-                _repr += _printstr.format(key, _val)
-        return _repr
+#     def __setitem__(self, key, value):
+#         self.__dict__[key] = value
 
-
-
-
+#     def __repr__(self):
+#         _repr = ""
+#         keys = sorted(self.__dict__.keys())
+#         if keys:
+#             _printstr = "{:<" + str(2 + max([len(i) for i in keys])) + "} {:<20}\n"
+#             for key in keys:
+#                 _val = str(self[key]).replace(os.path.expanduser("~"), "~")
+#                 _repr += _printstr.format(key, _val)
+#         return _repr

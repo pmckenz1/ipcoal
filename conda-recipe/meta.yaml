@@ -1,0 +1,37 @@
+package:
+  name: ipcoal
+  version: '0.0.2'
+
+source:
+  url: https://github.com/eaton-lab/ipcoal/archive/0.0.2.tar.gz
+  # sha256: 7f19a50a21136dba9a0dd5e223ac5829f1997e14b3cfb82097983002820833eb
+
+build:
+  number: 0
+  script: "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv"
+  noarch: python
+  
+requirements:
+  host:
+    - pip
+    - python
+  run:
+    - python
+    - numpy >=1.10
+    - scipy >=0.10
+    - pandas >=0.16
+    - numba
+    - toyplot >=1.0
+    - future
+    - msprime
+    - ipyparallel
+    - raxml
+
+test:
+  imports:
+    - ipcoal
+
+about:
+  home: http://github.com/eaton-lab/ipcoal
+  license: GPLv3
+  summary: Interactive and reproducible simulation and analysis of gene trees.
