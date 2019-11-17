@@ -23,6 +23,8 @@ import msprime as ms
 from .utils import get_all_admix_edges, ipcoalError
 from .SeqGen import SeqGen
 from .TreeInfer import TreeInfer
+from .Writer import Writer
+
 
 
 class Model:
@@ -632,48 +634,63 @@ class Model:
 
 
 
-    def write_seqs_as_fasta(self, loc, path):
-        fastaseq = deepcopy(self.seqs[loc]).astype(str)
 
-        fastaseq[fastaseq == '0'] = "A"
-        fastaseq[fastaseq == '1'] = "C"
-        fastaseq[fastaseq == '2'] = "G"
-        fastaseq[fastaseq == '3'] = "T"
+    def write_loci_to_phylip(self, outdir="./ipcoal-sims/", outfile=None, idx=None):
+        """
+        Write all seq data for each locus to a separate phylip file in a shared
+        directory with each locus named by ids locus index. 
 
-        fasta = []
-        for idx, name in enumerate(self.names):
-            fasta.append(('>' + name + '\n'))
-            fasta.append("".join(fastaseq[idx])+'\n')
+        Parameters:
+        -----------
+        outdir (str):
+            A directory in which to write all the phylip files. It will be 
+            created if it does not yet exist. Default is "./ipcoal_loci/".
+        outfile (str):
+            Only used if idx is not None. Set the name of the locus file being
+            written. This is used internally to write tmpfiles for TreeInfer.
+        idx (int):
+            To write a single locus file provide the idx. If None then all loci
+            are written to separate files.
+        """
+        writer = Writer(self.seqs, self.names)
+        writer.write_loci_to_phylip(outdir, outfile, idx)
 
-        with open(path, 'w') as file:
-            for line in fasta:
-                file.write(line)
+        # report
+        print("wrote {} loci ({} x {}bp) to {}/[...].phy".format(
+            self.seqs.shape[0], self.seqs.shape[1], self.seqs.shape[2],
+            writer.outdir.strip("/")
+            ),
+        )
 
 
+    def write_seqs_to_phylip(self, outfile="./test.phy"):
+        """
+        Write all seq data (loci or snps) concated to a single phylip file.
 
-    def write_loci_to_phylip(self):
-        pass
+        Parameters:
+        -----------
+        outfile (str):
+            The name/path of the outfile to write. Default is "./test.phy"
+        """       
+        writer = Writer(self.seqs, self.names)
+        writer.write_seqs_to_phylip(outfile)
+
+        # report 
+        if self.seqs.ndim == 2:
+            ntax = self.seqs.shape[0]
+            nbps = self.seqs.shape[1]
+        else:
+            ntax = self.seqs.shape[1]
+            nbps = self.seqs.shape[0] * self.seqs.shape[2]
+        print(
+            "wrote concatenated sequence file ({} x {}bp) to {}"
+            .format(ntax, nbps, writer.outfile),
+            )
 
 
-    def write_seqs_to_phylip(self):
-        pass
-
-
-    def write_seqs_to_countmatrix(self):
+    def _write_seqs_to_countmatrix(self):
         pass
  
-
-
-    def _call_iq(self, command_list):
-        """ call the command as sps """
-        proc = subprocess.Popen(
-            command_list,
-            stderr=subprocess.STDOUT,
-            stdout=subprocess.PIPE
-            )
-        proc.communicate()
-        # return comm[0].decode()
-
 
 
     def infer_gene_trees(self, method='iqtree'):
@@ -717,40 +734,3 @@ class Model:
             # clean up tempfiles
             ti.cleanup()
 
-
-
-
-            fastapath = "tempfile" + str(np.random.randint(0, 99999)) + ".fasta"
-            self.write_fasta(seqnum, fastapath)
-
-            self._call_iq(['iqtree',
-                           '-s', fastapath,
-                           '-m', 'MFP',
-                           '-bb', '1000'])
-            if os.path.isfile(fastapath+".treefile"):
-                with open(fastapath+".treefile", 'r') as treefile:
-                    newick = treefile.read()
-                self.df.loc[(self.df['locus_idx'] == seqnum),
-                            'inferred_trees'] = newick
-                self.newicklist.append(newick)
-            for filename in glob.glob(fastapath+"*"):
-                os.remove(filename)
-       # storage for output
-        # self.nquarts = int(comb(N=self.ntips, k=4))  # scipy.special.comb
-
-        # temporarily format these as stacked matrices
-
-
-
-             
-        # # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
-        # quartidx = 0
-        # qiter = itt.combinations(range(self.ntips), 4)
-        # for currquart in qiter:
-        #     # cols indices match tip labels b/c we named tips node.idx
-        #     quartsnps = snparr[:, currquart]
-        #     # save as stacked matrices
-        #     tmpcounts[quartidx] = count_matrix_int(quartsnps)
-        #     # save flattened to counts
-        #     quartidx += 1
-        # return(np.ravel(tmpcounts))
