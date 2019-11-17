@@ -4,6 +4,8 @@
 import os
 import sys
 import subprocess as sps
+
+from .Writer import Writer
 from .utils import ipcoalError
 
 
@@ -26,7 +28,7 @@ class TreeInfer:
         self.method = method.lower()
         self.inference_args = {}
         self.check_method_and_binary()
-        self.run()
+        self.run(0)
 
 
 
