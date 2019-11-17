@@ -3,7 +3,7 @@
 
 import os
 import numpy as np
-
+from .utils import ipcoalError
 
 
 class Writer:
@@ -20,7 +20,6 @@ class Writer:
         names (list)
             A list of the taxon names ordered alphanumerically.
         """
-
         # both are already ordered alphanumerically
         self.seqs = seqs
         self.names = names
@@ -29,34 +28,44 @@ class Writer:
 
 
 
-    def write_loci_to_phylip(self, outdir, idx=None, outfile=None):
+    def write_loci_to_phylip(self, outdir, idxs=None, name_prefix=None, name_suffix=None):
         """
         Write all seq data for each locus to a separate phylip file in a shared
-        directory with each locus named by ids locus index. 
+        directory with each locus named by locus index. If you want to write
+        only a subset of loci to file you can list their index
 
         Parameters:
         -----------
         outdir (str):
             A directory in which to write all the phylip files. It will be 
             created if it does not yet exist. Default is "./ipcoal_loci/".
-        idx (int):
-            To write a single locus file provide the idx. If None then all loci
-            are written to separate files.
-        outfile (str):
-            Only used if idx is not None. Set the name of the locus file being
-            written. This is used internally to write tmpfiles for TreeInfer.
+        idx (list):
+            Numeric indices of the rows (loci) to be written to file. 
+            Default=None meaning that all loci will be written to file. 
         """
-
         # make outdir if it does not yet exist
         self.outdir = os.path.realpath(os.path.expanduser(outdir))
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
 
+        # set names parts to empty string if None
+        name_suffix = ("" if name_suffix is None else name_suffix)
+        name_prefix = ("" if name_prefix is None else name_prefix)
+
         # get loci to write
-        if not idx:
+        if idxs is None:
             lrange = range(self.seqs.shape[0])
         else:
-            lrange = range(idx, idx + 1)
+            # if int make it iterable
+            if isinstance(idxs, int):
+                lrange = [idxs]
+            else:
+                lrange = list(idxs)
+
+            # check that idxs exist
+            for loc in lrange:
+                if loc not in range(self.seqs.shape[0]):
+                    raise ipcoalError("idx {} is not in the data set")
 
         # iterate over loci (or single selected locus)
         for loc in lrange:
@@ -66,9 +75,10 @@ class Writer:
             arr = convert_intarr_to_bytearr(arr)
 
             # open file handle numbered unless user
-            fhandle = os.path.join(self.outdir, "{}-ipcoal.phy".format(loc))
-            if (idx and outfile):
-                fhandle = fhandle
+            fhandle = os.path.join(
+                self.outdir, 
+                "{}{}{}.phy".format(name_prefix, loc, name_suffix),
+            )
 
             # build list of line strings
             phystring = self.build_phystring_from_loc(arr)
@@ -77,9 +87,11 @@ class Writer:
             with open(fhandle, 'w') as out:
                 out.write(phystring)
 
+        self.written = len(lrange)
 
 
-    def write_seqs_to_phylip(self, outfile):
+
+    def write_concat_to_phylip(self, outdir, name, idxs=None):
         """
         Write all seq data (loci or snps) concated to a single phylip file.
 
@@ -87,19 +99,26 @@ class Writer:
         -----------
         outfile (str):
             The name/path of the outfile to write. 
+        idxs (list):
+            A list of locus indices to subselect which will be concatenated.
         """
         # create a directory if it doesn't exist
-        outfile = os.path.realpath(os.path.expanduser(outfile))
-        directory = os.path.dirname(outfile)
-        directory = os.path.realpath(os.path.expanduser(directory))
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        outdir = os.path.realpath(os.path.expanduser(outdir))
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+        outfile = os.path.join(outdir, name)
 
         # concat loci (unless SNPs already) and convert to bases
         if self.seqs.ndim == 2:
-            arr = self.seqs.astype(bytes)
+            if idxs is not None:
+                arr = self.seqs[:, idxs].astype(bytes)
+            else:
+                arr = self.seqs.astype(bytes)
         else:
-            arr = np.concatenate(self.seqs, axis=1).astype(bytes)
+            if idxs is not None:
+                arr = np.concatenate(self.seqs[idxs], axis=1).astype(bytes)
+            else:
+                arr = np.concatenate(self.seqs, axis=1).astype(bytes)
         arr = convert_intarr_to_bytearr(arr)
 
         # build list of line strings
@@ -109,6 +128,7 @@ class Writer:
         with open(outfile, 'w') as out:
             out.write(phystring)
         self.outfile = outfile
+        self.shape = arr.shape
 
 
 
@@ -120,7 +140,6 @@ class Writer:
         aaaaaaaaaa ATCTCTACAT...
         bbbbbbb    ATCTCTACAT...
         cccccccc   ATCACTACAT...
-
         """
         loclist = ["{} {}".format(arr.shape[0], arr.shape[1])]
         for row in range(arr.shape[0]):
