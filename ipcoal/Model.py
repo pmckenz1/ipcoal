@@ -10,9 +10,7 @@ from __future__ import print_function
 from builtins import range
 
 # imports
-import os
 import sys
-import subprocess
 from copy import deepcopy
 
 import toytree
@@ -26,6 +24,10 @@ from .TreeInfer import TreeInfer
 from .Writer import Writer
 
 
+# set global display preference to make tree columns look nice
+pd.set_option("max_colwidth", 28)
+
+
 
 class Model:
     """
@@ -35,15 +37,16 @@ class Model:
     def __init__(
         self,
         tree,
+        Ne=10000,   
         admixture_edges=None,
         admixture_type=0,
-        Ne=10000,
+        samples=1,
         recomb=1e-9,
         mut=1e-8,
-        nreps=1,
         seed=None,
         debug=False,
-        run=False,
+        # run=False,
+        # nreps=1,
         ):
 
         """
@@ -91,21 +94,33 @@ class Model:
             admixture interval and 'rate' is a constant migration rate over
             this time period.
 
-        theta (float, tuple):
-            Mutation parameter. Enter a float, or a tuple of floats to supply
-            a range to sample from over ntests. If None then values will be
-            extracted from the Toytree if it has a 'theta' feature on each
-            internal node. Else an errror will be raise if no thetas found.
+        Ne (float, int): default=10000
+            The effective population size. This value will be set to all edges
+            of the tree. If you want to set different Ne values to different
+            edges then you should add Ne node attributes to your input tree
+            which will override the global value at those nodes. For example, 
+            if you set Ne=5000, and on your tree set Ne values for a few nodes
+            with (tre.set_node_values("Ne", {1:1000, 2:10000})) then all edges
+            will use Ne=5000 except those nodes.
 
+        mut (float): default=1e-8
+            ...
+
+        recomb (float): default=1e-9
+            ...
+
+        DEPRECATED (unless simcat uses this)                
         nsnps (int):
             Number of unlinked SNPs simulated (e.g., counts is (nsnps, 16, 16))
 
+        DEPRECATED (unless simcat uses this)        
         ntests (int):
             Number of parameter sets to sample for each event, i.e., given
             a theta range and admixture events range multiple sets of parameter
             values could be sampled. The counts array is expanded to be
             (ntests, nsnps, 16, 16)
 
+        DEPRECATED (unless simcat uses this)
         nreps (int):
             Number of technical replicates to run using the same param sets.
             The counts array is expanded to be (nreps * ntests, nsnps, 16, 16)
@@ -130,16 +145,15 @@ class Model:
         else:
             raise TypeError("input tree must be newick str or Toytree object")
         self.ntips = len(self.tree)
+        self.samples = int(samples)
 
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
         self.recomb = recomb
 
-        # user Ne, else a global Ne value or extract Nes from the tree nodes.
-        self.Ne = (Ne if Ne else None)
-        if self.Ne:
-            for node in self.tree.treenode.traverse():
-                node.add_feature('Ne', Ne)
+        # global Ne will be overwritten by Ne attrs in .tree. This sets node.Ne
+        self.Ne = Ne
+        self._get_Ne()
 
         # store node.name as node.idx, save old names in a dict.
         self.namedict = {}
@@ -163,23 +177,52 @@ class Model:
         self.aedges = (
             0 if not self.admixture_edges else len(self.admixture_edges))
 
-        # generate sim parameters from the tree and admixture scenarios
-        # stores in self.sims 'mrates' and 'mtimes'
+        # demography info to fill        
+        self.test_values = {}
+        self.ms_demography = set()
+        self.ms_popconfig = ms.PopulationConfiguration()
+
+        # get admix time,rate and store: .test_values {mrates: [], mtimes: []}
         self._get_test_values()
 
-        # get demography as msprime input
-        self.ms_demography = self._get_demography()
+        # get demography dict for msprime input
+        self._get_demography()
 
         # get popconfig as msprime input
-        self.ms_popconfig = self._get_popconfig()
+        self._get_popconfig()
 
         # hold the model outputs
         self.df = None
         self.seqs = None
 
-        # fill the counts matrix or call run later
-        if run:
-            self.run()
+
+
+    def _get_Ne(self):
+        """
+        If Ne node attrs are present in the input tree these override the 
+        global Ne argument which is set to all other nodes. Every node should
+        have an Ne value at the end of this. Sets node.Ne attrs and sets max
+        value to self.Ne.
+        """
+
+        # get map of {nidx: node}
+        ndict = self.tree.get_node_dict(True, True)
+
+        # set user entered arg (self.Ne) to any node without a Ne attr
+        for nidx, node in ndict.items():
+            if not hasattr(node, "Ne"):
+                setattr(node, "Ne", int(self.Ne))
+            else:
+                setattr(node, "Ne", int(node.Ne))
+
+        # check that all nodes have .Ne
+        nes = self.tree.get_node_values("Ne", True, True)
+        if not all(nes):
+            raise ipcoalError(
+                "Ne must be provided as an argument or tree node attribute.")
+
+        # set to the max value        
+        self.Ne = max(nes)
 
 
 
@@ -263,17 +306,17 @@ class Model:
             }
             idx += 1
 
-            # print info when debug flag is on to stderr
-            if self._debug:
-                print(
-                    "migration: edge({}->{}) time({:.3f}, {:.3f}), "
-                    "rate({:.3f}, {:.3f})"
-                    .format(
-                        snode.idx, dnode.idx, ival[0], ival[1], 
-                        mr[0], mr[1]
-                    ),
-                    file=sys.stderr,
-                )
+            # # print info when debug flag is on to stderr
+            # if self._debug:
+            #     print(
+            #         "migration: edge({}->{}) time({:.3f}, {:.3f}), "
+            #         "rate({:.3f}, {:.3f})"
+            #         .format(
+            #             snode.idx, dnode.idx, ival[0], ival[1], 
+            #             mr[0], mr[1]
+            #         ),
+            #         file=sys.stderr,
+            #     )
 
 
 
@@ -309,10 +352,11 @@ class Model:
                 )
                 if self._debug:
                     print(
-                        'div time:  {:>12} {:>2} {:>2} ({}) ({})'
+                        'div time:  {:>9}, {:>2} {:>2}, {:>2} {:>2}, Ne={}'
                         .format(
                             int(time), source, dest,
                             node.children[0].idx, node.children[1].idx,
+                            node.Ne,
                             ),
                         file=sys.stderr,
                     )
@@ -332,8 +376,12 @@ class Model:
                     ms.MassMigration(time, children[0], children[1], rate))
                 if self._debug:
                     print(
-                        'mig pulse: {:>12} {:>2} {:>2} {:>2.3f}'
-                        .format(time, snode.name, dnode.name, rate),
+                        'mig pulse: {:>9}, {:>2} {:>2}, {:>2} {:>2}, rate={:.2f}'
+                        .format(
+                            time, 
+                            "", "", # node.children[0].idx, node.children[1].idx, 
+                            snode.name, dnode.name, 
+                            rate),
                         file=sys.stderr,
                     )
 
@@ -359,7 +407,7 @@ class Model:
         # changes) and time
         demog = sorted(list(demog), key=lambda x: x.type)
         demog = sorted(demog, key=lambda x: x.time)
-        return demog
+        self.ms_demography = demog
 
 
 
@@ -367,6 +415,7 @@ class Model:
         """
         returns population_configurations for N tips of a tree
         """       
+        # pull Ne values from the toytree nodes attrs.
         if not self.Ne:
             # get Ne values from tips of the tree
             nes = self.tree.get_node_values("Ne", show_tips=True)
@@ -374,19 +423,26 @@ class Model:
 
             # list of popconfig objects for each tip
             population_configurations = [
-                ms.PopulationConfiguration(sample_size=1, initial_size=nes[i])
+                ms.PopulationConfiguration(
+                    sample_size=self.samples, initial_size=nes[i])
                 for i in range(self.ntips)]
+
+            # set the max Ne value as the global Ne
+            self.Ne = max(nes)
+
+        # set user-provided Ne value to all edges of the tree
         else:
             population_configurations = [
-                ms.PopulationConfiguration(sample_size=1, initial_size=self.Ne)
+                ms.PopulationConfiguration(
+                    sample_size=self.samples, initial_size=self.Ne)
                 for ntip in range(self.ntips)]
 
         # debug printer
         if self._debug:
-            print("pop: Ne:{:.0f}, mut:{:.2E}".format(self.Ne, self.mut),
+            print(
+                "pop: Ne:{:.0f}, mut:{:.2E}".format(self.Ne, self.mut),
                 file=sys.stderr)
-
-        return population_configurations
+        self.ms_popconfig = population_configurations
 
 
 
@@ -462,7 +518,7 @@ class Model:
                 node_labels={i: self.namedict[i] for i in atree.leaves()}
             )
             newicks.append(nwk)
-            
+
         # init dataframe
         df = pd.DataFrame({
             "start": np.round(starts).astype(int),
@@ -470,9 +526,9 @@ class Model:
             "genealogy": newicks,
             "nbps": bps,
             "nsnps": 0,
-            "loc": locus_idx,
+            "locus": locus_idx,
             },
-            columns=['loc', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
+            columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
         )
 
         # the full sequence array to fill
@@ -542,7 +598,7 @@ class Model:
 
             # store seqs in a list for now
             seqarr[lidx] = arr
-           
+
             # store the genetree df in a list for now
             dflist.append(df)
 
@@ -589,7 +645,7 @@ class Model:
 
         # continue until we get nsnps
         while 1: 
-            
+
             # bail out if nsnps finished
             if snpidx == nsnps:
                 break
@@ -626,16 +682,21 @@ class Model:
             "genealogy": newicks,
             "nbps": 1, 
             "nsnps": 1,
-            "loc": range(nsnps),
+            "locus": range(nsnps),
             },
-            columns=['loc', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
+            columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
         )
         self.seqs = snparr
 
 
 
-
-    def write_loci_to_phylip(self, outdir="./ipcoal-sims/", outfile=None, idx=None):
+    def write_loci_to_phylip(
+        self, 
+        outdir="./ipcoal-sims/", 
+        idxs=None, 
+        name_prefix=None, 
+        name_suffix=None,
+        ):
         """
         Write all seq data for each locus to a separate phylip file in a shared
         directory with each locus named by ids locus index. 
@@ -653,17 +714,23 @@ class Model:
             are written to separate files.
         """
         writer = Writer(self.seqs, self.names)
-        writer.write_loci_to_phylip(outdir, outfile, idx)
+        writer.write_loci_to_phylip(outdir, idxs, name_prefix, name_suffix)
 
         # report
         print("wrote {} loci ({} x {}bp) to {}/[...].phy".format(
-            self.seqs.shape[0], self.seqs.shape[1], self.seqs.shape[2],
+            writer.written, self.seqs.shape[1], self.seqs.shape[2],
             writer.outdir.strip("/")
             ),
         )
 
 
-    def write_seqs_to_phylip(self, outfile="./test.phy"):
+
+    def write_concat_to_phylip(
+        self, 
+        outdir="./",
+        name="test.phy",
+        idxs=None,
+        ):
         """
         Write all seq data (loci or snps) concated to a single phylip file.
 
@@ -673,27 +740,22 @@ class Model:
             The name/path of the outfile to write. Default is "./test.phy"
         """       
         writer = Writer(self.seqs, self.names)
-        writer.write_seqs_to_phylip(outfile)
+        writer.write_concat_to_phylip(outdir, name, idxs)
 
         # report 
-        if self.seqs.ndim == 2:
-            ntax = self.seqs.shape[0]
-            nbps = self.seqs.shape[1]
-        else:
-            ntax = self.seqs.shape[1]
-            nbps = self.seqs.shape[0] * self.seqs.shape[2]
         print(
-            "wrote concatenated sequence file ({} x {}bp) to {}"
-            .format(ntax, nbps, writer.outfile),
+            "wrote concatenated loci ({} x {}bp) to {}"
+            .format(writer.shape[0], writer.shape[1], writer.outfile),
             )
 
 
-    def _write_seqs_to_countmatrix(self):
+
+    def _write_snps_to_countmatrix(self):
         pass
- 
 
 
-    def infer_gene_trees(self, method='iqtree'):
+
+    def infer_gene_trees(self, inference_method='raxml', inference_args={}):
         """
         Infer gene trees at every locus using the sequence in the locus 
         interval. 
@@ -705,7 +767,7 @@ class Model:
         kwargs (dict):
             a limited set of supported inference options. See docs.
         """
-        
+
         # bail out if the data is only unlinked SNPs
         if self.df.nbps.max() == 1:
             raise ipcoalError(
@@ -714,23 +776,20 @@ class Model:
                 )
 
         # expand self.df to include an inferred_trees column
-        self.df["inferred_trees"] = np.nan  # or should we use ""?
+        self.df["inferred_tree"] = np.nan  # or should we use ""?
 
         # init the TreeInference object (similar to ipyrad inference code)
-        ti = TreeInfer(self, method=method)
+        ti = TreeInfer(
+            self, 
+            inference_method=inference_method, 
+            inference_args=inference_args,
+        )
 
-        # iterate over nloci
+        # iterate over nloci. This part could be easily parallelized...
         for lidx in range(self.seqs.shape[0]):
 
             # write data to a temp phylip or nexus file
-            ti.write_temp_file()
+            tree = ti.run(lidx)
 
-            # run inference method
-            ti.call_binary()
-
-            # get result tree 
-            tree = ti.full_tree
-
-            # clean up tempfiles
-            ti.cleanup()
-
+            # enter result
+            self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
