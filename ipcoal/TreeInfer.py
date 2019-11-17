@@ -3,11 +3,12 @@
 
 import os
 import sys
+import glob
+import tempfile
 import subprocess as sps
 
 from .Writer import Writer
 from .utils import ipcoalError
-
 
 
 SUPPORTED = {
@@ -16,20 +17,29 @@ SUPPORTED = {
 }
 
 
-
 class TreeInfer:
 
-    def __init__(self, seqs, method="raxml"):
+    def __init__(self, model, inference_method="raxml", inference_args={}):
         """
         DocString...
         """
-        self.seqs = seqs
+        self.model = model
+        self.seqs = model.seqs
+        self.names = model.names
         self.binary = ""
-        self.method = method.lower()
-        self.inference_args = {}
+        self.method = inference_method.lower()        
+        self.inference_args = inference_args
         self.check_method_and_binary()
-        self.run(0)
 
+        # default options that user can override
+        self.raxml_kwargs = {
+            "f": "d", 
+            "N": "10",
+            "T": "4", 
+            "m": "GTRGAMMA",
+            "w": tempfile.gettempdir()
+        }
+        self.raxml_kwargs.update(inference_args)
 
 
     def check_method_and_binary(self):
@@ -52,50 +62,70 @@ class TreeInfer:
 
 
 
+    def write_tempfile(self, idx):
+        """
+        Writes a phylip or nexus file for xxx or mrbayes.
+        """
+        writer = Writer(self.seqs, self.names)
+        writer.write_concat_to_phylip(
+            outdir=tempfile.gettempdir(), 
+            name=str(os.getpid()) + ".phy",
+            idxs=[idx],
+        )
+        return os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".phy")
+
+
     def run(self, idx):
         """
         Runs the appropriate binary call
         """
 
         # write the tempfile for locus idx
-        tempfile = self.write_tempfile(idx)
+        tmp = self.write_tempfile(idx)
 
         # send tempfile to be processed
         if self.method == "raxml":
-            tree = self.infer_raxml(tempfile)
+            tree = self.infer_raxml(tmp)
         if self.method == "iqtree":
-            tree = self.infer_iqtree(tempfile)
+            tree = self.infer_iqtree(tmp)
 
         # cleanup 
-
+        pass
 
         # return result
         return tree
-                
 
 
-    def infer_raxml(self, tempfile):
+
+    def infer_raxml(self, tmp):
         """
         Writes a tmp file in phylip format, infers raxml tree, cleans up, 
         and returns a newick string of the full tree as a result.
         """
 
+        # remove the results files if they exist in outdir already
+        raxfiles = glob.glob(os.path.join(self.raxml_kwargs["w"], "RAxML_*"))
+        raxfiles = [i for i in raxfiles if i.endswith(os.path.basename(tmp))]
+        for rfile in raxfiles:
+            os.remove(rfile)
+
         # create the command line
         cmd = [
             self.binary, 
-            "-f", self.kwargs["a"],
-            "-T", "0", 
+            "-f", self.raxml_kwargs["f"],
+            "-T", self.raxml_kwargs["T"],
             "-m", "GTRGAMMA", 
-            "-n", self.kwargs["n"],
-            "-w", self.kwargs["w"],
-            "-s", tempfile,
+            "-n", os.path.basename(tmp),
+            "-w", self.raxml_kwargs["w"],
+            "-s", tmp,
+            "-p", str(self.model.random.randint(0, 1e9)),
         ]
-        if "N" in self.kwargs:
-            cmd += ["-N", str(self.kwargs["N"])]
-        if "x" in self.kwargs:
-            cmd += ["-x", str(self.kwargs["x"])]
-        if "o" in self.kwargs:
-            cmd += ["-o", str(self.kwargs["o"])]
+        if "N" in self.raxml_kwargs:
+            cmd += ["-N", str(self.raxml_kwargs["N"])]
+        if "x" in self.raxml_kwargs:
+            cmd += ["-x", str(self.raxml_kwargs["x"])]
+        if "o" in self.raxml_kwargs:
+            cmd += ["-o", str(self.raxml_kwargs["o"])]
 
         # call the command
         proc = sps.Popen(cmd, stderr=sps.STDOUT, stdout=sps.PIPE)
@@ -104,8 +134,12 @@ class TreeInfer:
             raise ipcoalError("error in raxml: {}".format(out.decode()))
 
         # read in the full tree or bipartitions
-        tree = ""
-
+        best = os.path.join(
+            self.raxml_kwargs["w"], 
+            "RAxML_bestTree.{}".format(os.path.basename(tmp))
+        )
+        with open(best, 'r') as res:
+            tree = res.read().strip()
         return tree
 
 
