@@ -150,20 +150,6 @@ class Writer:
 
 
 
-    def write_seqs_to_countmatrix(self, outfile):
-        pass            
-        # # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
-        # quartidx = 0
-        # qiter = itt.combinations(range(self.ntips), 4)
-        # for currquart in qiter:
-        #     # cols indices match tip labels b/c we named tips node.idx
-        #     quartsnps = snparr[:, currquart]
-        #     # save as stacked matrices
-        #     tmpcounts[quartidx] = count_matrix_int(quartsnps)
-        #     # save flattened to counts
-        #     quartidx += 1
-        # return(np.ravel(tmpcounts))
-
 
 
     # def write_seqs_as_fasta(self, loc, path):
