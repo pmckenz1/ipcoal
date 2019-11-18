@@ -18,7 +18,7 @@ requirements:
   run:
     - python
     - numpy >=1.10
-    - scipy >=0.10
+    - scipy >=0.10  # can remove soon
     - pandas >=0.16
     - numba
     - toyplot >=1.0
