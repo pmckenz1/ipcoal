@@ -3,6 +3,8 @@
 import time
 import datetime
 import itertools
+
+import toyplot
 import numpy as np
 import pandas as pd
 
@@ -79,6 +81,31 @@ def tile_reps(array, nreps):
     return result
 
 
+def get_snps_count_matrix(tree, seqs):
+    """
+    Compiles SNP data into a nquartets x 16 x 16 count matrix with the order
+    of quartets determined by the shape of the tree.
+    """
+    # todo: count nquartets without requiring scipy
+    pass
+
+    # shape of the arr (count matrix)
+    arr = np.zeros((nquartets, 16, 16), dtype=np.uint64)
+
+    # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
+    quartidx = 0
+    qiter = itertools.combinations(range(tree.ntips), 4)
+    for currquart in qiter:
+        # cols indices match tip labels b/c we named tips node.idx
+        quartsnps = seqs[:, currquart]
+        # save as stacked matrices
+        tmpcounts[quartidx] = count_matrix_int(quartsnps)
+        # save flattened to counts
+        quartidx += 1
+
+    # return(np.ravel(tmpcounts))
+
+
 
 def plot_test_values(self):
 
@@ -87,7 +114,7 @@ def plot_test_values(self):
     """
     # canvas, axes = plot_test_values(self.tree)
     if not self.counts.sum():
-        raise SimcatError("No mutations generated. First call '.run()'")
+        raise ipcoalError("No mutations generated. First call '.run()'")
 
     # setup canvas
     canvas = toyplot.Canvas(height=250, width=800)
@@ -219,13 +246,13 @@ def abba_baba(counts):
     dstats = []
     quartets = []
     reps = []
-    
+
     # iterate over reps and quartets
     for rep in range(counts.shape[0]):
-        
+
         # quartet iterator
         quarts = itertools.combinations(range(counts.shape[1]), 4)
-    
+
         # iterate over each mat, quartet
         for matrix, qrt in zip(range(counts.shape[1]), quarts):
             count = counts[rep, matrix]
@@ -241,7 +268,7 @@ def abba_baba(counts):
 
             quartets.append(qrt)
             reps.append(rep)
-    
+
     # convert to dataframe   
     df = pd.DataFrame({
         "ABBA": np.array(abbas, dtype=int),
