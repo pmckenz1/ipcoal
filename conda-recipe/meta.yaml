@@ -24,7 +24,6 @@ requirements:
     - toyplot >=1.0
     - future
     - msprime
-    - ipyparallel
     - raxml
 
 test:
