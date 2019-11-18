@@ -28,7 +28,6 @@ from .Writer import Writer
 pd.set_option("max_colwidth", 28)
 
 
-
 class Model:
     """
     An ipcoal.Model object for defining demographic models for coalesent 
@@ -511,13 +510,16 @@ class Model:
         # what is the appropriate rounding? (some trees will not exist...)
         bps = (np.round(ends) - np.round(starts)).astype(int)
 
-        # store newick strings
+        # get trees from tree_sequence and store newick strings
         newicks = []
         for atree in msts.trees():
-            nwk = atree.newick(
-                node_labels={i: self.namedict[i] for i in atree.leaves()}
-            )
-            newicks.append(nwk)
+
+            # msprime tree with node_labels 1-indexed            
+            nwk = atree.newick()
+            gtree = toytree.tree(nwk)
+            for node in gtree.treenode.get_leaves():
+                node.name = self.namedict[int(node.name) - 1]
+            newicks.append(gtree.write(tree_format=5))
 
         # init dataframe
         df = pd.DataFrame({
@@ -537,11 +539,12 @@ class Model:
 
         # iterate over the index of the dataframe to sim for each genealogy
         for idx in df.index:
-        
+
             # get gene tree as newick
             # ngens height is the expected subst/site if mu=subst/site/gen
-            gtree = toytree.tree(df.loc[idx, 'genealogy'])
-            newick = gtree.write(tree_format=5)
+            # gtree = toytree.tree(df.loc[idx, 'genealogy'])
+            # newick = gtree.write(tree_format=5)
+            newick = df.loc[idx, 'genealogy']
 
             # get the number of base pairs taken up by this gene tree
             gtlen = df.loc[idx, 'nbps']
@@ -653,6 +656,12 @@ class Model:
             # get first tree from next tree_sequence
             newick = next(msgen).first().newick()
 
+            # msprime tree with node_labels 1-indexed            
+            gtree = toytree.tree(newick)
+            for node in gtree.treenode.get_leaves():
+                node.name = self.namedict[int(node.name) - 1]
+            newick = gtree.write(tree_format=5)
+
             # simulate first base
             seed = self.random.randint(1e9)    
             seq = mkseq.feed_tree(newick, 1, self.mut, seed)
@@ -674,6 +683,8 @@ class Model:
             snpidx += 1
             newicks.append(newick)
 
+        # close subprocess
+        mkseq.close_subprocess()
 
         # init dataframe
         self.df = pd.DataFrame({
@@ -788,8 +799,17 @@ class Model:
         # iterate over nloci. This part could be easily parallelized...
         for lidx in range(self.seqs.shape[0]):
 
-            # write data to a temp phylip or nexus file
-            tree = ti.run(lidx)
+            # skip invariable loci
+            if self.df.nsnps[lidx]:
 
-            # enter result
-            self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
+                # let low data fails return NaN
+                try:
+                    # write data to a temp phylip or nexus file
+                    tree = ti.run(lidx)
+
+                    # enter result
+                    self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
+
+                # caught raxml exception (prob. low data)
+                except ipcoalError:
+                    pass
