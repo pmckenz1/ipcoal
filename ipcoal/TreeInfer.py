@@ -75,6 +75,7 @@ class TreeInfer:
         return os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".phy")
 
 
+
     def run(self, idx):
         """
         Runs the appropriate binary call
@@ -89,8 +90,8 @@ class TreeInfer:
         if self.method == "iqtree":
             tree = self.infer_iqtree(tmp)
 
-        # cleanup 
-        pass
+        # cleanup (TODO) remove phy file extensions
+        os.remove(tmp)
 
         # return result
         return tree
@@ -128,7 +129,7 @@ class TreeInfer:
             cmd += ["-o", str(self.raxml_kwargs["o"])]
 
         # call the command
-        proc = sps.Popen(cmd, stderr=sps.STDOUT, stdout=sps.PIPE)
+        proc = sps.Popen(cmd, stdout=sps.PIPE)  # stderr=sps.STDOUT, 
         out, err = proc.communicate()
         if proc.returncode:
             raise ipcoalError("error in raxml: {}".format(out.decode()))
