@@ -2,17 +2,20 @@
 
 from setuptools import setup
 setup(
-    name="phymsim",
-    packages=["phymsim"],
-    version="0.0.1",
+    name="ipcoal",
+    packages=["ipcoal"],
+    version="0.0.4",
     author="Patrick McKenzie and Deren Eaton",
     author_email="p.mckenzie@columbia.edu",
     install_requires=[
         "scipy>0.10",
         "numpy>=1.9",
         "pandas>=0.16",
-        "toytree",
-        "toyplot",
+        "numba",
+        "toytree>=1.0.4",
+        "msprime",
+        # "ipyparallel",
+        # seq-gen (optional)
     ],
     license='GPL',
     classifiers=[
