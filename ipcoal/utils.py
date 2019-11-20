@@ -7,6 +7,7 @@ import itertools
 import toyplot
 import numpy as np
 import pandas as pd
+from .jitted import count_matrix_int
 
 try:
     from IPython.display import display
@@ -22,12 +23,14 @@ class ipcoalError(Exception):
 
 def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
     """
-    Find all possible admixture edges on a tree. Edges are unidirectional, 
-    so the source and dest need to overlap in time interval. To retrict 
-    migration to occur away from nodes (these can be harder to detect when 
-    validating methods) you can set upper and lower limits. For example, to 
-    make all source migrations to occur at the midpoint of overlapping 
-    intervals in which migration can occur you can set upper=.5, lower=.5.   
+    Find all possible admixture edges on a tree. 
+
+    Edges are unidirectional, so the source and dest need to overlap in
+    time interval. To retrict migration to occur away from nodes (these 
+    can be harder to detect when validating methods) you can set upper 
+    and lower limits. For example, to make all source migrations to occur
+    at the midpoint of overlapping intervals in which migration can occur
+    you can set upper=.5, lower=.5.   
     """
     # bounds on edge overlaps
     if lower is None:
@@ -35,28 +38,28 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
     if upper is None:
         upper = 1.0
 
-    ## for all nodes map the potential admixture interval
+    # for all nodes map the potential admixture interval
     for snode in ttree.treenode.traverse():
         if snode.is_root():
             snode.interval = (None, None)
         else:
             snode.interval = (snode.height, snode.up.height)
 
-    ## for all nodes find overlapping intervals
+    # for all nodes find overlapping intervals
     intervals = {}
     for snode in ttree.treenode.traverse():
         for dnode in ttree.treenode.traverse():
             if not any([snode.is_root(), dnode.is_root(), dnode == snode]):
 
-                ## [option] skip sisters
+                # [option] skip sisters
                 if (exclude_sisters) & (dnode.up == snode.up):
                     continue
 
-                ## check for overlap
+                # check for overlap
                 smin, smax = snode.interval
                 dmin, dmax = dnode.interval
 
-                ## find if nodes have interval where admixture can occur
+                # find if nodes have interval where admixture can occur
                 low_bin = np.max([smin, dmin])
                 top_bin = np.min([smax, dmax])              
                 if top_bin > low_bin:
@@ -86,24 +89,23 @@ def get_snps_count_matrix(tree, seqs):
     Compiles SNP data into a nquartets x 16 x 16 count matrix with the order
     of quartets determined by the shape of the tree.
     """
-    # todo: count nquartets without requiring scipy
-    pass
+    # get nquartets without requiring scipy (slower for biiig data tho)
+    nquarts = sum(1 for i in itertools.combinations(range(tree.ntips), 4))
 
     # shape of the arr (count matrix)
-    arr = np.zeros((nquartets, 16, 16), dtype=np.uint64)
+    arr = np.zeros((nquarts, 16, 16), dtype=np.int64)
 
     # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
     quartidx = 0
     qiter = itertools.combinations(range(tree.ntips), 4)
     for currquart in qiter:
         # cols indices match tip labels b/c we named tips node.idx
-        quartsnps = seqs[:, currquart]
+        quartsnps = seqs[currquart, :]
         # save as stacked matrices
-        tmpcounts[quartidx] = count_matrix_int(quartsnps)
+        arr[quartidx] = count_matrix_int(quartsnps.T)
         # save flattened to counts
         quartidx += 1
-
-    # return(np.ravel(tmpcounts))
+    return arr
 
 
 
@@ -177,50 +179,7 @@ def plot_test_values(self):
     return canvas, (ax0, ax1, ax2)
 
 
-# def progress_bar(njobs, nfinished, start, message=""):
-#     "prints a progress bar"
-#     ## measure progress
-#     if njobs:
-#         progress = 100 * (nfinished / njobs)
-#     else:
-#         progress = 100
 
-#     ## build the bar
-#     hashes = "#" * int(progress / 5.)
-#     nohash = " " * int(20 - len(hashes))
-
-#     ## get time stamp
-#     elapsed = datetime.timedelta(seconds=int(time.time() - start))
-
-#     ## print to stderr
-#     args = [hashes + nohash, int(progress), elapsed, message]
-#     print("\r[{}] {:>3}% | {} | {}".format(*args), end="")
-#     sys.stderr.flush()
-
-
-
-__INVARIANTS__ = """
-AAAA AAAC AAAG AAAT  AACA AACC AACG AACT  AAGA AAGC AAGG AAGT  AATA AATC AATG AATT
-ACAA ACAC ACAG ACAT  ACCA ACCC ACCG ACCT  ACGA ACGC ACGG ACGT  ACTA ACTC ACTG ACTT
-AGAA AGAC AGAG AGAT  AGCA AGCC AGCG AGCT  AGGA AGGC AGGG AGGT  AGTA AGTC AGTG AGTT
-ATAA ATAC ATAG ATAT  ATCA ATCC ATCG ATCT  ATGA ATGC ATGG ATGT  ATTA ATTC ATTG ATTT
-
-CAAA CAAC CAAG CAAT  CACA CACC CACG CACT  CAGA CAGC CAGG CAGT  CATA CATC CATG CATT
-CCAA CCAC CCAG CCAT  CCCA CCCC CCCG CCCT  CCGA CCGC CCGG CCGT  CCTA CCTC CCTG CCTT
-CGAA CGAC CGAG CGAT  CGCA CGCC CGCG CGCT  CGGA CGGC CGGG CGGT  CGTA CGTC CGTG CGTT
-CTAA CTAC CTAG CTAT  CTCA CTCC CTCG CTCT  CTGA CTGC CTGG CTGT  CTTA CTTC CTTG CTTT
-
-GAAA GAAC GAAG GAAT  GACA GACC GACG GACT  GAGA GAGC GAGG GAGT  GATA GATC GATG GATT
-GCAA GCAC GCAG GCAT  GCCA GCCC GCCG GCCT  GCGA GCGC GCGG GCGT  GCTA GCTC GCTG GCTT
-GGAA GGAC GGAG GGAT  GGCA GGCC GGCG GGCT  GGGA GGGC GGGG GGGT  GGTA GGTC GGTG GGTT
-GTAA GTAC GTAG GTAT  GTCA GTCC GTCG GTCT  GTGA GTGC GTGG GTGT  GTTA GTTC GTTG GTTT
-
-TAAA TAAC TAAG TAAT  TACA TACC TACG TACT  TAGA TAGC TAGG TAGT  TATA TATC TATG TATT
-TCAA TCAC TCAG TCAT  TCCA TCCC TCCG TCCT  TCGA TCGC TCGG TCGT  TCTA TCTC TCTG TCTT
-TGAA TGAC TGAG TGAT  TGCA TGCC TGCG TGCT  TGGA TGGC TGGG TGGT  TGTA TGTC TGTG TGTT
-TTAA TTAC TTAG TTAT  TTCA TTCC TTCG TTCT  TTGA TTGC TTGG TTGT  TTTA TTTC TTTG TTTT
-"""
-INVARIANTS = np.array(__INVARIANTS__.strip().split()).reshape(16, 16)
 ABBA_IDX = [
     (1, 4), (2, 8), (3, 12), (4, 1),
     (6, 9), (7, 13), (8, 2), (9, 6),
@@ -236,48 +195,94 @@ FIXED_IDX = [
 ]
 
 
-def abba_baba(counts):
+
+# ... this is not right currently
+def abba_baba(model, testtuples):
     """
     Calculate ABBA/BABA statistic (D) as (ABBA - BABA) / (ABBA + BABA)
+
+    Parameters:
+    -----------
+    model (ipcoal.Model Class object):
+        A model class object from ipcoal that has generated sequence data by 
+        calling either .sim_loci() or .sim_snps(). 
+
+    testtuples (tuple, list):
+        A tuple or list of tuples with the ordered taxon names for each test.
+        The order should be (P1, P2, P3, P4). You can see the names of taxa 
+        from the tree on which data were simulated from the model object using
+        model.treeorig.draw();
+
+    Returns: 
+    ---------
+    pandas.DataFrame
+
     """
+    # check that data was simulated
+    if not model.seqs:
+        raise ipcoalError(
+            "you must first simulate data with .sim_snps() or .sim_loci()")
+
+    # ensure testtuples is a list of tuples
+    if isinstance(testtuples, tuple):
+        testtuples = [testtuples]
+
+    # get tip order of tree and check that testtuple names are in tips
+    tips = [i for i in model.treeorig.get_tip_labels()]
+    for tup in testtuples:
+        for name in tup:        
+            if name not in tips:
+                raise ipcoalError(
+                    "name {} is not in the tree {}"
+                    .format(name, tips))
+
+    # get counts matrix
+    counts = get_snps_count_matrix(model.tree, model.seqs)
+
     # store vals
-    abbas = []
-    babas = []
-    dstats = []
-    quartets = []
-    reps = []
+    abbas = np.zeros(counts.shape[0], dtype=int)
+    babas = np.zeros(counts.shape[0], dtype=int)
+    dstats = np.zeros(counts.shape[0], dtype=float)
+    p1 = np.zeros(counts.shape[0], dtype="U10")
+    p2 = np.zeros(counts.shape[0], dtype="U10")
+    p3 = np.zeros(counts.shape[0], dtype="U10")
+    p4 = np.zeros(counts.shape[0], dtype="U10")
 
-    # iterate over reps and quartets
-    for rep in range(counts.shape[0]):
+    # quartet iterator
+    quarts = itertools.combinations(range(len(tips)), 4)
 
-        # quartet iterator
-        quarts = itertools.combinations(range(counts.shape[1]), 4)
+    # iterate over each (mat, quartet)
+    idx = 0
+    for count, qrt in zip(counts, quarts):
 
-        # iterate over each mat, quartet
-        for matrix, qrt in zip(range(counts.shape[1]), quarts):
-            count = counts[rep, matrix]
+        # calculate
+        abba = sum([count[i] for i in ABBA_IDX])
+        baba = sum([count[i] for i in BABA_IDX])
+        dstat = abs(abba - baba) / (abba + baba)
 
-            abba = sum([count[i] for i in ABBA_IDX])
-            abbas.append(abba)
+        # store stats
+        abbas[idx] = abba
+        babas[idx] = baba
+        dstats[idx] = dstat
 
-            baba = sum([count[i] for i in BABA_IDX])
-            babas.append(baba)
-
-            dstat = abs(abba - baba) / (abba + baba)
-            dstats.append(dstat)
-
-            quartets.append(qrt)
-            reps.append(rep)
+        # store taxa
+        p1[idx] = tips[qrt[0]]
+        p2[idx] = tips[qrt[1]]
+        p3[idx] = tips[qrt[2]]
+        p4[idx] = tips[qrt[3]]
+        idx += 1
 
     # convert to dataframe   
     df = pd.DataFrame({
         "ABBA": np.array(abbas, dtype=int),
         "BABA": np.array(babas, dtype=int),
         "D": dstats,
-        "quartet": quartets,
-        "reps": reps,
+        "p1": p1,
+        "p2": p2,
+        "p3": p3,
+        "p4": p4,
         }, 
-        columns=["reps", "ABBA", "BABA", "D", "quartet"],
+        columns=["ABBA", "BABA", "D", "p1", "p2", "p3", "p4"],
     )
     return df
 
@@ -346,6 +351,29 @@ class Progress(object):
             
     def increment_time(self):
         self.label.value = self.printstr
+
+
+
+
+# def progress_bar(njobs, nfinished, start, message=""):
+#     "prints a progress bar"
+#     ## measure progress
+#     if njobs:
+#         progress = 100 * (nfinished / njobs)
+#     else:
+#         progress = 100
+
+#     ## build the bar
+#     hashes = "#" * int(progress / 5.)
+#     nohash = " " * int(20 - len(hashes))
+
+#     ## get time stamp
+#     elapsed = datetime.timedelta(seconds=int(time.time() - start))
+
+#     ## print to stderr
+#     args = [hashes + nohash, int(progress), elapsed, message]
+#     print("\r[{}] {:>3}% | {} | {}".format(*args), end="")
+#     sys.stderr.flush()
 
 
 
