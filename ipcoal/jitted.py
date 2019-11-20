@@ -19,35 +19,22 @@ def count_matrix_int(quartsnps):
     return arr
 
 
-@njit()
-def count_matrix_float(quartsnps):
-    """
-    return a 16x16 matrix of site counts from snparr
-    """
-    arr = np.zeros((16, 16), dtype=np.float32)
-    add = np.float32(1)
-    for idx in range(quartsnps.shape[0]):
-        i = quartsnps[idx, :]
-        arr[(4 * i[0]) + i[1], (4 * i[2]) + i[3]] += add    
-    return arr  # / arr.max()    
-
-
-@njit()
-def mutate_jc(geno, ntips):
-    """
-    mutates sites with 1 into a new base in {0, 1, 2, 3}
-    """
-    allbases = np.array([0, 1, 2, 3])
-    for ridx in np.arange(geno.shape[0]):
-        snp = geno[ridx]
-        if snp.sum():
-            init = np.empty(ntips, dtype=np.int64)
-            init.fill(np.random.choice(allbases))
-            notinit = np.random.choice(allbases[allbases != init[0]])
-            init[snp.astype(np.bool_)] = notinit
-            return init
-    # return dtypes must match
-    return np.zeros(0, dtype=np.int64)  
+# @njit()
+# def mutate_jc(geno, ntips):
+#     """
+#     mutates sites with 1 into a new base in {0, 1, 2, 3}
+#     """
+#     allbases = np.array([0, 1, 2, 3])
+#     for ridx in np.arange(geno.shape[0]):
+#         snp = geno[ridx]
+#         if snp.sum():
+#             init = np.empty(ntips, dtype=np.int64)
+#             init.fill(np.random.choice(allbases))
+#             notinit = np.random.choice(allbases[allbases != init[0]])
+#             init[snp.astype(np.bool_)] = notinit
+#             return init
+#     # return dtypes must match
+#     return np.zeros(0, dtype=np.int64)  
 
 
 # @njit
