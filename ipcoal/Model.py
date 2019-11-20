@@ -43,22 +43,16 @@ class Model:
         recomb=1e-9,
         mut=1e-8,
         seed=None,
+        seed_mutations=None,
         debug=False,
-        # run=False,
-        # nreps=1,
         ):
 
         """
-        An object used for demonstration and testing only. The real simulations
-        use the similar object Simulator.
-
-        Takes an input topology with edge lengths in coalescent units (2N)
-        entered as either a newick string or as a Toytree object,
-        and generates 'ntests' parameter sets for running msprime simulations
-        which are stored in the the '.test_values' dictionary. The .run()
-        command can be used to execute simulations to fill count matrices
-        stored in .counts. Admixture events (intervals or pulses) from source
-        to dest are described as viewed backwards in time.
+        Takes an input topology with edge lengths in units of generations
+        entered as either a newick string or as a Toytree object, and defines
+        a demographic model based on Ne (or Ne mapped to tree nodes) and 
+        admixture edge arguments. Genealogies and sequence data is then 
+        generated with msprime and seq-gen, respectively.
 
         Parameters:
         -----------
@@ -108,28 +102,21 @@ class Model:
         recomb (float): default=1e-9
             ...
 
-        DEPRECATED (unless simcat uses this)                
-        nsnps (int):
-            Number of unlinked SNPs simulated (e.g., counts is (nsnps, 16, 16))
-
-        DEPRECATED (unless simcat uses this)        
-        ntests (int):
-            Number of parameter sets to sample for each event, i.e., given
-            a theta range and admixture events range multiple sets of parameter
-            values could be sampled. The counts array is expanded to be
-            (ntests, nsnps, 16, 16)
-
-        DEPRECATED (unless simcat uses this)
-        nreps (int):
-            Number of technical replicates to run using the same param sets.
-            The counts array is expanded to be (nreps * ntests, nsnps, 16, 16)
-
         seed (int):
-            Random number generator for numpy.
+            Random number generator used for msprime (and seqgen unless a 
+            separate seed is set for seed_mutations.
+
+        seed_mutations (int):
+            Random number generator used for seq-gen. If not set then the
+            generic seed is used for both msprime and seq-gen.
         """
 
-        # initialize random seed (TODO: make sure this is working)
+        # initialize random seed for msprime and seq-gen
         self.random = np.random.RandomState(seed)
+        self.random_mut = (
+            np.random.RandomState(seed_mutations) if seed_mutations 
+            else self.random
+        )
 
         # hidden argument to turn on debugging
         self._debug = debug
@@ -177,12 +164,13 @@ class Model:
             0 if not self.admixture_edges else len(self.admixture_edges))
 
         # demography info to fill        
-        self.test_values = {}
+        self.ms_migrate = []
+        self.ms_migtime = []
         self.ms_demography = set()
         self.ms_popconfig = ms.PopulationConfiguration()
 
-        # get admix time,rate and store: .test_values {mrates: [], mtimes: []}
-        self._get_test_values()
+        # get migration time, rate {mrates: [], mtimes: []}
+        self._get_migration()
 
         # get demography dict for msprime input
         self._get_demography()
@@ -203,7 +191,6 @@ class Model:
         have an Ne value at the end of this. Sets node.Ne attrs and sets max
         value to self.Ne.
         """
-
         # get map of {nidx: node}
         ndict = self.tree.get_node_dict(True, True)
 
@@ -225,29 +212,24 @@ class Model:
 
 
 
-    def _get_test_values(self):
+    def _get_migration(self):
         """
         Generates mrates, mtimes, and thetas arrays for simulations.
 
         Migration times are uniformly sampled between start and end points that
         are constrained by the overlap in edge lengths, which is automatically
-        inferred from 'get_all_admix_edges()'. migration rates are drawn
-        uniformly between 0.0 and 0.5. thetas are drawn uniformly between
-        theta0 and theta1, and Ne is just theta divided by a constant.
+        inferred from 'get_all_admix_edges()'. Migration rates are in [0, 1)
 
-        self.test_values = {
-            thetas: [1, 2, 0.2, .1, .5],
-            1: {mrates: [.5, .2, .3], mtimes: [(2, 3), (4, 5), (1, 2)]},
-            2: {mrates: [.01, .05,], mtimes: [(0.5, None), 0.1, None)]
-            3: {...}
-            ...
-        }
+        # rates are proportions, times are in generations
+        # single edge: 
+        self.ms_migrate = [0.05]
+        self.ms_migtime = [12000]
+
+        # two edges:
+        self.ms_migrate = [0.05, 0.05]
+        self.ms_migtime = [12000, 20000]
         """
-        # test values will be filled to a dictionary
-        self.test_values = {}
-
         # sample times and proportions/rates for admixture intervals
-        idx = 0
         for iedge in self.admixture_edges:
 
             # mtimes: if None then sample from uniform.
@@ -273,7 +255,8 @@ class Model:
             # if an iterable then sample from range
             else:
                 mr = iedge[3]
-            mrates = self.random.uniform(mr[0], mr[1], size=1)[0]
+            # migrate uniformly drawn from range
+            mrate = self.random.uniform(mr[0], mr[1])
 
             # intervals are overlapping edges where admixture can occur.
             # lower and upper restrict the range along intervals for each
@@ -289,33 +272,18 @@ class Model:
                     ival[0] + mi[1] * dist_ival, 2,
                 )
                 ui = ui.reshape((1, 2))
-                mtimes = np.sort(ui, axis=1)
+                mtime = np.sort(ui, axis=1).astype(int)
 
             # pulsed mode
             else:
                 ui = self.random.uniform(
                     ival[0] + mi[0] * dist_ival,
-                    ival[0] + mi[1] * dist_ival, 1)
-                mtimes = int(ui[0])
+                    ival[0] + mi[1] * dist_ival)
+                mtime = int(ui)
 
             # store values only if migration is high enough to be detectable
-            self.test_values[idx] = {
-                "mrates": mrates,
-                "mtimes": mtimes,
-            }
-            idx += 1
-
-            # # print info when debug flag is on to stderr
-            # if self._debug:
-            #     print(
-            #         "migration: edge({}->{}) time({:.3f}, {:.3f}), "
-            #         "rate({:.3f}, {:.3f})"
-            #         .format(
-            #             snode.idx, dnode.idx, ival[0], ival[1], 
-            #             mr[0], mr[1]
-            #         ),
-            #         file=sys.stderr,
-            #     )
+            self.ms_migrate.append(mrate)
+            self.ms_migtime.append(mtime)
 
 
 
@@ -363,8 +331,10 @@ class Model:
         # Add migration pulses
         if not self.admixture_type:
             for evt in range(self.aedges):
-                rate = self.test_values[evt]['mrates']
-                time = int(self.test_values[evt]['mtimes'])
+
+                # rate is prop. of population, time is prop. of edge
+                rate = self.ms_migrate[evt]
+                time = self.ms_migtime[evt]
                 source, dest = self.admixture_edges[evt][:2]
 
                 # rename nodes at time of admix in case diverge renamed them
@@ -378,7 +348,7 @@ class Model:
                         'mig pulse: {:>9}, {:>2} {:>2}, {:>2} {:>2}, rate={:.2f}'
                         .format(
                             time, 
-                            "", "", # node.children[0].idx, node.children[1].idx, 
+                            "", "",  # node.children[0].idx, node.children[1].idx, 
                             snode.name, dnode.name, 
                             rate),
                         file=sys.stderr,
@@ -387,8 +357,8 @@ class Model:
         # Add migration intervals
         else:
             for evt in range(self.aedges):
-                rate = self.test_values[evt]['mrates']
-                time = (self.test_values[evt]['mtimes']).astype(int)
+                rate = self.ms_migration[evt]['mrates']
+                time = (self.ms_migration[evt]['mtimes']).astype(int)
                 source, dest = self.admixture_edges[evt][:2]
 
                 # rename nodes at time of admix in case diverg renamed them
@@ -551,7 +521,7 @@ class Model:
 
             # only simulate data if there is bp 
             if gtlen:
-                seed = self.random.randint(1e9)
+                seed = self.random_mut.randint(1e9)
                 seq = mkseq.feed_tree(newick, gtlen, self.mut, seed)
                 seqarr[:, bidx:bidx + gtlen] = seq
 
@@ -663,14 +633,14 @@ class Model:
             newick = gtree.write(tree_format=5)
 
             # simulate first base
-            seed = self.random.randint(1e9)    
+            seed = self.random_mut.randint(1e9)    
             seq = mkseq.feed_tree(newick, 1, self.mut, seed)
 
             # if repeat_on_trees then keep sim'n til we get a SNP
             if repeat_on_trees:
                 # if not variable
                 while np.all(seq == seq[0]):
-                    seed = self.random.randint(1e9)    
+                    seed = self.random_mut.randint(1e9)    
                     seq = mkseq.feed_tree(newick, 1, self.mut, seed)
 
             # otherwise just move on to the next generated tree
@@ -761,8 +731,8 @@ class Model:
 
 
 
-    def _write_snps_to_countmatrix(self):
-        pass
+    # def _write_snps_to_countmatrix(self):
+    #     pass
 
 
 
