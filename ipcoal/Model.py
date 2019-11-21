@@ -781,5 +781,9 @@ class Model:
                     self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
 
                 # caught raxml exception (prob. low data)
-                except ipcoalError:
-                    pass
+                #except ipcoalError:
+                #    pass
+                except ipcoalError as err:
+                    self.df.loc[self.df.locus == lidx, "inferred_tree"] = np.nan
+                    print(err)
+                    #raise(err)
