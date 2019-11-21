@@ -1,4 +1,5 @@
-# physeqs
-**IN DEVELOPMENT:**  
-Simulation package for getting gene tree distributions and DNA sequences / SNP counts from input tree topologies and migration scenarios. Built over msprime and seq-gen.  
-It's pronounced like "physics."
+# ipcoal
+
+Documentation under development: [https://ipcoal.readthedocs.io](https://ipcoal.readthedocs.io)
+
+Python package for simulating genealogies and sequence data. 
