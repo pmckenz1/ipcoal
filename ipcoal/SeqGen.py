@@ -29,9 +29,9 @@ class SeqGen:
         """
         Open a persistent Popen bash shell
         """
-        # open 
+        # open shell arg with line buffering
         self.shell = sps.Popen(
-            ["bash"], stdin=sps.PIPE, stdout=sps.PIPE, bufsize=0)
+            ["bash"], stdin=sps.PIPE, stdout=sps.PIPE, bufsize=1)
 
 
     def close_subprocess(self):
