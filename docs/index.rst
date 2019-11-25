@@ -9,6 +9,7 @@ Welcome to ipcoal's documentation!
 .. toctree::
    :maxdepth: 2
    
+   ethos.rst
    installation.rst
    ./notebooks/Setting-Ne.ipynb
    ./notebooks/Setting-admixture.ipynb
