@@ -11,10 +11,13 @@ Welcome to ipcoal's documentation!
    
    ethos.rst
    installation.rst
-   ./notebooks/Setting-Ne.ipynb
-   ./notebooks/Setting-admixture.ipynb
-   ./notebooks/Results-Table.ipynb
-   ./notebooks/Inferring-gene-trees.ipynb
+   ./notebooks/Tutorial.ipynb
+   ./notebooks/User-Guide.ipynb
+   ./notebooks/Cookbook.ipynb
+..   ./notebooks/Setting-Ne.ipynb
+..   ./notebooks/Setting-admixture.ipynb
+..   ./notebooks/Results-Table.ipynb
+..   ./notebooks/Inferring-gene-trees.ipynb
 ..   ./notebooks/demography.ipynb
 
 
