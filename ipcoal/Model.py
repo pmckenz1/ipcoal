@@ -522,16 +522,6 @@ class Model:
             columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
         )
 
-        # # get trees from tree_sequence and store newick strings
-        # newicks = []
-        # for atree in msts.trees():
-        #     # msprime tree with node_labels 1-indexed            
-        #     nwk = atree.newick()
-        #     gtree = toytree.tree(nwk)
-        #     for node in gtree.treenode.get_leaves():
-        #         node.name = self.namedict[int(node.name) - 1]
-        #     newicks.append(gtree.write(tree_format=5))
-
         # the full sequence array to fill
         bidx = 0
         seqarr = np.zeros((self.nstips, nsites), dtype=np.uint8)
@@ -541,12 +531,6 @@ class Model:
 
             # advance to next tree in tree sequence
             mstree = next(msts.trees())
-           
-            # get gene tree as newick
-            # ngens height is the expected subst/site if mu=subst/site/gen
-            # gtree = toytree.tree(df.loc[idx, 'genealogy'])
-            # newick = gtree.write(tree_format=5)
-            # newick = df.loc[idx, 'genealogy']
 
             # get the number of base pairs taken up by this gene tree
             gtlen = df.loc[idx, 'nbps']
