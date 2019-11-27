@@ -130,8 +130,28 @@ class Model:
             self.tree = deepcopy(self.treeorig)
         else:
             raise TypeError("input tree must be newick str or Toytree object")
+
+        # the order of samples given tree (5 tips) and samples [3, 2, 1, 2, 3]
+        # ladderized tree tip order from top to bottom.
+        # 
+        # |--------0  0-0, 0-1, 0-2
+        #  |-------1  1-0, 1-1
+        #   |------2  2-0, 
+        #     |----3  3-0, 3-1
+        #       |--4  4-0, 4-1, 4-2
+        #
+        # namedict: {0: '0-0', 1: '0-1', 2: '0-2', 3: '1-0', 4: '1-1'...}
         self.ntips = len(self.tree)
-        self.samples = int(samples)
+        if isinstance(samples, int):
+            self.samples = [int(samples) for i in range(self.ntips)]
+            self.nstips = int(samples) * self.ntips
+        else:
+            assert isinstance(samples, (list, tuple)), (
+                "samples should be a list")
+            assert len(samples) == self.ntips, (
+                "samples list should be same length as ntips in tree.")
+            self.samples = samples
+            self.nstips = sum(self.samples)
 
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
@@ -141,14 +161,24 @@ class Model:
         self.Ne = Ne
         self._get_Ne()
 
-        # store node.name as node.idx, save old names in a dict.
-        self.namedict = {}
-        for node in self.tree.treenode.traverse():
-            if node.is_leaf():
-                # store old name and set new one
-                self.namedict[node.idx] = node.name
-                node.name = node.idx
-        self.names = np.sort(list(self.namedict.values()))
+        # store tip names for renaming on the ms tree (ntips * nsamples)
+        # these are 1-indexed because they msprime trees tips are.
+        if samples == 1:
+            self.tipdict = {
+                i + 1: j for (i, j) in enumerate(self.tree.get_tip_labels())
+            }
+        else:
+            self.tipdict = {}
+            idx = 1
+            for tip, ns in zip(self.tree.get_tip_labels(), self.samples):
+                for nidx in range(ns):
+                    self.tipdict[idx] = "{}-{}".format(tip, nidx)
+                    idx += 1
+
+        # alphanumeric ordered tip names -- order of printing to seq files
+        _tmp = {j: i for (i, j) in self.tipdict.items()}       
+        self.names = sorted(self.tipdict.values())
+        self.order = [_tmp[i] - 1 for i in self.names]
 
         # check formats of admixture args
         self.admixture_edges = (admixture_edges if admixture_edges else [])
@@ -393,7 +423,7 @@ class Model:
             # list of popconfig objects for each tip
             population_configurations = [
                 ms.PopulationConfiguration(
-                    sample_size=self.samples, initial_size=nes[i])
+                    sample_size=self.samples[i], initial_size=nes[i])
                 for i in range(self.ntips)]
 
             # set the max Ne value as the global Ne
@@ -403,8 +433,8 @@ class Model:
         else:
             population_configurations = [
                 ms.PopulationConfiguration(
-                    sample_size=self.samples, initial_size=self.Ne)
-                for ntip in range(self.ntips)]
+                    sample_size=self.samples[i], initial_size=self.Ne)
+                for i in range(self.ntips)]
 
         # debug printer
         if self._debug:
@@ -480,22 +510,11 @@ class Model:
         # what is the appropriate rounding? (some trees will not exist...)
         bps = (np.round(ends) - np.round(starts)).astype(int)
 
-        # get trees from tree_sequence and store newick strings
-        newicks = []
-        for atree in msts.trees():
-
-            # msprime tree with node_labels 1-indexed            
-            nwk = atree.newick()
-            gtree = toytree.tree(nwk)
-            for node in gtree.treenode.get_leaves():
-                node.name = self.namedict[int(node.name) - 1]
-            newicks.append(gtree.write(tree_format=5))
-
         # init dataframe
         df = pd.DataFrame({
             "start": np.round(starts).astype(int),
             "end": np.round(ends).astype(int),
-            "genealogy": newicks,
+            "genealogy": "",
             "nbps": bps,
             "nsnps": 0,
             "locus": locus_idx,
@@ -503,27 +522,46 @@ class Model:
             columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
         )
 
+        # # get trees from tree_sequence and store newick strings
+        # newicks = []
+        # for atree in msts.trees():
+        #     # msprime tree with node_labels 1-indexed            
+        #     nwk = atree.newick()
+        #     gtree = toytree.tree(nwk)
+        #     for node in gtree.treenode.get_leaves():
+        #         node.name = self.namedict[int(node.name) - 1]
+        #     newicks.append(gtree.write(tree_format=5))
+
         # the full sequence array to fill
         bidx = 0
-        seqarr = np.zeros((self.ntips, nsites), dtype=np.uint8)
+        seqarr = np.zeros((self.nstips, nsites), dtype=np.uint8)
 
         # iterate over the index of the dataframe to sim for each genealogy
         for idx in df.index:
 
+            # advance to next tree in tree sequence
+            mstree = next(msts.trees())
+           
             # get gene tree as newick
             # ngens height is the expected subst/site if mu=subst/site/gen
             # gtree = toytree.tree(df.loc[idx, 'genealogy'])
             # newick = gtree.write(tree_format=5)
-            newick = df.loc[idx, 'genealogy']
+            # newick = df.loc[idx, 'genealogy']
 
             # get the number of base pairs taken up by this gene tree
             gtlen = df.loc[idx, 'nbps']
 
             # only simulate data if there is bp 
             if gtlen:
+                # parse the mstree
+                nwk = mstree.newick()
+
+                # sim locus
                 seed = self.random_mut.randint(1e9)
-                seq = mkseq.feed_tree(newick, gtlen, self.mut, seed)
-                seqarr[:, bidx:bidx + gtlen] = seq
+                seq = mkseq.feed_tree(nwk, gtlen, self.mut, seed)
+
+                # store locus
+                seqarr[:, bidx:bidx + gtlen] = seq[self.order, :]
 
                 # record snps
                 subseq = seqarr[:, bidx:bidx + gtlen]
@@ -532,6 +570,13 @@ class Model:
 
                 # advance site counter
                 bidx += gtlen
+
+                # reset .names on msprime tree with node_labels 1-indexed
+                gtree = toytree.tree(nwk)
+                for node in gtree.treenode.get_leaves():
+                    node.name = self.tipdict[int(node.name)]
+                newick = gtree.write(tree_format=5)
+                df.loc[idx, "genealogy"] = newick
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
         df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
@@ -551,10 +596,9 @@ class Model:
         genealogy and return all genealogies and their summary stats in a 
         dataframe and the concatenated sequences in an array with rows ordered
         by sample names alphanumerically.
-        """        
-
+        """
         # multidimensional array of sequence arrays to fill 
-        seqarr = np.zeros((nloci, self.ntips, nsites), dtype=np.uint8)
+        seqarr = np.zeros((nloci, self.nstips, nsites), dtype=np.uint8)
 
         # a list to be concatenated into the final dataframe of genealogies
         dflist = []
@@ -614,7 +658,7 @@ class Model:
         # store results (nsnps, ntips); def. 1000 SNPs
         newicks = []
         snpidx = 0
-        snparr = np.zeros((self.ntips, nsnps), dtype=np.uint8)
+        snparr = np.zeros((self.nstips, nsnps), dtype=np.uint8)
 
         # continue until we get nsnps
         while 1: 
@@ -625,12 +669,6 @@ class Model:
 
             # get first tree from next tree_sequence
             newick = next(msgen).first().newick()
-
-            # msprime tree with node_labels 1-indexed            
-            gtree = toytree.tree(newick)
-            for node in gtree.treenode.get_leaves():
-                node.name = self.namedict[int(node.name) - 1]
-            newick = gtree.write(tree_format=5)
 
             # simulate first base
             seed = self.random_mut.randint(1e9)    
@@ -647,6 +685,15 @@ class Model:
             else:
                 if np.all(seq == seq[0]):
                     continue
+
+            # reset .names on msprime tree with node_labels 1-indexed
+            gtree = toytree.tree(newick)
+            for node in gtree.treenode.get_leaves():
+                node.name = self.tipdict[int(node.name)]
+            newick = gtree.write(tree_format=5)
+
+            # reorder SNPs to be alphanumeric nameordered by tipnames 
+            seq = seq[self.order, :]
 
             # Store result and advance counter
             snparr[:, snpidx] = seq.flatten()

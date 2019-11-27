@@ -78,25 +78,30 @@ class SeqGen:
                 .format(cmd)
                 )
 
-        # make seqs into array, sort it, and count differences
+        # store names and seqs to a dict (names are 1-indexed msprime tips)
         names = []
         seqs = []
+        seqd = {}
         for line in hold.split("\n")[1:-1]:
             name, seq = line.split()
-            names.append(name)
-            seqs.append(list(seq))
+            seqd[int(name)] = list(seq)
+            #names.append(name)
+            #seqs.append(list(seq))
 
         # convert seqs to int array 
-        arr = np.array(seqs)
+        arr = np.array([seqd[i] for i in range(1, len(seqd) + 1)])
+        # arr = np.array(seqs)        
         arr[arr == "A"] = 0
         arr[arr == "C"] = 1
         arr[arr == "G"] = 2
         arr[arr == "T"] = 3
         arr = arr.astype(np.uint8)
 
-        # reorder rows to be in alphanumeric order of the names
-        return arr[np.argsort(names), :]
-
+        # reorder rows to return 1-indexed numeric tip name order
+        return arr
+        # return arr[np.argsort(names), :]
+        # print(names)
+        # return arr[range(len(names)), :]
 
 
 
