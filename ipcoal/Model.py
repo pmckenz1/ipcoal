@@ -193,7 +193,7 @@ class Model:
         self.aedges = (
             0 if not self.admixture_edges else len(self.admixture_edges))
 
-        # demography info to fill        
+        # demography info to fill
         self.ms_migrate = []
         self.ms_migtime = []
         self.ms_demography = set()
@@ -812,5 +812,9 @@ class Model:
                     self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
 
                 # caught raxml exception (prob. low data)
-                except ipcoalError:
-                    pass
+                # except ipcoalError:
+                   # pass
+                except ipcoalError as err:
+                    # self.df.loc[self.df.locus == lidx, "inferred_tree"] = np.nan
+                    # print(err)
+                    raise err

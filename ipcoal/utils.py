@@ -7,7 +7,6 @@ import itertools
 import toyplot
 import numpy as np
 import pandas as pd
-from .jitted import count_matrix_int
 
 try:
     from IPython.display import display
@@ -72,7 +71,6 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
     return intervals
 
 
-
 def tile_reps(array, nreps):
     "used to fill labels in the simcat.Database for replicates"
     ts = array.size
@@ -82,31 +80,6 @@ def tile_reps(array, nreps):
         .reshape((nr, ts))
         .T.flatten())
     return result
-
-
-def get_snps_count_matrix(tree, seqs):
-    """
-    Compiles SNP data into a nquartets x 16 x 16 count matrix with the order
-    of quartets determined by the shape of the tree.
-    """
-    # get nquartets without requiring scipy (slower for biiig data tho)
-    nquarts = sum(1 for i in itertools.combinations(range(tree.ntips), 4))
-
-    # shape of the arr (count matrix)
-    arr = np.zeros((nquarts, 16, 16), dtype=np.int64)
-
-    # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
-    quartidx = 0
-    qiter = itertools.combinations(range(tree.ntips), 4)
-    for currquart in qiter:
-        # cols indices match tip labels b/c we named tips node.idx
-        quartsnps = seqs[currquart, :]
-        # save as stacked matrices
-        arr[quartidx] = count_matrix_int(quartsnps.T)
-        # save flattened to counts
-        quartidx += 1
-    return arr
-
 
 
 def plot_test_values(self):

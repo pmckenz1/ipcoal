@@ -12,7 +12,7 @@ from .utils import ipcoalError
 
 
 SUPPORTED = {
-    "raxml": "raxmlHPC-PTHREADS-AVX2",
+    "raxml": "raxmlHPC-PTHREADS",
     "iqtree": "iqtree",
 }
 
@@ -129,10 +129,11 @@ class TreeInfer:
             cmd += ["-o", str(self.raxml_kwargs["o"])]
 
         # call the command
-        proc = sps.Popen(cmd, stdout=sps.PIPE)  # stderr=sps.STDOUT, 
+        proc = sps.Popen(cmd, stdout=sps.PIPE, stderr=sps.STDOUT)
         out, err = proc.communicate()
         if proc.returncode:
-            raise ipcoalError("error in raxml: {}".format(out.decode()))
+            print(out, proc.returncode, cmd)
+            #raise ipcoalError("error in raxml: {}".format(out.decode()))
 
         # read in the full tree or bipartitions
         best = os.path.join(

@@ -2,21 +2,21 @@
 
 "Jitted functions for fast invariants operations"
 
-import numpy as np
-from numba import njit
+#import numpy as np
+#from numba import njit
 
 
-@njit()
-def count_matrix_int(quartsnps):
-    """
-    return a 16x16 matrix of site counts from snparr
-    """
-    arr = np.zeros((16, 16), dtype=np.int64)
-    add = np.int64(1) 
-    for idx in range(quartsnps.shape[0]):
-        i = quartsnps[idx, :]
-        arr[(4 * i[0]) + i[1], (4 * i[2]) + i[3]] += add    
-    return arr
+#@njit()
+#def count_matrix_int(quartsnps):
+#    """
+#    return a 16x16 matrix of site counts from snparr
+#    """
+#    arr = np.zeros((16, 16), dtype=np.int64)
+#    add = np.int64(1) 
+#    for idx in range(quartsnps.shape[0]):
+#        i = quartsnps[idx, :]
+#        arr[(4 * i[0]) + i[1], (4 * i[2]) + i[3]] += add    
+#    return arr
 
 
 # @njit()

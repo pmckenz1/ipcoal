@@ -21,7 +21,6 @@ requirements:
     - scipy >=0.10  # can remove soon
     - pandas >=0.16
     - toytree >=1.0.4
-    - numba
     - future
     - msprime
     - raxml
