@@ -27,7 +27,7 @@ class SeqGen:
 
     def open_subprocess(self):
         """
-        Open a persistent Popen bash shell
+        Open a persistent Popen bash shell on a new thread.
         """
         # open shell arg with line buffering
         self.shell = sps.Popen(
@@ -79,8 +79,6 @@ class SeqGen:
                 )
 
         # store names and seqs to a dict (names are 1-indexed msprime tips)
-        names = []
-        seqs = []
         seqd = {}
         for line in hold.split("\n")[1:-1]:
             name, seq = line.split()
