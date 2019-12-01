@@ -762,11 +762,6 @@ class Model:
 
 
 
-    # def _write_snps_to_countmatrix(self):
-    #     pass
-
-
-
     def infer_gene_trees(self, inference_method='raxml', inference_args={}):
         """
         Infer gene trees at every locus using the sequence in the locus 
