@@ -527,10 +527,7 @@ class Model:
         seqarr = np.zeros((self.nstips, nsites), dtype=np.uint8)
 
         # iterate over the index of the dataframe to sim for each genealogy
-        for idx in df.index:
-
-            # advance to next tree in tree sequence
-            mstree = next(msts.trees())
+        for idx, mstree in zip(df.index, msts.trees()):
 
             # get the number of base pairs taken up by this gene tree
             gtlen = df.loc[idx, 'nbps']
