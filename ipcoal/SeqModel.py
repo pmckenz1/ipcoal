@@ -95,7 +95,7 @@ class SeqModel():
         """
         # get all as arrays
         np.random.seed(seed)
-        tree = toytree.tree(newick)
+        tree = toytree._rawtree(newick)
         seqs = np.zeros((tree.nnodes + 1, nsites), dtype=np.int8)
         idxs = np.zeros(tree.nnodes, dtype=int)
         brlens = np.zeros(tree.nnodes)

@@ -34,7 +34,7 @@ class SeqGen:
             ["bash"], stdin=sps.PIPE, stdout=sps.PIPE, bufsize=1)
 
 
-    def close_subprocess(self):
+    def close(self):
         """
         Cleanup and shutdown the subprocess shell.
         """
