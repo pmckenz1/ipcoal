@@ -19,13 +19,14 @@ import pandas as pd
 import msprime as ms
 
 from .utils import get_all_admix_edges, ipcoalError
-from .SeqGen import SeqGen
 from .TreeInfer import TreeInfer
 from .Writer import Writer
-
+from .SeqModel import SeqModel
+from .SeqGen import SeqGen
 
 # set global display preference to make tree columns look nice
 pd.set_option("max_colwidth", 28)
+
 
 
 class Model:
@@ -613,7 +614,7 @@ class Model:
 
 
 
-    def sim_snps(self, nsnps=1, repeat_on_trees=False):
+    def sim_snps(self, nsnps=1, repeat_on_trees=False, seqgen=False):
         """
         Run simulations until nsnps _unlinked_ SNPs are generated. If the tree
         is shallow and the mutation rate is low this can take a long time b/c
@@ -630,8 +631,11 @@ class Model:
         """
 
         # initialize a sequence simulator
-        mkseq = SeqGen()
-        mkseq.open_subprocess()
+        if seqgen:
+            mkseq = SeqGen()
+            mkseq.open_subprocess()
+        else:
+            mkseq = SeqModel()
 
         # get the msprime ts generator 
         msgen = self._get_locus_sim(1, snp=True)
@@ -682,7 +686,7 @@ class Model:
             newicks.append(newick)
 
         # close subprocess
-        mkseq.close_subprocess()
+        mkseq.close()
 
         # init dataframe
         self.df = pd.DataFrame({
