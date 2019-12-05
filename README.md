@@ -1,3 +1,5 @@
 # ipcoal
-**IN DEVELOPMENT:**  
-Simulation package for interactively simulating genealogies and sequences on species trees with user-defined demographic scenarios, writing the data if you wish and inferring gene trees. Wraps around state-of-the-art simulation programs msprime and seq-gen.
+
+Documentation under development: [https://ipcoal.readthedocs.io](https://ipcoal.readthedocs.io)
+
+Python package for simulating genealogies and sequence data. 

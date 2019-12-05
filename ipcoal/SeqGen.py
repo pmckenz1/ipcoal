@@ -27,14 +27,14 @@ class SeqGen:
 
     def open_subprocess(self):
         """
-        Open a persistent Popen bash shell
+        Open a persistent Popen bash shell on a new thread.
         """
-        # open 
+        # open shell arg with line buffering
         self.shell = sps.Popen(
-            ["bash"], stdin=sps.PIPE, stdout=sps.PIPE, bufsize=0)
+            ["bash"], stdin=sps.PIPE, stdout=sps.PIPE, bufsize=1)
 
 
-    def close_subprocess(self):
+    def close(self):
         """
         Cleanup and shutdown the subprocess shell.
         """
@@ -78,98 +78,19 @@ class SeqGen:
                 .format(cmd)
                 )
 
-        # make seqs into array, sort it, and count differences
-        names = []
-        seqs = []
+        # store names and seqs to a dict (names are 1-indexed msprime tips)
+        seqd = {}
         for line in hold.split("\n")[1:-1]:
             name, seq = line.split()
-            names.append(name)
-            seqs.append(list(seq))
+            seqd[int(name)] = list(seq)
 
         # convert seqs to int array 
-        arr = np.array(seqs)
+        arr = np.array([seqd[i] for i in range(1, len(seqd) + 1)])
         arr[arr == "A"] = 0
         arr[arr == "C"] = 1
         arr[arr == "G"] = 2
         arr[arr == "T"] = 3
         arr = arr.astype(np.uint8)
 
-        # reorder rows to be in alphanumeric order of the names
-        return arr[np.argsort(names), :]
-
-
-
-
-    # def seqgen_on_tree(self, newick, ntaxa, nsites, mut, **kwargs):
-    #     """
-    #     Call seqgen on a newick tree to generate nsites of data using a given
-    #     mutation rate and return an integer sequence array for ntaxa.
-
-    #     Parameters
-    #     ----------
-    #     newick: str
-    #         A newick string with branch lengths in coalescent units. Here we 
-    #         expect the trees will be ultrametric.
-    #     ntaxa: int
-    #         The number of tips in the newick tree. 
-    #     nsites: int
-    #         The number of sites to simulate. Depending on mutation rate and 
-    #         tree size, shape, and height these may evolve SNPs or not. 
-    #     mut: float
-    #         The per site per generation mutation rate. 
-    #     kwargs: dict
-    #         Additional arguments to the GTR model (TODO).
-    #     """
-
-    #     # write the newick string to a temporary file. This is required as far
-    #     # as I can tell, cannot get piped input to work in seqgen, ugh.
-    #     fname = os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".tmp")
-    #     with open(fname, 'w') as temp:
-    #         temp.write(newick)
-
-    #     # set up the seqgen CLI call string
-    #     proc1 = subprocess.Popen([
-    #         "seq-gen",
-    #         "-m", "GTR",
-    #         "-l", str(nsites),        # seq length
-    #         "-s", str(self.mut),      # mutation rate
-    #         fname,
-    #         # ... other model params...,
-    #         ],
-    #         stderr=subprocess.STDOUT,
-    #         stdout=subprocess.PIPE,
-    #     )
-
-    #     # run seqgen and check for errors
-    #     out, _ = proc1.communicate()
-    #     if proc1.returncode:
-    #         raise Exception("seq-gen error: {}".format(out.decode()))
-
-    #     # remove the "Time taken: 0.0000 seconds" bug in seq-gen
-    #     physeq = re.sub(
-    #         pattern=r"Time\s\w+:\s\d.\d+\s\w+\n",
-    #         repl="",
-    #         string=out.decode())
-
-    #     # make seqs into array, sort it, and count differences
-    #     physeq = physeq.strip().split("\n")[-(self.ntips + 1):]
-
-    #     arr = np.array([list(i.split()[-2:]) for i in physeq[1:]], dtype=bytes)
-    #     names = [arr_ele[0].astype(str) for arr_ele in arr]
-    #     seqs = [arr_ele[1].astype(str) for arr_ele in arr]
-
-    #     final_seqs = []
-    #     for indv_seq in seqs:
-    #         orig_arrseq = np.array([i for i in indv_seq])
-    #         arrseq = np.zeros(orig_arrseq.shape, dtype=np.int8)
-    #         arrseq[orig_arrseq == "A"] = 0
-    #         arrseq[orig_arrseq == "C"] = 1
-    #         arrseq[orig_arrseq == "G"] = 2
-    #         arrseq[orig_arrseq == "T"] = 3
-    #         final_seqs.append(arrseq)
-
-    #     return(dict(zip(names, final_seqs)))
-
-
-
-
+        # reorder rows to return 1-indexed numeric tip name order
+        return arr
