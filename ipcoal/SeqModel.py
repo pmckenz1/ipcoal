@@ -1,157 +1,287 @@
 #!/usr/bin/env python
 
-from scipy.linalg import expm
+import toytree
 import numpy as np
+from scipy.linalg import expm
+from numba import njit, objmode
+
+
+# GLOBALS
+BASES = np.array([0, 1, 2, 3])
+RATES = np.array([0.25, 0.25, 0.25, 0.25])
 
 
 
 class SeqModel():
+    """
+    Simulate seq-gen like non-infinite sites mutational process.
+
+    Parameters:
+    ------------
+    tree: (toytree)
+        A tree topology with edge lengths (node .dist attributes) in units
+        of expected number of substitutions per site. To convert from 
+        units of generations you simply multiply by the per-site mut rate.
+        Example: gens=1e4 * mut=1e-8 yields brlen = 0.0001
+    state_frequencies: (None, list)
+        The relative frequencies of bases A,C,G,T respectively, entered
+        as a list. The default is [0.25, 0.25, 0.25, 0.25].
+    kappa: (float)
+        The transition/traversio ratio entered as a decimal value >0. 
+        Implemented in HKY or F84. 
+    alpha: (int)
+        Shape for the gamma rate heterogeneity. Default is no site-specific
+        rate heterogeneity. (Not Yet Implemented)
+    gamma: (float)
+        Discrete number of rate categories for gamma rate heterogeneity.
+        (Not Yet Implemented)
+    invariable: (float)
+        Proportion of invariable sites (Not Yet Implemented)
+
+    """
     def __init__(
         self,
-        ttree=None,
-        Q=None,
-        stationary_distribution=None,
+        state_frequencies=None,
+        rate_matrix=None,
         kappa=None,
+        alpha=None,
+        gamma=None,
+        seed=None,
+        Ne=None,
         ):
 
         # save the tree object if one is provided with init
-        self.ttree = ttree
+        self.kappa = (kappa if kappa else 1.)
+        self.state_frequencies = (
+            state_frequencies if state_frequencies else RATES
+        )
+        self.rate_matrix = (
+            rate_matrix if rate_matrix else RATES
+        )
 
-        # set stationary_dist, kappa, Q, mod_type
-        self.set_JC()
-
-        # save the Q matrix if one is provided with init
-        if Q:
-            self.Q = Q
-
-        # record stationary distribution of base frequencies (later)
-        if stationary_distribution:
-            self.stationary_distribution = stationary_distribution
-
-        # record transition to transversion ratio (later)
-        self.kappa = None
-        if kappa:
-            self.kappa = kappa
-
-        # base object to reference later
-        self.bases = np.array([0, 1, 2, 3])  # A, C, G, T
+        # get Q matrix from model params
+        self.Q = None
+        self.get_model_Q()
 
 
-    def set_JC(self):
-        # always same stationary with JC
-        self.stationary_distribution = [0.25, 0.25, 0.25, 0.25]
 
-        # don't bother with kappa for JC
-        self.kappa = None
-
-        # always this matrix for JC
-        self.Q = np.array([
-            [-1., 1. / 3, 1. / 3, 1. / 3],
-            [1. / 3, -1, 1 / 3, 1. / 3],
-            [1. / 3, 1. / 3, -1., 1. / 3],
-            [1. / 3, 1. / 3, 1. / 3, -1.],
-        ])
-
-        # save the model type
-        self.mod_type = "JC"
-
-
-    def set_HKY(
-        self,
-        kappa=1, 
-        stationary_distribution=[0.25,0.25,0.25,0.25],
-        ):
-
-        # user provides stationary dist
-        self.stationary_distribution = stationary_distribution
-        # user provides transition / transversion ratio
-        self.kappa = kappa
+    def get_model_Q(self):
+        """
+        Get transition probability matrix.
+        """
+        # shorthand reference to params
+        k = self.kappa
+        sd = self.state_frequencies
 
         # make non-normalized matrix (not in substitutions / unit of time)
-        nonnormal_Q = np.array([[-(stationary_distribution[1]+stationary_distribution[2]*kappa+stationary_distribution[3]),stationary_distribution[1],stationary_distribution[2]*kappa,stationary_distribution[3]],
-                                [stationary_distribution[0],-(stationary_distribution[0]+stationary_distribution[2]+kappa*stationary_distribution[3]),stationary_distribution[2],kappa*stationary_distribution[3]],
-                                [stationary_distribution[0]*kappa,stationary_distribution[1],-(stationary_distribution[0]*kappa+stationary_distribution[1]+stationary_distribution[3]),stationary_distribution[3]],
-                                [stationary_distribution[0],stationary_distribution[1]*kappa,stationary_distribution[2],-(stationary_distribution[0]+stationary_distribution[1]*kappa+stationary_distribution[2])]])
+        nonnormal_Q = np.array([
+            [-(sd[1] + sd[2] * k + sd[3]), sd[1], sd[2] * k, sd[3]],
+            [sd[0], -(sd[0] + sd[2] + k * sd[3]), sd[2], k * sd[3]],
+            [sd[0] * k, sd[1], -(sd[0] * k + sd[1] + sd[3]), sd[3]],
+            [sd[0], sd[1] * k, sd[2], -(sd[0] + sd[1] * k + sd[2])],
+        ])
 
         # full matrix scaling factor
-        mu = -1 / np.sum( np.array([nonnormal_Q[i][i] for i in range(4)]) * stationary_distribution )
+        mu = -1 / np.sum(np.array([nonnormal_Q[i][i] for i in range(4)]) * sd)
 
         # scale by Q to get adjusted rate matrix
         self.Q = nonnormal_Q * mu
 
-        # save the model type
-        self.mod_type = "HKY"
 
 
+    def feed_tree(self, newick, nsites=1, mut=1e-8, seed=None):
+        """
+        mostly jitted mutation process.
+        """
+        # get all as arrays
+        np.random.seed(seed)
+        tree = toytree.tree(newick)
+        seqs = np.zeros((tree.nnodes + 1, nsites), dtype=np.int8)
+        idxs = np.zeros(tree.nnodes, dtype=int)
+        brlens = np.zeros(tree.nnodes)
+        relate = np.zeros((tree.nnodes, 2), dtype=int)
 
-    def run(
-        self, 
-        ttree=None, 
-        seq_length=50,
-        return_leaves=True,
-        ):
-
-        # in case we specified a tree in the init
-        if not ttree:
-            ttree = self.ttree
-
-        # make a dict to hold the alignment
-        alignment = {}
-
-        # start a traversal
-        for node in ttree.treenode.traverse():
-
-            # if not the root
+        # prefill info needed to do jit funcs
+        for idx, node in enumerate(tree.treenode.traverse()):
+            idxs[idx] = node.idx
             if not node.is_root():
-                # get branch length
-                br_len=node.dist
-
-                # get index of parent node
-                parent=node.up.idx
-
-                # get probability matrix for this branch length
-                prob_mat = self._evolve_branch_probs(br_len,self.Q)
-
-                # make all substitutions, and save the new sequence to the node index key
-                alignment[node.idx] = self._substitute(alignment[parent],prob_mat)
+                brlens[node.idx] = node.dist * mut
+                relate[node.idx] = node.idx, node.up.idx
             else:
-                # if root, pull starting sequence from stationary distribution
-                alignment[node.idx] = np.random.choice([0,1,2,3],p=self.stationary_distribution,size=seq_length)
+                relate[node.idx] = node.idx, node.idx + 1
 
-        # if we just want the leaf sequences
-        if return_leaves:
-            # pull leaf indices from the tree
-            leaves = ttree.treenode.get_leaves()
+        # fill starting value to root
+        start = np.random.choice(range(4), nsites, p=self.state_frequencies)
+        seqs[-1] = start
 
-            # return the dictionary
-            return({k.name: alignment[k.idx] for k in leaves})
-
-        # or...
-        else:
-            # return full alignment
-            return(alignment)
+        # run jitted funcs on arrays
+        seqs = jevolve(self.Q, seqs, idxs, brlens, relate, seed)
+        return seqs[:tree.ntips]
 
 
 
-    def _evolve_branch_probs(self, br_len, Q):
-        "exponentiate the matrix*br_len to get probability matrix"
-        return(expm(Q * br_len))
-
-
-
-    def _substitute(self, parent_seq, prob_mat):
+    def run(self, nsites, tree=None):
         """
-        Start with a sequence and probability matix, and make substitutions
-        across the sequence.
+        Simulate markov mutation process on tree and return sequences.
         """
-        # make an array to hold the new sequence
-        new_arr = np.zeros((len(parent_seq)),dtype=np.int8)
+        # use a new tree or a tree provided at init.
+        tree = (tree if tree else self.tree)
+        assert tree, "Error: you must provide a tree."
 
-        # for each base index...
-        for i in range(len(parent_seq)):
-            # store a random choice of base in each index, 
-            # based on probabilities associated with starting base
-            new_arr[i] = np.random.choice(self.bases, p=prob_mat[parent_seq[i]])
+        # an array to store results ordered alphanumerically by tip names
+        seqs = np.zeros((tree.nnodes, nsites), dtype=np.int8)
 
-        # return new sequence
-        return(new_arr)
+        # traverse tree root to tips adding mutations.
+        for node in tree.treenode.traverse():
+
+            # get random starting sequence at the root
+            if node.is_root():
+                seqs[node.idx] = np.random.choice(
+                    range(4), size=nsites, p=self.state_frequencies
+                )
+
+            # evolve sites on edge from parent to node.
+            else:
+                # branch lengths are in expected mutations per site?
+                brlen = node.dist
+                parent = node.up.idx
+                probmat = evolve_branch_probs(brlen, self.Q)
+                subs = substitute(seqs[parent], probmat)
+                seqs[node.idx] = subs
+
+        # return only the sequences for the tips
+        return seqs[:tree.ntips]
+
+
+
+    def close(self):
+        pass
+
+
+
+######################################################
+# JIT functions
+######################################################
+
+
+@njit
+def jevolve_branch_probs(brlenQ):
+    """
+    jitted wrapper to allow scipy call within numba loop
+    """
+    with objmode(probs='float64[:,:]'):
+        probs = expm(brlenQ)
+    return probs
+
+
+@njit
+def jevolve(Q, seqs, idxs, brlens, relate, seed):
+    """
+    jitted function to sample substitutions on edges
+    """
+    np.random.seed(seed)
+    for idx in idxs:
+        bl = brlens[idx]
+        pidx = relate[idx, 1]
+        probmat = jevolve_branch_probs(bl * Q)
+        seqs[idx] = jsubstitute(seqs[pidx], probmat)
+    return seqs
+
+
+@njit
+def jsubstitute(pseq, probmat):
+    """
+    jitted function to probabilistically transition state
+    """
+    ns = len(pseq)
+    narr = np.zeros(ns, dtype=np.int8)
+    for i in range(ns):
+        nbase = np.argmax(np.random.multinomial(1, probmat[pseq[i]]))
+        narr[i] = nbase
+    return narr
+
+
+
+
+def evolve_branch_probs(brlen, Q):
+    """
+    Exponentiate the matrix*br_len to get probability matrix
+    The longer the branch the more probabilities will converge 
+    towards the stationary distribution.
+    """
+    return expm(Q * brlen)
+
+
+@njit
+def substitute(parent_seq, prob_mat):
+    """
+    Start with a sequence and probability matix, and make substitutions
+    across the sequence.
+    """
+    # make an array to hold the new sequence
+    new_arr = np.zeros((len(parent_seq)), dtype=np.int8)
+
+    # for each base index...
+    for i in range(len(parent_seq)):
+        # store a random choice of base in each index, 
+        # based on probabilities associated with starting base
+        nbase = np.random.choice(BASES, p=prob_mat[parent_seq[i]])
+        new_arr[i] = nbase
+
+    # return new sequence
+    return new_arr
+
+
+
+
+
+# def old_run(self, ttree, seq_length=50, return_leaves=True):
+#     """
+#     Simulate markov mutation process on tree and return sequences.
+#     """
+
+#     # in case we specified a tree in the init
+#     if not ttree:
+#         ttree = self.ttree
+
+#     # make a dict to hold the alignment
+#     alignment = {}
+
+#     # start a traversal
+#     for node in ttree.treenode.traverse():
+
+#         # if not the root
+#         if not node.is_root():
+#             # get branch length
+#             br_len = node.dist / (2 * node.Ne)
+
+#             # get index of parent node
+#             parent = node.up.idx
+
+#             # get probability matrix for this branch length
+#             prob_mat = self._evolve_branch_probs(br_len, self.Q)
+
+#             # sim substitutions and save new seq to node index key
+#             subs = self._substitute(alignment[parent], prob_mat)
+#             alignment[node.idx] = subs
+#         else:
+#             # if root, pull starting sequence from stationary distribution
+#             starting = np.random.choice(
+#                 range(4), 
+#                 p=self.stationary_distribution,
+#                 size=seq_length,
+#             )
+#             alignment[node.idx] = starting
+
+#     # if we just want the leaf sequences
+#     if return_leaves:
+#         # pull leaf indices from the tree
+#         leaves = ttree.treenode.get_leaves()
+
+#         # return the dictionary
+#         return({k.name: alignment[k.idx] for k in leaves})
+
+#     # or...
+#     else:
+#         # return full alignment
+#         return(alignment)
