@@ -606,7 +606,7 @@ class Model:
         df = df.reset_index(drop=True)
 
         # clean and close subprocess 
-        mkseq.close_subprocess()
+        mkseq.close()
 
         # store values to object
         self.df = df
