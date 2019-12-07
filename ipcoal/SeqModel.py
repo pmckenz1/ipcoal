@@ -3,8 +3,10 @@
 import toytree
 import numpy as np
 from scipy.linalg import expm
-from numba import njit, objmode
+from numba import config, njit, objmode
 
+# set the threading layer before any parallel target compilation
+config.THREADING_LAYER = 'forksafe'
 
 # GLOBALS
 BASES = np.array([0, 1, 2, 3])
