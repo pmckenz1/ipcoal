@@ -13,10 +13,10 @@ from builtins import range
 import sys
 from copy import deepcopy
 
-import toytree
 import numpy as np
 import pandas as pd
 import msprime as ms
+import toytree
 
 from .utils import get_all_admix_edges, ipcoalError
 from .TreeInfer import TreeInfer
@@ -446,7 +446,7 @@ class Model:
 
 
 
-    def _get_locus_sim(self, nsites=1, snp=False):
+    def _get_tree_sequence_generator(self, nsites=1, snp=False):
         """
         Returns a msprime.simulate() generator object that can generate 
         treesequences under the demographic model parameters. 
@@ -483,22 +483,13 @@ class Model:
 
 
 
-    def _sim_locus(self, nsites, locus_idx=0, **kwargs):
+    def _sim_locus(self, nsites, locus_idx, mkseq):
         """
         Simulate tree sequence for each locus and sequence data for each 
         genealogy and return all in a dataframe. 
         """
-
-        # initialize a sequence simulator unless provided as a hidden arg.
-        # this is just a convenience for testing, users should call .run().
-        if not kwargs.get("seqgen"):
-            mkseq = SeqGen()
-            mkseq.open_subprocess()
-        else:
-            mkseq = kwargs.get("seqgen")
-
         # get the msprime ts generator 
-        msgen = self._get_locus_sim(nsites)
+        msgen = self._get_tree_sequence_generator(nsites)
 
         # get the treesequence and its breakpoints
         msts = next(msgen)
@@ -554,25 +545,22 @@ class Model:
                 bidx += gtlen
 
                 # reset .names on msprime tree with node_labels 1-indexed
-                gtree = toytree.tree(nwk)
-                for node in gtree.treenode.get_leaves():
-                    node.name = self.tipdict[int(node.name)]
-                newick = gtree.write(tree_format=5)
-                df.loc[idx, "genealogy"] = newick
+                # gtree = toytree.tree(nwk)
+                # for node in gtree.treenode.get_leaves():
+                #     node.name = self.tipdict[int(node.name)]
+                # newick = gtree.write(tree_format=5)
+                # df.loc[idx, "genealogy"] = newick
+                df.loc[idx, "genealogy"] = mstree.newick(node_labels=self.tipdict)
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
         df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
-
-        # clean and close subprocess if not still using
-        if not kwargs.get("seqgen"):
-            mkseq.close_subprocess()
 
         # return the dataframe and seqarr
         return df, seqarr
 
 
 
-    def sim_loci(self, nloci=1, nsites=1):
+    def sim_loci(self, nloci=1, nsites=1, seqgen=False):
         """
         Simulate tree sequence for each locus and sequence data for each 
         genealogy and return all genealogies and their summary stats in a 
@@ -586,14 +574,17 @@ class Model:
         dflist = []
 
         # open the subprocess to seqgen
-        mkseq = SeqGen()
-        mkseq.open_subprocess()
+        if seqgen:
+            mkseq = SeqGen()
+            mkseq.open_subprocess()
+        else:
+            mkseq = SeqModel()
 
         # iterate over nloci to simulate, get df and arr to store.
         for lidx in range(nloci):
 
             # returns genetree_df and seqarray
-            df, arr = self._sim_locus(nsites, lidx, **{'seqgen': mkseq})
+            df, arr = self._sim_locus(nsites, lidx, mkseq)
 
             # store seqs in a list for now
             seqarr[lidx] = arr
@@ -606,11 +597,14 @@ class Model:
         df = df.reset_index(drop=True)
 
         # clean and close subprocess 
-        mkseq.close_subprocess()
+        mkseq.close()
 
         # store values to object
         self.df = df
         self.seqs = seqarr
+
+        # allows chaining funcs
+        return self
 
 
 
@@ -638,7 +632,7 @@ class Model:
             mkseq = SeqModel()
 
         # get the msprime ts generator 
-        msgen = self._get_locus_sim(1, snp=True)
+        msgen = self._get_tree_sequence_generator(1, snp=True)
 
         # store results (nsnps, ntips); def. 1000 SNPs
         newicks = []
@@ -653,7 +647,8 @@ class Model:
                 break
 
             # get first tree from next tree_sequence
-            newick = next(msgen).first().newick()
+            mstre = next(msgen).first()
+            newick = mstre.newick()
 
             # simulate first base
             seed = self.random_mut.randint(1e9)    
@@ -672,10 +667,11 @@ class Model:
                     continue
 
             # reset .names on msprime tree with node_labels 1-indexed
-            gtree = toytree.tree(newick)
-            for node in gtree.treenode.get_leaves():
-                node.name = self.tipdict[int(node.name)]
-            newick = gtree.write(tree_format=5)
+            # gtree = toytree.tree(newick)
+            # for node in gtree.treenode.get_leaves():
+            #     node.name = self.tipdict[int(node.name)]
+            # newick = gtree.write(tree_format=5)
+            newick = mstre.newick(node_labels=self.tipdict)
 
             # reorder SNPs to be alphanumeric nameordered by tipnames 
             seq = seq[self.order, :]
@@ -685,7 +681,7 @@ class Model:
             snpidx += 1
             newicks.append(newick)
 
-        # close subprocess
+        # close subprocess is seqgen, or nothing if seqmodel
         mkseq.close()
 
         # init dataframe
@@ -700,6 +696,9 @@ class Model:
             columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
         )
         self.seqs = snparr
+
+        # allows chaining funcs
+        return self
 
 
 
