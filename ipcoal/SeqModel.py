@@ -93,7 +93,8 @@ class SeqModel():
 
     def feed_tree(self, newick, nsites=1, mut=1e-8, seed=None):
         """
-        mostly jitted mutation process.
+        Simulate markov mutation process on tree and return sequences.        
+        Mostly jitted mutation process.
         """
         # get all as arrays
         np.random.seed(seed)
@@ -122,37 +123,37 @@ class SeqModel():
 
 
 
-    def run(self, nsites, tree=None):
-        """
-        Simulate markov mutation process on tree and return sequences.
-        """
-        # use a new tree or a tree provided at init.
-        tree = (tree if tree else self.tree)
-        assert tree, "Error: you must provide a tree."
+    # def run(self, nsites, tree=None):
+    #     """
+    #     Simulate markov mutation process on tree and return sequences.
+    #     """
+    #     # use a new tree or a tree provided at init.
+    #     tree = (tree if tree else self.tree)
+    #     assert tree, "Error: you must provide a tree."
 
-        # an array to store results ordered alphanumerically by tip names
-        seqs = np.zeros((tree.nnodes, nsites), dtype=np.int8)
+    #     # an array to store results ordered alphanumerically by tip names
+    #     seqs = np.zeros((tree.nnodes, nsites), dtype=np.int8)
 
-        # traverse tree root to tips adding mutations.
-        for node in tree.treenode.traverse():
+    #     # traverse tree root to tips adding mutations.
+    #     for node in tree.treenode.traverse():
 
-            # get random starting sequence at the root
-            if node.is_root():
-                seqs[node.idx] = np.random.choice(
-                    range(4), size=nsites, p=self.state_frequencies
-                )
+    #         # get random starting sequence at the root
+    #         if node.is_root():
+    #             seqs[node.idx] = np.random.choice(
+    #                 range(4), size=nsites, p=self.state_frequencies
+    #             )
 
-            # evolve sites on edge from parent to node.
-            else:
-                # branch lengths are in expected mutations per site?
-                brlen = node.dist
-                parent = node.up.idx
-                probmat = evolve_branch_probs(brlen, self.Q)
-                subs = substitute(seqs[parent], probmat)
-                seqs[node.idx] = subs
+    #         # evolve sites on edge from parent to node.
+    #         else:
+    #             # branch lengths are in expected mutations per site?
+    #             brlen = node.dist
+    #             parent = node.up.idx
+    #             probmat = evolve_branch_probs(brlen, self.Q)
+    #             subs = substitute(seqs[parent], probmat)
+    #             seqs[node.idx] = subs
 
-        # return only the sequences for the tips
-        return seqs[:tree.ntips]
+    #     # return only the sequences for the tips
+    #     return seqs[:tree.ntips]
 
 
 
@@ -205,33 +206,33 @@ def jsubstitute(pseq, probmat):
 
 
 
-def evolve_branch_probs(brlen, Q):
-    """
-    Exponentiate the matrix*br_len to get probability matrix
-    The longer the branch the more probabilities will converge 
-    towards the stationary distribution.
-    """
-    return expm(Q * brlen)
+# def evolve_branch_probs(brlen, Q):
+#     """
+#     Exponentiate the matrix*br_len to get probability matrix
+#     The longer the branch the more probabilities will converge 
+#     towards the stationary distribution.
+#     """
+#     return expm(Q * brlen)
 
 
-@njit
-def substitute(parent_seq, prob_mat):
-    """
-    Start with a sequence and probability matix, and make substitutions
-    across the sequence.
-    """
-    # make an array to hold the new sequence
-    new_arr = np.zeros((len(parent_seq)), dtype=np.int8)
+# @njit
+# def substitute(parent_seq, prob_mat):
+#     """
+#     Start with a sequence and probability matix, and make substitutions
+#     across the sequence.
+#     """
+#     # make an array to hold the new sequence
+#     new_arr = np.zeros((len(parent_seq)), dtype=np.int8)
 
-    # for each base index...
-    for i in range(len(parent_seq)):
-        # store a random choice of base in each index, 
-        # based on probabilities associated with starting base
-        nbase = np.random.choice(BASES, p=prob_mat[parent_seq[i]])
-        new_arr[i] = nbase
+#     # for each base index...
+#     for i in range(len(parent_seq)):
+#         # store a random choice of base in each index, 
+#         # based on probabilities associated with starting base
+#         nbase = np.random.choice(BASES, p=prob_mat[parent_seq[i]])
+#         new_arr[i] = nbase
 
-    # return new sequence
-    return new_arr
+#     # return new sequence
+#     return new_arr
 
 
 
