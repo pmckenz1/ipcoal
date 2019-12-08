@@ -545,12 +545,12 @@ class Model:
                 bidx += gtlen
 
                 # reset .names on msprime tree with node_labels 1-indexed
-                # gtree = toytree.tree(nwk)
-                # for node in gtree.treenode.get_leaves():
-                #     node.name = self.tipdict[int(node.name)]
-                # newick = gtree.write(tree_format=5)
-                # df.loc[idx, "genealogy"] = newick
-                df.loc[idx, "genealogy"] = mstree.newick(node_labels=self.tipdict)
+                gtree = toytree._rawtree(nwk)
+                for node in gtree.treenode.get_leaves():
+                    node.name = self.tipdict[int(node.name)]
+                newick = gtree.write(tree_format=5)
+                df.loc[idx, "genealogy"] = newick
+                # df.loc[idx, "genealogy"] = mstree.newick(node_labels=self.tipdict)
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
         df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
@@ -667,11 +667,11 @@ class Model:
                     continue
 
             # reset .names on msprime tree with node_labels 1-indexed
-            # gtree = toytree.tree(newick)
-            # for node in gtree.treenode.get_leaves():
-            #     node.name = self.tipdict[int(node.name)]
-            # newick = gtree.write(tree_format=5)
-            newick = mstre.newick(node_labels=self.tipdict)
+            gtree = toytree._rawtree(newick)
+            for node in gtree.treenode.get_leaves():
+                node.name = self.tipdict[int(node.name)]
+            newick = gtree.write(tree_format=5)
+            #newick = mstre.newick(node_labels=self.tipdict)
 
             # reorder SNPs to be alphanumeric nameordered by tipnames 
             seq = seq[self.order, :]
