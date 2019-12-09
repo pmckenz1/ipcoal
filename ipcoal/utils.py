@@ -4,7 +4,6 @@ import time
 import datetime
 import itertools
 
-import toyplot
 import toytree
 import numpy as np
 import pandas as pd
@@ -168,7 +167,7 @@ def get_snps_count_matrix(tree, seqs):
     of quartets determined by the shape of the tree.
     """
     # get all quartets for this size tree
-    if isinstance(tree, toytree.ToyTree):
+    if isinstance(tree, toytree.Toytree.ToyTree):
         quarts = list(itertools.combinations(range(tree.ntips), 4))
     else:
         # or, can be entered as tuples directly, e.g., [(0, 1, 2, 3)]
@@ -190,6 +189,7 @@ def get_snps_count_matrix(tree, seqs):
 
 
 
+
 def calculate_dstat(seqs, p1, p2, p3, p4):
     """
     Calculate ABBA-BABA (D-statistic) from a count matrix. 
@@ -204,7 +204,7 @@ def calculate_dstat(seqs, p1, p2, p3, p4):
         dstat = 0.
     else:
         dstat = (abba - baba) / float(abba + baba)
-    return dstat
+    return pd.DataFrame({'dstat': [dstat], 'baba': [baba], 'abba': [abba]})
 
 
 
