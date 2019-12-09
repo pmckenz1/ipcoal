@@ -616,11 +616,25 @@ class Model:
 
         nsnps (int):
             The number of SNPs to produce.
+
         repeat_on_trees (bool):
             If True then sequence simulations repeat on a genealogy until it 
             produces a SNP. If False then if a genealogy does not produce
             a SNP we move on to the next simulated genealogy. This may be
             more correct since shallow trees are less likely to contain SNPs.
+
+        seqgen (bool):
+            A (hidden) argument to use seqgen to test our mutation
+            models against its results.
+
+        substitution_model (dict):
+            A dictionary of arguments to the markov process mutation model.
+            This includes: 
+                mutation_model = {
+                    state_frequencies=[0.25, 0.25, 0.25, 0.25],
+                    kappa=3,
+                    gamma=...,
+                }
         """
 
         # initialize a sequence simulator
