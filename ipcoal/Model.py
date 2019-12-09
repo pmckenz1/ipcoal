@@ -529,14 +529,14 @@ class Model:
                 # parse the mstree
                 nwk = mstree.newick()
 
-                # sim locus
+                # get seq ordered by idx number 
                 seed = self.random_mut.randint(1e9)
                 seq = mkseq.feed_tree(nwk, gtlen, self.mut, seed)
 
-                # store locus
+                # reorder rows to order by tip name and store in seqarr
                 seqarr[:, bidx:bidx + gtlen] = seq[self.order, :]
 
-                # record snps
+                # record the number of snps in this locus
                 subseq = seqarr[:, bidx:bidx + gtlen]
                 df.loc[idx, 'nsnps'] = (
                     np.any(subseq != subseq[0], axis=0).sum())
@@ -550,7 +550,6 @@ class Model:
                     node.name = self.tipdict[int(node.name)]
                 newick = gtree.write(tree_format=5)
                 df.loc[idx, "genealogy"] = newick
-                # df.loc[idx, "genealogy"] = mstree.newick(node_labels=self.tipdict)
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
         df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
@@ -671,7 +670,7 @@ class Model:
             for node in gtree.treenode.get_leaves():
                 node.name = self.tipdict[int(node.name)]
             newick = gtree.write(tree_format=5)
-            #newick = mstre.newick(node_labels=self.tipdict)
+            # newick = mstre.newick(node_labels=self.tipdict)
 
             # reorder SNPs to be alphanumeric nameordered by tipnames 
             seq = seq[self.order, :]
@@ -796,20 +795,21 @@ class Model:
         for lidx in range(self.seqs.shape[0]):
 
             # skip invariable loci
-            if self.df.nsnps[lidx]:
+            if self.df.nsnps[self.df.locus == lidx].sum():
 
-                # let low data fails return NaN
-                try:
-                    # write data to a temp phylip or nexus file
-                    tree = ti.run(lidx)
+                tree = ti.run(lidx)
 
-                    # enter result
-                    self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
+                # enter result
+                self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
 
-                # caught raxml exception (prob. low data)
-                # except ipcoalError:
-                   # pass
-                except ipcoalError as err:
-                    # self.df.loc[self.df.locus == lidx, "inferred_tree"] = np.nan
-                    # print(err)
-                    raise err
+                # # let low data fails return NaN
+                # try:
+                #     # write data to a temp phylip or nexus file
+
+                # # caught raxml exception (prob. low data)
+                # # except ipcoalError:
+                #    # pass
+                # except ipcoalError as err:
+                #     # self.df.loc[self.df.locus == lidx, "inferred_tree"] = np.nan
+                #     # print(err)
+                #     raise err
