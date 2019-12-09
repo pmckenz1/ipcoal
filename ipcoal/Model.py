@@ -796,20 +796,14 @@ class Model:
 
             # skip invariable loci
             if self.df.nsnps[self.df.locus == lidx].sum():
+                # let low data fails return NaN
+                try:
+                    tree = ti.run(lidx)
 
-                tree = ti.run(lidx)
+                    # enter result
+                    self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
 
-                # enter result
-                self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
-
-                # # let low data fails return NaN
-                # try:
-                #     # write data to a temp phylip or nexus file
-
-                # # caught raxml exception (prob. low data)
-                # # except ipcoalError:
-                #    # pass
-                # except ipcoalError as err:
-                #     # self.df.loc[self.df.locus == lidx, "inferred_tree"] = np.nan
-                #     # print(err)
-                #     raise err
+                # caught raxml exception (prob. low data)
+                except ipcoalError as err:
+                    print(err)
+                    raise err
