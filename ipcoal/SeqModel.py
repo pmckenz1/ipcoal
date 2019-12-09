@@ -3,10 +3,7 @@
 import toytree
 import numpy as np
 from scipy.linalg import expm
-from numba import config, njit, objmode
-
-# set the threading layer before any parallel target compilation
-config.THREADING_LAYER = 'forksafe'
+from numba import njit, objmode
 
 # GLOBALS
 BASES = np.array([0, 1, 2, 3])
@@ -94,7 +91,8 @@ class SeqModel():
     def feed_tree(self, newick, nsites=1, mut=1e-8, seed=None):
         """
         Simulate markov mutation process on tree and return sequences.        
-        Mostly jitted mutation process.
+        The returned seq array is ordered with taxa on rows by their idx
+        number from 0-ntips. It is not ordered by tip 'name' order.
         """
         # get all as arrays
         np.random.seed(seed)
@@ -120,41 +118,6 @@ class SeqModel():
         # run jitted funcs on arrays
         seqs = jevolve(self.Q, seqs, idxs, brlens, relate, seed)
         return seqs[:tree.ntips]
-
-
-
-    # def run(self, nsites, tree=None):
-    #     """
-    #     Simulate markov mutation process on tree and return sequences.
-    #     """
-    #     # use a new tree or a tree provided at init.
-    #     tree = (tree if tree else self.tree)
-    #     assert tree, "Error: you must provide a tree."
-
-    #     # an array to store results ordered alphanumerically by tip names
-    #     seqs = np.zeros((tree.nnodes, nsites), dtype=np.int8)
-
-    #     # traverse tree root to tips adding mutations.
-    #     for node in tree.treenode.traverse():
-
-    #         # get random starting sequence at the root
-    #         if node.is_root():
-    #             seqs[node.idx] = np.random.choice(
-    #                 range(4), size=nsites, p=self.state_frequencies
-    #             )
-
-    #         # evolve sites on edge from parent to node.
-    #         else:
-    #             # branch lengths are in expected mutations per site?
-    #             brlen = node.dist
-    #             parent = node.up.idx
-    #             probmat = evolve_branch_probs(brlen, self.Q)
-    #             subs = substitute(seqs[parent], probmat)
-    #             seqs[node.idx] = subs
-
-    #     # return only the sequences for the tips
-    #     return seqs[:tree.ntips]
-
 
 
     def close(self):
