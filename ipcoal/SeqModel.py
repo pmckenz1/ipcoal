@@ -52,10 +52,10 @@ class SeqModel():
         # save the tree object if one is provided with init
         self.kappa = (kappa if kappa else 1.)
         self.state_frequencies = (
-            state_frequencies if state_frequencies else RATES
+            state_frequencies if np.any(state_frequencies) else RATES
         )
         self.rate_matrix = (
-            rate_matrix if rate_matrix else RATES
+            rate_matrix if np.any(rate_matrix) else RATES
         )
 
         # get Q matrix from model params
