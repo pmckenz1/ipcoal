@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 
+import ipcoal
 import toytree
 import numpy as np
 from scipy.linalg import expm
+
 from numba import njit, objmode
+from numba import config
+
 
 # GLOBALS
 BASES = np.array([0, 1, 2, 3])
@@ -61,6 +65,10 @@ class SeqModel():
         # get Q matrix from model params
         self.Q = None
         self.get_model_Q()
+
+        # set the threading layer before any parallel target compilation
+        if ipcoal.__forksafe__:
+            config.THREADING_LAYER = 'forksafe'
 
 
 
