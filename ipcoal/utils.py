@@ -4,9 +4,10 @@ import time
 import datetime
 import itertools
 
-import toyplot
+import toytree
 import numpy as np
 import pandas as pd
+from .jitted import count_matrix_int
 
 try:
     from IPython.display import display
@@ -15,9 +16,94 @@ except ImportError:
     pass
 
 
+
+ABBA_IDX = [
+    (1, 4), (2, 8), (3, 12), (4, 1),
+    (6, 9), (7, 13), (8, 2), (9, 6),
+    (11, 14), (12, 3), (13, 7), (14, 11),
+]
+BABA_IDX = [
+    (1, 1), (2, 2), (3, 3), (4, 4), 
+    (6, 6), (7, 7), (8, 8), (9, 9),
+    (11, 11), (12, 12), (13, 13), (14, 14),
+]
+FIXED_IDX = [
+    (0, 0), (5, 5), (10, 10), (15, 15),
+]
+
+
+
 class ipcoalError(Exception):
     def __init__(self, *args, **kwargs):
         Exception.__init__(self, *args, **kwargs)
+
+
+
+class Progress(object):
+    def __init__(self, njobs, message, children):
+
+        # data
+        self.njobs = njobs
+        self.message = message
+        self.start = time.time()
+
+        # the progress bar 
+        self.bar = IntProgress(
+            value=0, min=0, max=self.njobs, 
+            layout={
+                "width": "350px",
+                "height": "30px",
+                "margin": "5px 0px 0px 0px",
+            })
+
+        # the message above progress bar
+        self.label = HTML(
+            self.printstr, 
+            layout={
+                "height": "25px",
+                "margin": "0px",
+            })
+
+        # the box widget container
+        heights = [
+            int(i.layout.height[:-2]) for i in 
+            children + [self.label, self.bar]
+        ]
+        self.widget = Box(
+            children=children + [self.label, self.bar], 
+            layout={
+                "display": "flex",
+                "flex_flow": "column",
+                "height": "{}px".format(sum(heights) + 5),
+                "margin": "5px 0px 5px 0px",
+            })
+
+    @property
+    def printstr(self):
+        elapsed = datetime.timedelta(seconds=int(time.time() - self.start))
+        s1 = "<span style='font-size:14px; font-family:monospace'>"
+        s2 = "</span>"
+        inner = "{} | {:>3}% | {}".format(
+            self.message, 
+            int(100 * (self.bar.value / self.njobs)),
+            elapsed,
+        )
+
+        return s1 + inner + s2
+
+    def display(self):
+        display(self.widget)
+
+    def increment_all(self, value=1):
+        self.bar.value += value
+        if self.bar.value == self.njobs:
+            self.bar.bar_style = "success"
+        self.increment_time()
+
+    def increment_time(self):
+        self.label.value = self.printstr
+
+
 
 
 def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
@@ -71,105 +157,59 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
     return intervals
 
 
-def tile_reps(array, nreps):
-    "used to fill labels in the simcat.Database for replicates"
-    ts = array.size
-    nr = nreps
-    result = np.array(
-        np.tile(array, nr)
-        .reshape((nr, ts))
-        .T.flatten())
-    return result
 
 
-def plot_test_values(self):
 
+def get_snps_count_matrix(tree, seqs):
     """
-    Returns a toyplot canvas
+    Return a multidimensional SNP count matrix (sensu simcat and SVDquartets).    
+    Compiles SNP data into a nquartets x 16 x 16 count matrix with the order
+    of quartets determined by the shape of the tree.
     """
-    # canvas, axes = plot_test_values(self.tree)
-    if not self.counts.sum():
-        raise ipcoalError("No mutations generated. First call '.run()'")
+    # get all quartets for this size tree
+    if isinstance(tree, toytree.Toytree.ToyTree):
+        quarts = list(itertools.combinations(range(tree.ntips), 4))
+    else:
+        # or, can be entered as tuples directly, e.g., [(0, 1, 2, 3)]
+        quarts = tree
 
-    # setup canvas
-    canvas = toyplot.Canvas(height=250, width=800)
+    # shape of the arr (count matrix)
+    arr = np.zeros((len(quarts), 16, 16), dtype=np.int64)
 
-    ax0 = canvas.cartesian(
-        grid=(1, 3, 0))
-    ax1 = canvas.cartesian(
-        grid=(1, 3, 1),
-        xlabel="simulation index",
-        ylabel="migration intervals",
-        ymin=0,
-        ymax=self.tree.treenode.height)  # * 2 * self._Ne)
-    ax2 = canvas.cartesian(
-        grid=(1, 3, 2),
-        xlabel="proportion migrants",
-        # xlabel="N migrants (M)",
-        ylabel="frequency")
-
-    # advance colors for different edges starting from 1
-    colors = iter(toyplot.color.Palette())
-
-    # draw tree
-    self.tree.draw(
-        tree_style='c',
-        node_labels=self.tree.get_node_values("idx", 1, 1),
-        tip_labels=False,
-        axes=ax0,
-        node_sizes=16,
-        padding=50)
-    ax0.show = False
-
-    # iterate over edges
-    for tidx in range(self.aedges):
-        color = next(colors)
-
-        # get values for the first admixture edge
-        mtimes = self.test_values[tidx]["mtimes"]
-        mrates = self.test_values[tidx]["mrates"]
-        mt = mtimes[mtimes[:, 0].argsort()]
-        boundaries = np.column_stack((mt[:, 0], mt[:, 1]))
-
-        # plot
-        for idx in range(boundaries.shape[0]):
-            ax1.fill(
-                # boundaries[idx],
-                (boundaries[idx][0], boundaries[idx][0] + 0.1),
-                (idx, idx),
-                (idx + 0.5, idx + 0.5),
-                along='y',
-                color=color,
-                opacity=0.5)
-
-        # migration rates/props
-        ax2.bars(
-            np.histogram(mrates, bins=20),
-            color=color,
-            opacity=0.5,
-        )
-
-    return canvas, (ax0, ax1, ax2)
+    # iterator for quartets, e.g., (0, 1, 2, 3), (0, 1, 2, 4)...
+    quartidx = 0
+    for currquart in quarts:
+        # cols indices match tip labels b/c we named tips node.idx
+        quartsnps = seqs[currquart, :]
+        # save as stacked matrices
+        arr[quartidx] = count_matrix_int(quartsnps)
+        # save flattened to counts
+        quartidx += 1
+    return arr
 
 
 
-ABBA_IDX = [
-    (1, 4), (2, 8), (3, 12), (4, 1),
-    (6, 9), (7, 13), (8, 2), (9, 6),
-    (11, 14), (12, 3), (13, 7), (14, 11),
-]
-BABA_IDX = [
-    (1, 1), (2, 2), (3, 3), (4, 4), 
-    (6, 6), (7, 7), (8, 8), (9, 9),
-    (11, 11), (12, 12), (13, 13), (14, 14),
-]
-FIXED_IDX = [
-    (0, 0), (5, 5), (10, 10), (15, 15),
-]
+
+def calculate_dstat(seqs, p1, p2, p3, p4):
+    """
+    Calculate ABBA-BABA (D-statistic) from a count matrix. 
+    """
+    # order tips into ab|cd tree based on hypothesis
+    mat = get_snps_count_matrix([(0, 1, 2, 3)], seqs[[p1, p2, p3, p4], :])[0]
+
+    # calculate
+    abba = sum([mat[i] for i in ABBA_IDX])
+    baba = sum([mat[i] for i in BABA_IDX])
+    if abba + baba == 0:
+        dstat = 0.
+    else:
+        dstat = (abba - baba) / float(abba + baba)
+    return pd.DataFrame({'dstat': [dstat], 'baba': [baba], 'abba': [abba]})
 
 
 
-# ... this is not right currently
+
+
 def abba_baba(model, testtuples):
     """
     Calculate ABBA/BABA statistic (D) as (ABBA - BABA) / (ABBA + BABA)
@@ -261,70 +301,17 @@ def abba_baba(model, testtuples):
 
 
 
-class Progress(object):
-    def __init__(self, njobs, message, children):
 
-        # data
-        self.njobs = njobs
-        self.message = message
-        self.start = time.time()
 
-        # the progress bar 
-        self.bar = IntProgress(
-            value=0, min=0, max=self.njobs, 
-            layout={
-                "width": "350px",
-                "height": "30px",
-                "margin": "5px 0px 0px 0px",
-            })
-
-        # the message above progress bar
-        self.label = HTML(
-            self.printstr, 
-            layout={
-                "height": "25px",
-                "margin": "0px",
-            })
-
-        # the box widget container
-        heights = [
-            int(i.layout.height[:-2]) for i in 
-            children + [self.label, self.bar]
-        ]
-        self.widget = Box(
-            children=children + [self.label, self.bar], 
-            layout={
-                "display": "flex",
-                "flex_flow": "column",
-                "height": "{}px".format(sum(heights) + 5),
-                "margin": "5px 0px 5px 0px",
-            })
-        
-    @property
-    def printstr(self):
-        elapsed = datetime.timedelta(seconds=int(time.time() - self.start))
-        s1 = "<span style='font-size:14px; font-family:monospace'>"
-        s2 = "</span>"
-        inner = "{} | {:>3}% | {}".format(
-            self.message, 
-            int(100 * (self.bar.value / self.njobs)),
-            elapsed,
-        )
-
-        return s1 + inner + s2
-
-    def display(self):
-        display(self.widget)
-    
-    def increment_all(self, value=1):
-        self.bar.value += value
-        if self.bar.value == self.njobs:
-            self.bar.bar_style = "success"
-        self.increment_time()
-            
-    def increment_time(self):
-        self.label.value = self.printstr
-
+# def tile_reps(array, nreps):
+#     "used to fill labels in the simcat.Database for replicates"
+#     ts = array.size
+#     nr = nreps
+#     result = np.array(
+#         np.tile(array, nr)
+#         .reshape((nr, ts))
+#         .T.flatten())
+#     return result
 
 
 
@@ -379,3 +366,74 @@ class Progress(object):
 #                 _val = str(self[key]).replace(os.path.expanduser("~"), "~")
 #                 _repr += _printstr.format(key, _val)
 #         return _repr
+
+
+
+# def plot_test_values(self):
+
+#     """
+#     Returns a toyplot canvas
+#     """
+#     # canvas, axes = plot_test_values(self.tree)
+#     if not self.counts.sum():
+#         raise ipcoalError("No mutations generated. First call '.run()'")
+
+#     # setup canvas
+#     canvas = toyplot.Canvas(height=250, width=800)
+
+#     ax0 = canvas.cartesian(
+#         grid=(1, 3, 0))
+#     ax1 = canvas.cartesian(
+#         grid=(1, 3, 1),
+#         xlabel="simulation index",
+#         ylabel="migration intervals",
+#         ymin=0,
+#         ymax=self.tree.treenode.height)  # * 2 * self._Ne)
+#     ax2 = canvas.cartesian(
+#         grid=(1, 3, 2),
+#         xlabel="proportion migrants",
+#         # xlabel="N migrants (M)",
+#         ylabel="frequency")
+
+#     # advance colors for different edges starting from 1
+#     colors = iter(toyplot.color.Palette())
+
+#     # draw tree
+#     self.tree.draw(
+#         tree_style='c',
+#         node_labels=self.tree.get_node_values("idx", 1, 1),
+#         tip_labels=False,
+#         axes=ax0,
+#         node_sizes=16,
+#         padding=50)
+#     ax0.show = False
+
+#     # iterate over edges
+#     for tidx in range(self.aedges):
+#         color = next(colors)
+
+#         # get values for the first admixture edge
+#         mtimes = self.test_values[tidx]["mtimes"]
+#         mrates = self.test_values[tidx]["mrates"]
+#         mt = mtimes[mtimes[:, 0].argsort()]
+#         boundaries = np.column_stack((mt[:, 0], mt[:, 1]))
+
+#         # plot
+#         for idx in range(boundaries.shape[0]):
+#             ax1.fill(
+#                 # boundaries[idx],
+#                 (boundaries[idx][0], boundaries[idx][0] + 0.1),
+#                 (idx, idx),
+#                 (idx + 0.5, idx + 0.5),
+#                 along='y',
+#                 color=color,
+#                 opacity=0.5)
+
+#         # migration rates/props
+#         ax2.bars(
+#             np.histogram(mrates, bins=20),
+#             color=color,
+#             opacity=0.5,
+#         )
+
+#     return canvas, (ax0, ax1, ax2)

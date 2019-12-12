@@ -13,10 +13,10 @@ from builtins import range
 import sys
 from copy import deepcopy
 
-import toytree
 import numpy as np
 import pandas as pd
 import msprime as ms
+import toytree
 
 from .utils import get_all_admix_edges, ipcoalError
 from .TreeInfer import TreeInfer
@@ -446,7 +446,7 @@ class Model:
 
 
 
-    def _get_locus_sim(self, nsites=1, snp=False):
+    def _get_tree_sequence_generator(self, nsites=1, snp=False):
         """
         Returns a msprime.simulate() generator object that can generate 
         treesequences under the demographic model parameters. 
@@ -483,22 +483,13 @@ class Model:
 
 
 
-    def _sim_locus(self, nsites, locus_idx=0, **kwargs):
+    def _sim_locus(self, nsites, locus_idx, mkseq):
         """
         Simulate tree sequence for each locus and sequence data for each 
         genealogy and return all in a dataframe. 
         """
-
-        # initialize a sequence simulator unless provided as a hidden arg.
-        # this is just a convenience for testing, users should call .run().
-        if not kwargs.get("seqgen"):
-            mkseq = SeqGen()
-            mkseq.open_subprocess()
-        else:
-            mkseq = kwargs.get("seqgen")
-
         # get the msprime ts generator 
-        msgen = self._get_locus_sim(nsites)
+        msgen = self._get_tree_sequence_generator(nsites)
 
         # get the treesequence and its breakpoints
         msts = next(msgen)
@@ -538,14 +529,14 @@ class Model:
                 # parse the mstree
                 nwk = mstree.newick()
 
-                # sim locus
+                # get seq ordered by idx number 
                 seed = self.random_mut.randint(1e9)
                 seq = mkseq.feed_tree(nwk, gtlen, self.mut, seed)
 
-                # store locus
+                # reorder rows to order by tip name and store in seqarr
                 seqarr[:, bidx:bidx + gtlen] = seq[self.order, :]
 
-                # record snps
+                # record the number of snps in this locus
                 subseq = seqarr[:, bidx:bidx + gtlen]
                 df.loc[idx, 'nsnps'] = (
                     np.any(subseq != subseq[0], axis=0).sum())
@@ -554,7 +545,7 @@ class Model:
                 bidx += gtlen
 
                 # reset .names on msprime tree with node_labels 1-indexed
-                gtree = toytree.tree(nwk)
+                gtree = toytree._rawtree(nwk)
                 for node in gtree.treenode.get_leaves():
                     node.name = self.tipdict[int(node.name)]
                 newick = gtree.write(tree_format=5)
@@ -563,16 +554,12 @@ class Model:
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
         df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
 
-        # clean and close subprocess if not still using
-        if not kwargs.get("seqgen"):
-            mkseq.close_subprocess()
-
         # return the dataframe and seqarr
         return df, seqarr
 
 
 
-    def sim_loci(self, nloci=1, nsites=1):
+    def sim_loci(self, nloci=1, nsites=1, seqgen=False):
         """
         Simulate tree sequence for each locus and sequence data for each 
         genealogy and return all genealogies and their summary stats in a 
@@ -586,14 +573,17 @@ class Model:
         dflist = []
 
         # open the subprocess to seqgen
-        mkseq = SeqGen()
-        mkseq.open_subprocess()
+        if seqgen:
+            mkseq = SeqGen()
+            mkseq.open_subprocess()
+        else:
+            mkseq = SeqModel()
 
         # iterate over nloci to simulate, get df and arr to store.
         for lidx in range(nloci):
 
             # returns genetree_df and seqarray
-            df, arr = self._sim_locus(nsites, lidx, **{'seqgen': mkseq})
+            df, arr = self._sim_locus(nsites, lidx, mkseq)
 
             # store seqs in a list for now
             seqarr[lidx] = arr
@@ -612,6 +602,9 @@ class Model:
         self.df = df
         self.seqs = seqarr
 
+        # allows chaining funcs
+        return self
+
 
 
     def sim_snps(self, nsnps=1, repeat_on_trees=False, seqgen=False):
@@ -623,11 +616,25 @@ class Model:
 
         nsnps (int):
             The number of SNPs to produce.
+
         repeat_on_trees (bool):
             If True then sequence simulations repeat on a genealogy until it 
             produces a SNP. If False then if a genealogy does not produce
             a SNP we move on to the next simulated genealogy. This may be
             more correct since shallow trees are less likely to contain SNPs.
+
+        seqgen (bool):
+            A (hidden) argument to use seqgen to test our mutation
+            models against its results.
+
+        substitution_model (dict):
+            A dictionary of arguments to the markov process mutation model.
+            This includes: 
+                mutation_model = {
+                    state_frequencies=[0.25, 0.25, 0.25, 0.25],
+                    kappa=3,
+                    gamma=...,
+                }
         """
 
         # initialize a sequence simulator
@@ -638,7 +645,7 @@ class Model:
             mkseq = SeqModel()
 
         # get the msprime ts generator 
-        msgen = self._get_locus_sim(1, snp=True)
+        msgen = self._get_tree_sequence_generator(1, snp=True)
 
         # store results (nsnps, ntips); def. 1000 SNPs
         newicks = []
@@ -653,7 +660,8 @@ class Model:
                 break
 
             # get first tree from next tree_sequence
-            newick = next(msgen).first().newick()
+            mstre = next(msgen).first()
+            newick = mstre.newick()
 
             # simulate first base
             seed = self.random_mut.randint(1e9)    
@@ -672,10 +680,11 @@ class Model:
                     continue
 
             # reset .names on msprime tree with node_labels 1-indexed
-            gtree = toytree.tree(newick)
+            gtree = toytree._rawtree(newick)
             for node in gtree.treenode.get_leaves():
                 node.name = self.tipdict[int(node.name)]
             newick = gtree.write(tree_format=5)
+            # newick = mstre.newick(node_labels=self.tipdict)
 
             # reorder SNPs to be alphanumeric nameordered by tipnames 
             seq = seq[self.order, :]
@@ -685,7 +694,7 @@ class Model:
             snpidx += 1
             newicks.append(newick)
 
-        # close subprocess
+        # close subprocess is seqgen, or nothing if seqmodel
         mkseq.close()
 
         # init dataframe
@@ -700,6 +709,9 @@ class Model:
             columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
         )
         self.seqs = snparr
+
+        # allows chaining funcs
+        return self
 
 
 
@@ -797,20 +809,15 @@ class Model:
         for lidx in range(self.seqs.shape[0]):
 
             # skip invariable loci
-            if self.df.nsnps[lidx]:
-
+            if self.df.nsnps[self.df.locus == lidx].sum():
                 # let low data fails return NaN
                 try:
-                    # write data to a temp phylip or nexus file
                     tree = ti.run(lidx)
 
                     # enter result
                     self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
 
                 # caught raxml exception (prob. low data)
-                # except ipcoalError:
-                   # pass
                 except ipcoalError as err:
-                    # self.df.loc[self.df.locus == lidx, "inferred_tree"] = np.nan
-                    # print(err)
+                    print(err)
                     raise err
