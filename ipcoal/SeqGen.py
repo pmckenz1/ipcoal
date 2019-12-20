@@ -6,6 +6,7 @@ import sys
 import numpy as np
 import subprocess as sps
 from .utils import ipcoalError
+import toytree
 
 
 class SeqGen:
@@ -83,9 +84,10 @@ class SeqGen:
         for line in hold.split("\n")[1:-1]:
             name, seq = line.split()
             seqd[int(name)] = list(seq)
-
+        
         # convert seqs to int array 
-        arr = np.array([seqd[i] for i in range(1, len(seqd) + 1)])
+        rt_genealogy = toytree._rawtree(newick)
+        arr = np.array([seqd[int(i)] for i in rt_genealogy.treenode.get_leaf_names()[::-1]])
         arr[arr == "A"] = 0
         arr[arr == "C"] = 1
         arr[arr == "G"] = 2

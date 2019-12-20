@@ -58,8 +58,16 @@ class SeqModel():
             rate_matrix if np.any(rate_matrix) else RATES
         )
 
+        freqR = self.state_frequencies[0] + self.state_frequencies[2]
+        freqY = self.state_frequencies[1] + self.state_frequencies[3]
+
+        # calculate tstv, used by seq-gen
+        self.tstv = (self.kappa*(self.state_frequencies[0]*self.state_frequencies[2] +
+                     self.state_frequencies[1]*self.state_frequencies[3]))/(freqR*freqY)
+
         # get Q matrix from model params
         self.Q = None
+        self.mu = None
         self.get_model_Q()
 
 
@@ -81,10 +89,10 @@ class SeqModel():
         ])
 
         # full matrix scaling factor
-        mu = -1 / np.sum(np.array([nonnormal_Q[i][i] for i in range(4)]) * sd)
+        self.mu = -1 / np.sum(np.array([nonnormal_Q[i][i] for i in range(4)]) * sd)
 
         # scale by Q to get adjusted rate matrix
-        self.Q = nonnormal_Q * mu
+        self.Q = nonnormal_Q * self.mu
 
 
 
@@ -116,7 +124,10 @@ class SeqModel():
         seqs[-1] = start
 
         # run jitted funcs on arrays
-        seqs = jevolve(self.Q, seqs, idxs, brlens, relate, seed)
+        if seed:
+            seqs = jevolve(self.Q, seqs, idxs, brlens, relate, seed)
+        if not seed:
+            seqs = jevolve_noseed(self.Q, seqs, idxs, brlens, relate)
         return seqs[:tree.ntips]
 
 
@@ -146,6 +157,19 @@ def jevolve(Q, seqs, idxs, brlens, relate, seed):
     jitted function to sample substitutions on edges
     """
     np.random.seed(seed)
+    for idx in idxs:
+        bl = brlens[idx]
+        pidx = relate[idx, 1]
+        probmat = jevolve_branch_probs(bl * Q)
+        seqs[idx] = jsubstitute(seqs[pidx], probmat)
+    return seqs
+
+
+@njit
+def jevolve_noseed(Q, seqs, idxs, brlens, relate):
+    """
+    jitted function to sample substitutions on edges
+    """
     for idx in idxs:
         bl = brlens[idx]
         pidx = relate[idx, 1]

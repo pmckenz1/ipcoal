@@ -163,7 +163,7 @@ class Model:
         self._get_Ne()
 
         # store tip names for renaming on the ms tree (ntips * nsamples)
-        # these are 1-indexed because they msprime trees tips are.
+        # these are 1-indexed because the msprime trees tips are.
         if samples == 1:
             self.tipdict = {
                 i + 1: j for (i, j) in enumerate(self.tree.get_tip_labels())
@@ -529,12 +529,20 @@ class Model:
                 # parse the mstree
                 nwk = mstree.newick()
 
-                # get seq ordered by idx number 
+                # get seq ordered by genealogy tips
                 seed = self.random_mut.randint(1e9)
                 seq = mkseq.feed_tree(nwk, gtlen, self.mut, seed)
 
+                # reset .names on msprime tree with node_labels 1-indexed
+                gtree = toytree._rawtree(nwk)
+                for node in gtree.treenode.get_leaves():
+                    node.name = self.tipdict[int(node.name)]
+                newick = gtree.write(tree_format=5)
+
                 # reorder rows to order by tip name and store in seqarr
-                seqarr[:, bidx:bidx + gtlen] = seq[self.order, :]
+                # tipnames corresponding to current sequence order:
+                curr_order = gtree.treenode.get_leaf_names()[::-1]
+                seqarr[:, bidx:bidx + gtlen] = seq[np.argsort(curr_order), :]
 
                 # record the number of snps in this locus
                 subseq = seqarr[:, bidx:bidx + gtlen]
@@ -544,11 +552,6 @@ class Model:
                 # advance site counter
                 bidx += gtlen
 
-                # reset .names on msprime tree with node_labels 1-indexed
-                gtree = toytree._rawtree(nwk)
-                for node in gtree.treenode.get_leaves():
-                    node.name = self.tipdict[int(node.name)]
-                newick = gtree.write(tree_format=5)
                 df.loc[idx, "genealogy"] = newick
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
@@ -653,7 +656,7 @@ class Model:
         snparr = np.zeros((self.nstips, nsnps), dtype=np.uint8)
 
         # continue until we get nsnps
-        while 1: 
+        while 1:
 
             # bail out if nsnps finished
             if snpidx == nsnps:
@@ -687,7 +690,9 @@ class Model:
             # newick = mstre.newick(node_labels=self.tipdict)
 
             # reorder SNPs to be alphanumeric nameordered by tipnames 
-            seq = seq[self.order, :]
+            # tipnames corresponding to current sequence order:
+            curr_order = gtree.treenode.get_leaf_names()[::-1]
+            seq = seq[np.argsort(curr_order), :]
 
             # Store result and advance counter
             snparr[:, snpidx] = seq.flatten()
