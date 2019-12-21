@@ -131,6 +131,45 @@ class Writer:
         self.shape = arr.shape
 
 
+    def write_concat_to_nexus(self, outdir, name, idxs=None):
+
+        """
+        Write all seq data (loci or snps) concated to a single phylip file.
+
+        Parameters:
+        -----------
+        outfile (str):
+            The name/path of the outfile to write. 
+        idxs (list):
+            A list of locus indices to subselect which will be concatenated.
+        """
+        # create a directory if it doesn't exist
+
+        outdir = os.path.realpath(os.path.expanduser(outdir))
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+        outfile = os.path.join(outdir, name)
+
+        # concat loci (unless SNPs already) and convert to bases
+        if self.seqs.ndim == 2:
+            if idxs is not None:
+                arr = self.seqs[:, idxs].astype(bytes)
+            else:
+                arr = self.seqs.astype(bytes)
+        else:
+            if idxs is not None:
+                arr = np.concatenate(self.seqs[idxs], axis=1).astype(bytes)
+            else:
+                arr = np.concatenate(self.seqs, axis=1).astype(bytes)
+        arr = convert_intarr_to_bytearr(arr)
+
+        nexstring = self.build_nexstring_from_loc(arr)
+        with open(outfile, 'w') as out:
+            out.write(nexstring)
+
+        self.outfile = outfile
+        self.shape = arr.shape
+
 
     def build_phystring_from_loc(self, arr):
         """
@@ -148,9 +187,34 @@ class Writer:
             loclist.append(line)
         return "\n".join(loclist)
 
+    def build_nexstring_from_loc(self, arr):
+        """
+        Builds nexus format string
+        """
+        # write the header
+        lines = []
+        lines.append(
+            NEXHEADER.format(arr.shape[0], arr.shape[1])
+        )
 
+        # grab a big block of data
+        for block in range(0, arr.shape[1], 100):           
+            # store interleaved seqs 100 chars with longname+2 before
+            stop = min(block + 100, arr.shape[1])
+            for idx, name in enumerate(self.names):  
 
-
+                # py2/3 compat --> b"TGCGGG..."
+                seqdat = arr[idx, block:stop]
+                lines.append(
+                    "  {}\t{}\n".format(
+                        name,
+                        #"".join(seqdat)
+                        "".join([base_.decode() for base_ in seqdat])
+                        )
+                    )
+            lines.append("\n")
+        lines.append("\t;\nend;")
+        return("".join(lines))
 
     # def write_seqs_as_fasta(self, loc, path):
     #     fastaseq = deepcopy(self.seqs[loc]).astype(str)
@@ -168,9 +232,6 @@ class Writer:
     #     with open(path, 'w') as file:
     #         for line in fasta:
     #             file.write(line)
-
-
-
 
     def _deprecated(self):
 
@@ -195,13 +256,17 @@ class Writer:
         # temporarily format these as stacked matrices
 
 
-
-
-
-
 def convert_intarr_to_bytearr(arr):
     arr[arr == b"0"] = b"A"
     arr[arr == b"1"] = b"C"
     arr[arr == b"2"] = b"G"
     arr[arr == b"3"] = b"T"
     return arr
+
+
+NEXHEADER = """#nexus
+begin data;
+  dimensions ntax={} nchar={};
+  format datatype=DNA missing=N gap=- interleave=yes;
+  matrix\n
+"""

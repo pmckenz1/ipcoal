@@ -8,12 +8,15 @@ import tempfile
 import subprocess as sps
 
 from .Writer import Writer
+from .mrbayes import MrBayes as mrbayes
 from .utils import ipcoalError
+import toytree
 
 
 SUPPORTED = {
     "raxml": "raxmlHPC-PTHREADS",
     "iqtree": "iqtree",
+    "mb": "mb"
 }
 
 
@@ -41,6 +44,22 @@ class TreeInfer:
         }
         self.raxml_kwargs.update(inference_args)
 
+        self.mb_kwargs = {
+            "clockratepr": "lognorm(-7,0.6)",
+            "clockvarpr": "tk02",
+            "tk02varpr": "exp(1.0)",
+            "brlenspr": "clock:birthdeath",
+            "samplestrat": "diversity",
+            "sampleprob": "0.1",
+            "speciationpr": "exp(10)",
+            "extinctionpr": "beta(2, 200)",
+            "treeagepr": "offsetexp(1, 5)",
+            "ngen": 100000,
+            "nruns": "1",
+            "nchains": 4,
+            "samplefreq": 1000,
+        }
+        self.mb_kwargs.update(inference_args)
 
     def check_method_and_binary(self):
         """
@@ -67,12 +86,20 @@ class TreeInfer:
         Writes a phylip or nexus file for xxx or mrbayes.
         """
         writer = Writer(self.seqs, self.names)
-        writer.write_concat_to_phylip(
-            outdir=tempfile.gettempdir(), 
-            name=str(os.getpid()) + ".phy",
-            idxs=[idx],
-        )
-        return os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".phy")
+        if self.method == "raxml":
+            writer.write_concat_to_phylip(
+                outdir=tempfile.gettempdir(),
+                name=str(os.getpid()) + ".phy",
+                idxs=[idx],
+            )
+            return os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".phy")
+        if self.method == "mb":
+            writer.write_concat_to_nexus(
+                outdir=tempfile.gettempdir(),
+                name=str(os.getpid()) + ".nex",
+                idxs=[idx],
+            )
+            return os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".nex")
 
 
 
@@ -89,6 +116,8 @@ class TreeInfer:
             tree = self.infer_raxml(tmp)
         if self.method == "iqtree":
             tree = self.infer_iqtree(tmp)
+        if self.method == "mb":
+            tree = self.infer_mb(tmp)
 
         # cleanup (TODO) remove phy file extensions
         os.remove(tmp)
@@ -148,3 +177,32 @@ class TreeInfer:
 
     def infer_iqtree(self):
         pass
+
+    def infer_mb(self, tmp):
+        """
+        Call mb on phy and returned parse tree result
+        """
+
+        # call mb on the input phylip file with inference args
+        mb = mrbayes(
+            data=tmp,
+            name="temp_" + str(os.getpid()),
+            workdir=tempfile.gettempdir(),
+            **self.inference_args
+        )
+        mb.run(force=True, quiet=True, block=True)
+
+        # get newick string from result
+        tree = toytree.tree(mb.trees.constre, tree_format=10).newick
+
+        # cleanup remote tree files
+        for tup in mb.trees:
+            tpath = tup[1]
+            if os.path.exists(tpath):
+                os.remove(tpath)
+
+        # remove the TEMP phyfile in workdir/tmpdir
+        #os.remove(tmp)
+
+        # return results
+        return tree

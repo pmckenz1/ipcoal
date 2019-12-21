@@ -105,7 +105,6 @@ class Progress(object):
 
 
 
-
 def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
     """
     Find all possible admixture edges on a tree. 
@@ -158,8 +157,6 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
 
 
 
-
-
 def get_snps_count_matrix(tree, seqs):
     """
     Return a multidimensional SNP count matrix (sensu simcat and SVDquartets).    
@@ -189,7 +186,6 @@ def get_snps_count_matrix(tree, seqs):
 
 
 
-
 def calculate_dstat(seqs, p1, p2, p3, p4):
     """
     Calculate ABBA-BABA (D-statistic) from a count matrix. 
@@ -205,8 +201,6 @@ def calculate_dstat(seqs, p1, p2, p3, p4):
     else:
         dstat = (abba - baba) / float(abba + baba)
     return pd.DataFrame({'dstat': [dstat], 'baba': [baba], 'abba': [abba]})
-
-
 
 
 
@@ -301,6 +295,35 @@ def abba_baba(model, testtuples):
 
 
 
+class Params(object):
+    """ 
+    A dict-like object for storing params values with a custom repr
+    that shortens file paths, and which makes attributes easily viewable
+    through tab completion in a notebook while hiding other funcs, attrs, that
+    are in normal dicts. 
+    """
+    def __len__(self):
+        return len(self.__dict__)
+
+    def __iter__(self):
+        for attr, value in self.__dict__.items():
+            yield attr, value
+
+    def __getitem__(self, key):
+        return self.__dict__[key]
+
+    def __setitem__(self, key, value):
+        self.__dict__[key] = value
+
+    def __repr__(self):
+        _repr = ""
+        keys = sorted(self.__dict__.keys())
+        if keys:
+            _printstr = "{:<" + str(2 + max([len(i) for i in keys])) + "} {:<20}\n"
+            for key in keys:
+                _val = str(self[key]).replace(os.path.expanduser("~"), "~")
+                _repr += _printstr.format(key, _val)
+        return _repr
 
 
 # def tile_reps(array, nreps):
@@ -334,38 +357,6 @@ def abba_baba(model, testtuples):
 #     args = [hashes + nohash, int(progress), elapsed, message]
 #     print("\r[{}] {:>3}% | {} | {}".format(*args), end="")
 #     sys.stderr.flush()
-
-
-
-# class Params(object):
-#     """ 
-#     A dict-like object for storing params values with a custom repr
-#     that shortens file paths, and which makes attributes easily viewable
-#     through tab completion in a notebook while hiding other funcs, attrs, that
-#     are in normal dicts. 
-#     """
-#     def __len__(self):
-#         return len(self.__dict__)
-
-#     def __iter__(self):
-#         for attr, value in self.__dict__.items():
-#             yield attr, value
-
-#     def __getitem__(self, key):
-#         return self.__dict__[key]
-
-#     def __setitem__(self, key, value):
-#         self.__dict__[key] = value
-
-#     def __repr__(self):
-#         _repr = ""
-#         keys = sorted(self.__dict__.keys())
-#         if keys:
-#             _printstr = "{:<" + str(2 + max([len(i) for i in keys])) + "} {:<20}\n"
-#             for key in keys:
-#                 _val = str(self[key]).replace(os.path.expanduser("~"), "~")
-#                 _repr += _printstr.format(key, _val)
-#         return _repr
 
 
 
