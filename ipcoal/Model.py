@@ -565,6 +565,17 @@ class Model:
         genealogy and return all genealogies and their summary stats in a 
         dataframe and the concatenated sequences in an array with rows ordered
         by sample names alphanumerically.
+
+        Parameters
+        ----------
+        nloci (int):
+            The number of loci to simulate.
+
+        nsites (int):
+            The length of each locus.
+
+        seqgen (bool):
+            Use seqgen as simulator backend. TO BE REMOVED.
         """
         # multidimensional array of sequence arrays to fill 
         seqarr = np.zeros((nloci, self.nstips, nsites), dtype=np.uint8)
@@ -607,12 +618,91 @@ class Model:
 
 
 
+    def sim_trees(self, nloci=1, nsites=1):
+        """
+        Record tree sequence without simulating any sequence data.
+        This is faster than simulating snps or loci when you are only 
+        interested in the tree sequence. 
+        """
+
+        # store dfs
+        dflist = []
+
+        # iterate over nloci to simulate, get df and arr to store.
+        for lidx in range(nloci):
+
+            # get the msprime ts generator 
+            msgen = self._get_tree_sequence_generator(nsites)
+
+            # get the treesequence and its breakpoints
+            msts = next(msgen)
+            breaks = list(msts.breakpoints())
+
+            # get start and stop indices
+            starts = breaks[0:len(breaks) - 1]
+            ends = breaks[1:len(breaks)]
+
+            # what is the appropriate rounding? (some trees will not exist...)
+            bps = (np.round(ends) - np.round(starts)).astype(int)
+
+            # init dataframe
+            df = pd.DataFrame({
+                "start": np.round(starts).astype(int),
+                "end": np.round(ends).astype(int),
+                "genealogy": "",
+                "nbps": bps,
+                "nsnps": 0,
+                "locus": lidx,
+                },
+                columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
+            )
+
+            # iterate over the index of the dataframe to sim for each genealogy
+            for idx, mstree in zip(df.index, msts.trees()):
+
+                # get the number of base pairs taken up by this gene tree
+                gtlen = df.loc[idx, 'nbps']
+
+                # only simulate data if there is bp 
+                if gtlen:
+                    # parse the mstree
+                    nwk = mstree.newick()
+
+                    # reset .names on msprime tree with node_labels 1-indexed
+                    gtree = toytree._rawtree(nwk)
+                    for node in gtree.treenode.get_leaves():
+                        node.name = self.tipdict[int(node.name)]
+                    newick = gtree.write(tree_format=5)
+                    df.loc[idx, "genealogy"] = newick
+
+            # drop intervals that are 0 bps in length (sum bps will still = nsites)
+            df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
+
+            # store the genetree df in a list for now
+            dflist.append(df)
+
+        # concatenate all of the genetree dfs
+        df = pd.concat(dflist)
+        df = df.reset_index(drop=True)
+
+        # store values to object
+        self.df = df
+
+        # allows chaining funcs
+        return self
+
+
+
     def sim_snps(self, nsnps=1, repeat_on_trees=False, seqgen=False):
         """
         Run simulations until nsnps _unlinked_ SNPs are generated. If the tree
         is shallow and the mutation rate is low this can take a long time b/c
-        most genealogies will produce an invariant SNP. There are two options
-        for how to simulate snps:
+        most genealogies will produce an invariant site (i.e., not a SNP). 
+        Take note that sim_tree() and sim_loci() do not condition on whether
+        any mutations fall on the tree, whereas sim_snps() does. This means 
+        that the distribution of trees from sim_snps will vary from 
+        the others unless you use 'repeat_on_tree=True' which will force a 
+        mutation to occur on every visited tree.
 
         nsnps (int):
             The number of SNPs to produce.
