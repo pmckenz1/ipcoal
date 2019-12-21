@@ -110,6 +110,10 @@ class SeqModel():
         The returned seq array is ordered with taxa on rows by their idx
         number from 0-ntips. It is not ordered by tip 'name' order.
         """
+        # seed numpy and numba if not provided
+        if not seed:
+            seed = np.random.randint(1e20)
+
         # get all as arrays
         np.random.seed(seed)
         tree = toytree._rawtree(newick)
@@ -131,11 +135,8 @@ class SeqModel():
         start = np.random.choice(range(4), nsites, p=self.state_frequencies)
         seqs[-1] = start
 
-        # run jitted funcs on arrays
-        if seed:
-            seqs = jevolve(self.Q, seqs, idxs, brlens, relate, seed)
-        if not seed:
-            seqs = jevolve_noseed(self.Q, seqs, idxs, brlens, relate)
+        # run jitted funcs on arrays           
+        seqs = jevolve(self.Q, seqs, idxs, brlens, relate, seed)
         return seqs[:tree.ntips]
 
 
@@ -161,20 +162,6 @@ def jevolve_branch_probs(brlenQ):
 
 @njit
 def jevolve(Q, seqs, idxs, brlens, relate, seed):
-    """
-    jitted function to sample substitutions on edges
-    """
-    np.random.seed(seed)
-    for idx in idxs:
-        bl = brlens[idx]
-        pidx = relate[idx, 1]
-        probmat = jevolve_branch_probs(bl * Q)
-        seqs[idx] = jsubstitute(seqs[pidx], probmat)
-    return seqs
-
-
-@njit
-def jevolve_noseed(Q, seqs, idxs, brlens, relate):
     """
     jitted function to sample substitutions on edges
     """
