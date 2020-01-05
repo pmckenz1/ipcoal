@@ -922,7 +922,7 @@ class Model:
         # report
         print("wrote {} loci ({} x {}bp) to {}/[...].phy".format(
             writer.written, self.seqs.shape[1], self.seqs.shape[2],
-            writer.outdir.strip("/")
+            writer.outdir.rstrip("/")
             ),
         )
 
@@ -947,7 +947,7 @@ class Model:
 
         # report 
         print(
-            "wrote concatenated loci ({} x {}bp) to {}"
+            "wrote concat loci ({} x {}bp) to {}"
             .format(writer.shape[0], writer.shape[1], writer.outfile),
             )
 
