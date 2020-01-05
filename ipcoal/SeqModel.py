@@ -45,7 +45,6 @@ class SeqModel():
     def __init__(
         self,
         state_frequencies=None,
-        rate_matrix=None,
         kappa=None,
         alpha=None,
         gamma=None,
@@ -58,9 +57,16 @@ class SeqModel():
         self.state_frequencies = (
             state_frequencies if state_frequencies else RATES
         )
-        self.rate_matrix = (
-            rate_matrix if rate_matrix else RATES
-        )
+
+        # this is reported in seqmodel summary but not used in computation
+        # since it is redundant with kappa
+        freqR = self.state_frequencies[0] + self.state_frequencies[2]
+        freqY = self.state_frequencies[1] + self.state_frequencies[3]
+        self.tstv = (
+            self.kappa * sum([
+                self.state_frequencies[0] * self.state_frequencies[2],
+                self.state_frequencies[1] * self.state_frequencies[3]
+            ])) / (freqR * freqY)
 
         # get Q matrix from model params
         self.Q = None

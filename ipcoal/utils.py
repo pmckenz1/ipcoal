@@ -159,7 +159,6 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
 
 
 
-
 def get_snps_count_matrix(tree, seqs):
     """
     Return a multidimensional SNP count matrix (sensu simcat and SVDquartets).    
@@ -205,7 +204,6 @@ def calculate_dstat(seqs, p1, p2, p3, p4):
     else:
         dstat = (abba - baba) / float(abba + baba)
     return pd.DataFrame({'dstat': [dstat], 'baba': [baba], 'abba': [abba]})
-
 
 
 
@@ -301,6 +299,47 @@ def abba_baba(model, testtuples):
 
 
 
+
+def calculate_pairwise_dist(mod, model=None):
+    """
+    Return a pandas dataframe with pairwise distances between taxa.
+    The model object should have already run sim.snps or sim.loci to generate
+    sequence data in .seqs.
+    """
+    # a dataframe to fill with distances
+    df = pd.DataFrame(
+        np.zeros((mod.nstips, mod.nstips)),
+        index=mod.names,
+        columns=mod.names,
+        )
+
+    # concatenate seqs across all loci
+    arr = np.concatenate(mod.seqs, axis=1)
+
+    # calculate all pairs
+    for i in range(mod.nstips):
+        for j in range(mod.nstips):
+
+            # sample taxa
+            seq0 = arr[i]
+            seq1 = arr[j]
+
+            # hamming distance (proportion that are not matching)
+            if model == "JC":
+                dist = jukes_cantor_distance(seq0, seq1)
+            else:
+                dist = sum(seq0 != seq1) / seq0.size
+            df.iloc[i, j] = dist
+            df.iloc[j, i] = dist
+    return df
+
+
+
+def jukes_cantor_distance(seq0, seq1):
+    "calculate the jukes cantor distance"
+    dist = sum(seq0 != seq1) / seq0.size
+    jcdist = (-3. / 4.) * np.log(1. - ((4. / 3.) * dist))
+    return jcdist
 
 
 # def tile_reps(array, nreps):

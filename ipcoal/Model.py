@@ -18,7 +18,7 @@ import pandas as pd
 import msprime as ms
 import toytree
 
-from .utils import get_all_admix_edges, ipcoalError
+from .utils import get_all_admix_edges, ipcoalError, calculate_pairwise_dist
 from .TreeInfer import TreeInfer
 from .Writer import Writer
 from .SeqModel import SeqModel
@@ -45,6 +45,7 @@ class Model:
         mut=1e-8,
         seed=None,
         seed_mutations=None,
+        substitution_model=None,
         debug=False,
         ):
 
@@ -110,6 +111,19 @@ class Model:
         seed_mutations (int):
             Random number generator used for seq-gen. If not set then the
             generic seed is used for both msprime and seq-gen.
+
+        substitution_model (dict):
+            A dictionary of arguments to the markov process mutation model.
+            example:
+            substitution_model = {
+                state_frequencies=[0.25, 0.25, 0.25, 0.25],
+                kappa=3,
+                gamma=4,
+            }
+
+        seqgen (bool):
+            Use seqgen as the sequence simulation program.
+
         """
 
         # initialize random seed for msprime and seq-gen
@@ -209,9 +223,78 @@ class Model:
         # get popconfig as msprime input
         self._get_popconfig()
 
-        # hold the model outputs
+        # to hold the model outputs
         self.df = None
         self.seqs = None
+
+        # check substitution model kwargs and assert it is a dict
+        self.substitution_model = substitution_model
+        self._check_substitution_kwargs()
+
+
+
+    def get_substitution_model_summary(self):
+        """
+        Returns a summary of the demographic model and sequence substitution
+        model that will used in simulations.
+        """
+        # init a seqmodel to get calculated matrices
+        seqmodel = SeqModel(**self.substitution_model)
+
+        # print state frequencies
+        print(
+            "state_frequencies:\n{}"
+            .format(
+                pd.DataFrame(
+                    [seqmodel.state_frequencies],
+                    columns=list("ACGT"),
+                ).to_string(index=False))
+            )
+
+        # the tstv parameters
+        print("\nkappa: {}".format(seqmodel.kappa))
+        print("ts/tv: {}".format(seqmodel.tstv))
+
+        # the Q matrix 
+        print(
+            "\ninstantaneous transition rate matrix:\n{}".
+            format(
+                pd.DataFrame(
+                    seqmodel.Q, 
+                    index=list("ACGT"), 
+                    columns=list("ACGT"),
+                ).round(4)
+            ))
+
+        # the alpha and gamma ...
+
+
+
+    def _check_substitution_kwargs(self):
+        """
+        check that user supplied substitution kwargs make sense.
+        """
+        # must be a dictionary
+        if self.substitution_model is None:
+            self.substitution_model = {}
+
+        # check each item
+        for key, val in self.substitution_model.items():
+
+            # do not allow typos or unsupported params
+            if key not in ["state_frequencies", "kappa"]:
+                raise TypeError(
+                    "substitution_model param {} not currently supported."
+                    .format(key))
+
+            # check that state_frequencies sum to 1
+            if self.substitution_model.get("state_frequencies"):
+                fsum = sum(self.substitution_model['state_frequencies'])
+                if not fsum == 1:
+                    raise ipcoalError("state_frequencies must sum to 1.0")
+
+            # check that kappa in the range...
+            pass
 
 
 
@@ -577,6 +660,10 @@ class Model:
         seqgen (bool):
             Use seqgen as simulator backend. TO BE REMOVED.
         """
+        # allow scientific notation, e.g., 1e6
+        nsites = int(nsites)
+        nloci = int(nloci)        
+
         # multidimensional array of sequence arrays to fill 
         seqarr = np.zeros((nloci, self.nstips, nsites), dtype=np.uint8)
 
@@ -585,10 +672,10 @@ class Model:
 
         # open the subprocess to seqgen
         if seqgen:
-            mkseq = SeqGen()
+            mkseq = SeqGen(**self.substitution_model)
             mkseq.open_subprocess()
         else:
-            mkseq = SeqModel()
+            mkseq = SeqModel(**self.substitution_model)
 
         # iterate over nloci to simulate, get df and arr to store.
         for lidx in range(nloci):
@@ -622,8 +709,16 @@ class Model:
         """
         Record tree sequence without simulating any sequence data.
         This is faster than simulating snps or loci when you are only 
-        interested in the tree sequence. 
+        interested in the tree sequence. To examine genealogical variation 
+        within the same locus use nsites.
+
+        Parameters:
+        -----------
+        See sim_loci()
         """
+        # allow scientific notation, e.g., 1e6
+        nsites = int(nsites)
+        nloci = int(nloci)        
 
         # store dfs
         dflist = []
@@ -716,23 +811,16 @@ class Model:
         seqgen (bool):
             A (hidden) argument to use seqgen to test our mutation
             models against its results.
-
-        substitution_model (dict):
-            A dictionary of arguments to the markov process mutation model.
-            This includes: 
-                mutation_model = {
-                    state_frequencies=[0.25, 0.25, 0.25, 0.25],
-                    kappa=3,
-                    gamma=...,
-                }
         """
+        # allow scientific notation, e.g., 1e6
+        nsnps = int(nsnps)
 
         # initialize a sequence simulator
         if seqgen:
-            mkseq = SeqGen()
+            mkseq = SeqGen(**self.substitution_model)
             mkseq.open_subprocess()
         else:
-            mkseq = SeqModel()
+            mkseq = SeqModel(**self.substitution_model)
 
         # get the msprime ts generator 
         msgen = self._get_tree_sequence_generator(1, snp=True)
@@ -911,3 +999,22 @@ class Model:
                 except ipcoalError as err:
                     print(err)
                     raise err
+
+
+    def get_pairwise_distances(self, model=None):
+        """
+        Returns pairwise distance matrix.
+
+        Parameters:
+        -----------
+        model (str):
+            Default is None meaning the Hamming distance. Supported options:
+                None: Hamming distance, i.e., proportion of differences.
+                "JC": Jukes-Cantor distance, i.e., -3/4 ln((1-(4/3)d))
+                "HKY": Not yet implemented.  
+        """
+        # requires data
+        if self.seqs is None:
+            raise ipcoalError("You must first run .sim_snps() or .sim_loci")
+
+        return calculate_pairwise_dist(self, model)
