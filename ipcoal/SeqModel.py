@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 
+import ipcoal
 import toytree
 import numpy as np
 from scipy.linalg import expm
+
 from numba import njit, objmode
+from numba import config
+
 
 # GLOBALS
 BASES = np.array([0, 1, 2, 3])
@@ -41,7 +45,6 @@ class SeqModel():
     def __init__(
         self,
         state_frequencies=None,
-        rate_matrix=None,
         kappa=None,
         alpha=None,
         gamma=None,
@@ -54,21 +57,25 @@ class SeqModel():
         self.state_frequencies = (
             state_frequencies if np.any(state_frequencies) else RATES
         )
-        self.rate_matrix = (
-            rate_matrix if np.any(rate_matrix) else RATES
-        )
 
+        # this is reported in seqmodel summary but not used in computation
+        # since it is redundant with kappa
         freqR = self.state_frequencies[0] + self.state_frequencies[2]
         freqY = self.state_frequencies[1] + self.state_frequencies[3]
-
-        # calculate tstv, used by seq-gen
-        self.tstv = (self.kappa*(self.state_frequencies[0]*self.state_frequencies[2] +
-                     self.state_frequencies[1]*self.state_frequencies[3]))/(freqR*freqY)
+        self.tstv = (
+            self.kappa * sum([
+                self.state_frequencies[0] * self.state_frequencies[2],
+                self.state_frequencies[1] * self.state_frequencies[3]
+            ])) / (freqR * freqY)
 
         # get Q matrix from model params
         self.Q = None
         self.mu = None
         self.get_model_Q()
+
+        # set the threading layer before any parallel target compilation
+        if ipcoal.__forksafe__:
+            config.THREADING_LAYER = 'forksafe'
 
 
 
