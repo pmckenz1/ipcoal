@@ -309,8 +309,8 @@ def calculate_pairwise_dist(mod, model=None):
     # a dataframe to fill with distances
     df = pd.DataFrame(
         np.zeros((mod.nstips, mod.nstips)),
-        index=mod.names,
-        columns=mod.names,
+        index=mod.alpha_ordered_names,
+        columns=mod.alpha_ordered_names,
         )
 
     # concatenate seqs across all loci
