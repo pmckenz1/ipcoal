@@ -432,7 +432,7 @@ class Model:
                 source = max([i._schild for i in node.children])
                 time = int(node.height)
                 demog.add(ms.MassMigration(time, source, dest))
-                
+
                 # for all nodes set Ne changes
                 demog.add(ms.PopulationParametersChange(
                     time,
@@ -637,12 +637,11 @@ class Model:
                 seed = self.random_mut.randint(1e9)
                 seq = mkseq.feed_tree(gtree, gtlen, self.mut, seed)
 
-                # patch current seqorder into alpha numeric order
-                curr_order = gtree.treenode.get_leaf_names()[::-1]
+                # reorder seq from msprime tipnames to alphanumeric tipnames
                 norder = [self.order[int(i)] for i in range(1, gtree.ntips + 1)]
                 seqarr[:, bidx:bidx + gtlen] = seq[norder, :]
-                
-                # replace 1-indexed tipnames with original tiplabels
+
+                # replace msprime tipnames on tree with original tiplabels
                 for node in gtree.treenode.get_leaves():
                     node.name = self.tipdict[int(node.name)]
                 newick = gtree.write(tree_format=5)
@@ -655,25 +654,6 @@ class Model:
                 # advance site counter
                 bidx += gtlen
                 df.loc[idx, "genealogy"] = newick
-
-                # ------ old method...
-                # reorder rows to order by tip name and store in seqarr
-                # seqarr[:, bidx:bidx + gtlen] = seq[self.order, :]
-
-                # # record the number of snps in this locus
-                # subseq = seqarr[:, bidx:bidx + gtlen]
-                # df.loc[idx, 'nsnps'] = (
-                #     np.any(subseq != subseq[0], axis=0).sum())
-
-                # # advance site counter
-                # bidx += gtlen
-
-                # reset .names on msprime tree with node_labels 1-indexed
-                # gtree = toytree._rawtree(nwk)
-                # for node in gtree.treenode.get_leaves():
-                #     node.name = self.tipdict[int(node.name)]
-                # newick = gtree.write(tree_format=5)
-                # df.loc[idx, "genealogy"] = newick
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
         df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
@@ -811,7 +791,7 @@ class Model:
                     newick = gtree.write(tree_format=5)
                     df.loc[idx, "genealogy"] = newick
 
-            # drop intervals that are 0 bps in length (sum bps will still = nsites)
+            # drop intervals 0 bps in length (sum bps will still = nsites)
             df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
 
             # store the genetree df in a list for now
@@ -883,10 +863,6 @@ class Model:
             newick = mstre.newick()
             gtree = toytree._rawtree(newick)
 
-            # update 1-indexed msprime names to original names
-            for node in gtree.treenode.get_leaves():
-                node.name = self.tipdict[int(node.name)]
-
             # simulate evolution of 1 base
             seed = self.random_mut.randint(1e9)    
             seq = mkseq.feed_tree(gtree, 1, self.mut, seed)
@@ -903,11 +879,14 @@ class Model:
                 if np.all(seq == seq[0]):
                     continue
 
+            # update 1-indexed msprime names to original names
+            for node in gtree.treenode.get_leaves():
+                node.name = self.tipdict[int(node.name)]
             newick = gtree.write(tree_format=5)
-            # newick = mstre.newick(node_labels=self.tipdict)
 
             # reorder SNPs to be alphanumeric nameordered by tipnames 
-            seq = seq[self.order, :]
+            norder = [self.order[i] for i in range(1, gtree.ntips + 1)]
+            seq = seq[norder, :]
 
             # Store result and advance counter
             snparr[:, snpidx] = seq.flatten()
