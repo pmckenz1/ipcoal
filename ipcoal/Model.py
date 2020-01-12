@@ -125,7 +125,6 @@ class Model:
             Use seqgen as the sequence simulation program.
 
         """
-
         # initialize random seed for msprime and seq-gen
         self.random = np.random.RandomState(seed)
         self.random_mut = (
@@ -591,7 +590,7 @@ class Model:
         Simulate tree sequence for each locus and sequence data for each 
         genealogy and return all in a dataframe. 
         """
-        # get the msprime ts generator 
+        # get the msprime ts generator (np.random val is pulled here)
         msgen = self._get_tree_sequence_generator(nsites)
 
         # get the treesequence and its breakpoints
@@ -722,7 +721,7 @@ class Model:
         self.seqs = seqarr
 
         # allows chaining funcs
-        return self
+        # return self
 
 
 
@@ -805,7 +804,7 @@ class Model:
         self.df = df
 
         # allows chaining funcs
-        return self
+        # return self
 
 
 
@@ -910,7 +909,7 @@ class Model:
         self.seqs = snparr
 
         # allows chaining funcs
-        return self
+        # return self
 
 
 
