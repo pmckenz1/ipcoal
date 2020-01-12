@@ -96,14 +96,24 @@ class TreeInfer:
                 name=str(os.getpid()) + ".phy",
                 idxs=[idx],
             )
-            return os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".phy")
+            path = os.path.join(
+                tempfile.gettempdir(), 
+                str(os.getpid()) + ".phy"
+            )
+            return path
+
+
         if self.method == "mb":
             writer.write_concat_to_nexus(
                 outdir=tempfile.gettempdir(),
                 name=str(os.getpid()) + ".nex",
                 idxs=[idx],
             )
-            return os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".nex")
+            path = os.path.join(
+                tempfile.gettempdir(), 
+                str(os.getpid()) + ".nex",
+            )
+            return path
 
 
 
@@ -181,6 +191,7 @@ class TreeInfer:
 
     def infer_iqtree(self):
         pass
+
 
     def infer_mb(self, tmp):
         """
