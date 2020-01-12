@@ -16,19 +16,22 @@ import toytree
 SUPPORTED = {
     "raxml": "raxmlHPC-PTHREADS",
     "iqtree": "iqtree",
-    "mb": "mb"
+    "mb": "mb",
+    "mrbayes": "mb",
 }
 
 
 class TreeInfer:
-
+    """
+    Class for selecting and implementing phylogenetic inference methods.
+    """
     def __init__(self, model, inference_method="raxml", inference_args={}):
         """
         DocString...
         """
         self.model = model
         self.seqs = model.seqs
-        self.names = model.names
+        self.names = model.alpha_ordered_names
         self.binary = ""
         self.method = inference_method.lower()        
         self.inference_args = inference_args
@@ -60,6 +63,7 @@ class TreeInfer:
             "samplefreq": 1000,
         }
         self.mb_kwargs.update(inference_args)
+
 
     def check_method_and_binary(self):
         """

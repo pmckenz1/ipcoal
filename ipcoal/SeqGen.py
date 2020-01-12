@@ -68,6 +68,9 @@ class SeqGen:
         Feed a command string a read results until empty line.
         TODO: allow kwargs to add additional seq-gen args.
         """
+        # if newick is a tree then write it back to nwk
+        newick = newick.write()
+
         # command string
         cmd = (
             "{} -mHKY -l {} -s {} -z {} -t {} -f {} {} {} {} -q <<< \"{}\"; echo done\n"

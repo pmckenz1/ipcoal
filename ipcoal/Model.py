@@ -125,7 +125,6 @@ class Model:
             Use seqgen as the sequence simulation program.
 
         """
-
         # initialize random seed for msprime and seq-gen
         self.random = np.random.RandomState(seed)
         self.random_mut = (
@@ -191,9 +190,13 @@ class Model:
                     idx += 1
 
         # alphanumeric ordered tip names -- order of printing to seq files
-        _tmp = {j: i for (i, j) in self.tipdict.items()}       
-        self.names = sorted(self.tipdict.values())
-        self.order = [_tmp[i] - 1 for i in self.names]
+        self.alpha_ordered_names = sorted(self.tipdict.values())
+
+        # for reordering seq array (in 1-indexed tip order) to alpha tipnames
+        self.order = {
+            i: self.alpha_ordered_names.index(j) for (i, j) 
+            in self.tipdict.items()
+        }
 
         # check formats of admixture args
         self.admixture_edges = (admixture_edges if admixture_edges else [])
@@ -419,28 +422,44 @@ class Model:
             else:
                 node._schild = node.idx
 
-        # Add divergence events (converts time to N generations)
+        # traverse tree from root to tips
         for node in self.tree.treenode.traverse():
+
+            # if children add div events
             if node.children:
                 dest = min([i._schild for i in node.children])
                 source = max([i._schild for i in node.children])
                 time = int(node.height)
                 demog.add(ms.MassMigration(time, source, dest))
+
+                # for all nodes set Ne changes
                 demog.add(ms.PopulationParametersChange(
                     time,
                     initial_size=node.Ne,
                     population=dest),
                 )
-                if self._debug:
-                    print(
-                        'div time:  {:>9}, {:>2} {:>2}, {:>2} {:>2}, Ne={}'
-                        .format(
-                            int(time), source, dest,
-                            node.children[0].idx, node.children[1].idx,
-                            node.Ne,
-                            ),
-                        file=sys.stderr,
-                    )
+
+            # tips set populations sizes (popconfig seemings does this too,
+            # but it didn't actually work for tips until I added this...
+            else:
+                time = int(node.height)
+                demog.add(ms.PopulationParametersChange(
+                    time,
+                    initial_size=node.Ne,
+                    population=node.idx,
+                ))
+
+            # debugging helper
+            if self._debug:
+                print(
+                    'div time:  {:>9}, {:>2} {:>2}, {:>2} {:>2}, Ne={}'
+                    .format(
+                        int(time), source, dest,
+                        node.children[0].idx, node.children[1].idx,
+                        node.Ne,
+                        ),
+                    file=sys.stderr,
+                )
 
         # Add migration pulses
         if not self.admixture_type:
@@ -571,7 +590,7 @@ class Model:
         Simulate tree sequence for each locus and sequence data for each 
         genealogy and return all in a dataframe. 
         """
-        # get the msprime ts generator 
+        # get the msprime ts generator (np.random val is pulled here)
         msgen = self._get_tree_sequence_generator(nsites)
 
         # get the treesequence and its breakpoints
@@ -609,23 +628,22 @@ class Model:
 
             # only simulate data if there is bp 
             if gtlen:
-                # parse the mstree
+                # parse the mstree one time
                 nwk = mstree.newick()
+                gtree = toytree._rawtree(nwk, tree_format=5)
 
-                # get seq ordered by genealogy tips
+                # get seq ordered by msprime tipnames (1-ntips)
                 seed = self.random_mut.randint(1e9)
-                seq = mkseq.feed_tree(nwk, gtlen, self.mut, seed)
+                seq = mkseq.feed_tree(gtree, gtlen, self.mut, seed)
 
-                # reset .names on msprime tree with node_labels 1-indexed
-                gtree = toytree._rawtree(nwk)
+                # reorder seq from msprime tipnames to alphanumeric tipnames
+                norder = [self.order[int(i)] for i in range(1, gtree.ntips + 1)]
+                seqarr[:, bidx:bidx + gtlen] = seq[norder, :]
+
+                # replace msprime tipnames on tree with original tiplabels
                 for node in gtree.treenode.get_leaves():
                     node.name = self.tipdict[int(node.name)]
                 newick = gtree.write(tree_format=5)
-
-                # reorder rows to order by tip name and store in seqarr
-                # tipnames corresponding to current sequence order:
-                curr_order = gtree.treenode.get_leaf_names()[::-1]
-                seqarr[:, bidx:bidx + gtlen] = seq[np.argsort(curr_order), :]
 
                 # record the number of snps in this locus
                 subseq = seqarr[:, bidx:bidx + gtlen]
@@ -634,7 +652,6 @@ class Model:
 
                 # advance site counter
                 bidx += gtlen
-
                 df.loc[idx, "genealogy"] = newick
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
@@ -704,7 +721,7 @@ class Model:
         self.seqs = seqarr
 
         # allows chaining funcs
-        return self
+        # return self
 
 
 
@@ -773,7 +790,7 @@ class Model:
                     newick = gtree.write(tree_format=5)
                     df.loc[idx, "genealogy"] = newick
 
-            # drop intervals that are 0 bps in length (sum bps will still = nsites)
+            # drop intervals 0 bps in length (sum bps will still = nsites)
             df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
 
             # store the genetree df in a list for now
@@ -787,7 +804,7 @@ class Model:
         self.df = df
 
         # allows chaining funcs
-        return self
+        # return self
 
 
 
@@ -840,13 +857,14 @@ class Model:
             if snpidx == nsnps:
                 break
 
-            # get first tree from next tree_sequence
+            # get first tree from next tree_sequence and parse it
             mstre = next(msgen).first()
             newick = mstre.newick()
+            gtree = toytree._rawtree(newick)
 
-            # simulate first base
+            # simulate evolution of 1 base
             seed = self.random_mut.randint(1e9)    
-            seq = mkseq.feed_tree(newick, 1, self.mut, seed)
+            seq = mkseq.feed_tree(gtree, 1, self.mut, seed)
 
             # if repeat_on_trees then keep sim'n til we get a SNP
             if repeat_on_trees:
@@ -860,17 +878,14 @@ class Model:
                 if np.all(seq == seq[0]):
                     continue
 
-            # reset .names on msprime tree with node_labels 1-indexed
-            gtree = toytree._rawtree(newick)
+            # update 1-indexed msprime names to original names
             for node in gtree.treenode.get_leaves():
                 node.name = self.tipdict[int(node.name)]
             newick = gtree.write(tree_format=5)
-            # newick = mstre.newick(node_labels=self.tipdict)
 
             # reorder SNPs to be alphanumeric nameordered by tipnames 
-            # tipnames corresponding to current sequence order:
-            curr_order = gtree.treenode.get_leaf_names()[::-1]
-            seq = seq[np.argsort(curr_order), :]
+            norder = [self.order[i] for i in range(1, gtree.ntips + 1)]
+            seq = seq[norder, :]
 
             # Store result and advance counter
             snparr[:, snpidx] = seq.flatten()
@@ -894,7 +909,7 @@ class Model:
         self.seqs = snparr
 
         # allows chaining funcs
-        return self
+        # return self
 
 
 
@@ -921,7 +936,7 @@ class Model:
             To write a single locus file provide the idx. If None then all loci
             are written to separate files.
         """
-        writer = Writer(self.seqs, self.names)
+        writer = Writer(self.seqs, self.alpha_ordered_names)
         writer.write_loci_to_phylip(outdir, idxs, name_prefix, name_suffix)
 
         # report
@@ -947,7 +962,7 @@ class Model:
         outfile (str):
             The name/path of the outfile to write. Default is "./test.phy"
         """       
-        writer = Writer(self.seqs, self.names)
+        writer = Writer(self.seqs, self.alpha_ordered_names)
         writer.write_concat_to_phylip(outdir, name, idxs)
 
         # report 
@@ -1003,6 +1018,7 @@ class Model:
                 except ipcoalError as err:
                     print(err)
                     raise err
+
 
 
     def get_pairwise_distances(self, model=None):
