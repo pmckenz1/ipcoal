@@ -193,7 +193,7 @@ class Model:
         self.alpha_ordered_names = sorted(self.tipdict.values())
 
         # for reordering seq array (in 1-indexed tip order) to alpha tipnames
-        self.order = {
+        self._order = {
             i: self.alpha_ordered_names.index(j) for (i, j) 
             in self.tipdict.items()
         }
@@ -629,7 +629,12 @@ class Model:
             # only simulate data if there is bp 
             if gtlen:
                 # parse the mstree one time
+                # TODO:
+                # parse the mstree | node_labels is currently a workaround
+                # for buffer error on large trees. We could maybe use this
+                # permanently in which case it should use the order dict.
                 nwk = mstree.newick()
+                # node_labels={i: i for i in range(1, self.nstips + 1)})
                 gtree = toytree._rawtree(nwk, tree_format=5)
 
                 # get seq ordered by msprime tipnames (1-ntips)
@@ -637,7 +642,7 @@ class Model:
                 seq = mkseq.feed_tree(gtree, gtlen, self.mut, seed)
 
                 # reorder seq from msprime tipnames to alphanumeric tipnames
-                norder = [self.order[int(i)] for i in range(1, gtree.ntips + 1)]
+                norder = [self._order[int(i)] for i in range(1, gtree.ntips + 1)]
                 seqarr[:, bidx:bidx + gtlen] = seq[norder, :]
 
                 # replace msprime tipnames on tree with original tiplabels
@@ -780,15 +785,14 @@ class Model:
 
                 # only simulate data if there is bp 
                 if gtlen:
-                    # parse the mstree
-                    nwk = mstree.newick()
-
-                    # reset .names on msprime tree with node_labels 1-indexed
-                    gtree = toytree._rawtree(nwk)
-                    for node in gtree.treenode.get_leaves():
-                        node.name = self.tipdict[int(node.name)]
-                    newick = gtree.write(tree_format=5)
-                    df.loc[idx, "genealogy"] = newick
+                    # when node_labels arg is provided the names are actually
+                    # 0-indexed, so we use a -1 in the tipdict to change names
+                    # back to their original strings and save the tree.
+                    nwk = mstree.newick(
+                        precision=0,
+                        node_labels={i - 1: j for i, j in self.tipdict.items()}
+                    )
+                    df.loc[idx, "genealogy"] = nwk
 
             # drop intervals 0 bps in length (sum bps will still = nsites)
             df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
@@ -858,9 +862,14 @@ class Model:
                 break
 
             # get first tree from next tree_sequence and parse it
-            mstre = next(msgen).first()
-            newick = mstre.newick()
-            gtree = toytree._rawtree(newick)
+            mstree = next(msgen).first()
+
+            # TODO:
+            # parse the mstree | node_labels is currently a workaround
+            # for buffer error on large trees. We could maybe use this
+            # permanently in which case it should use the order dict.
+            nwk = mstree.newick()
+            gtree = toytree._rawtree(nwk)
 
             # simulate evolution of 1 base
             seed = self.random_mut.randint(1e9)    
@@ -871,7 +880,7 @@ class Model:
                 # if not variable
                 while np.all(seq == seq[0]):
                     seed = self.random_mut.randint(1e9)    
-                    seq = mkseq.feed_tree(newick, 1, self.mut, seed)
+                    seq = mkseq.feed_tree(gtree, 1, self.mut, seed)
 
             # otherwise just move on to the next generated tree
             else:
@@ -884,7 +893,7 @@ class Model:
             newick = gtree.write(tree_format=5)
 
             # reorder SNPs to be alphanumeric nameordered by tipnames 
-            norder = [self.order[i] for i in range(1, gtree.ntips + 1)]
+            norder = [self._order[i] for i in range(1, gtree.ntips + 1)]
             seq = seq[norder, :]
 
             # Store result and advance counter
