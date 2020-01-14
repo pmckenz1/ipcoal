@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import ipcoal
-import toytree
 import numpy as np
 from scipy.linalg import expm
 
@@ -114,7 +113,6 @@ class SeqModel():
         # 3. 
 
         """
-        # init random seed
         np.random.seed(seed)
 
         # empty array to store seqs, size determined by tree.
@@ -161,7 +159,6 @@ class SeqModel():
 
         # reorder seqs array alphanumeric tip-name order
         return seqs[1:tree.ntips + 1]
-
 
 
     def close(self):
