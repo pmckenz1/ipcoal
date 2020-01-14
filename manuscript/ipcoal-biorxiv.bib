@@ -16,7 +16,7 @@
 	issn = {1553-7358},
 	url = {https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1004842},
 	doi = {10.1371/journal.pcbi.1004842},
-	abstract = {A central challenge in the analysis of genetic variation is to provide realistic genome simulation across millions of samples. Present day coalescent simulations do not scale well, or use approximations that fail to capture important long-range linkage properties. Analysing the results of simulations also presents a substantial challenge, as current methods to store genealogies consume a great deal of space, are slow to parse and do not take advantage of shared structure in correlated trees. We solve these problems by introducing sparse trees and coalescence records as the key units of genealogical analysis. Using these tools, exact simulation of the coalescent with recombination for chromosome-sized regions over hundreds of thousands of samples is possible, and substantially faster than present-day approximate methods. We can also analyse the results orders of magnitude more quickly than with existing methods.},
+	abstract = {A central challenge in the analysis of genetic variation is to provide realistic genome simulation across millions of samples. Present day coalescent simulations do not scale well, or use approximations that fail to capture important long-range linkage properties. Analysing the results of simulations also presents a substantial challenge, as current methods to store genealogies consume a great deal of space, are slow to parse and do not take advantage of shared structure in correlated trees. We solve these problems by introducing sparse trees and coalescence records as the key units of genealogical analysis. Using these tools, exact simulation of the coalescent with recombination for chromosome-sized regions over hundreds of  of samples is possible, and substantially faster than present-day approximate methods. We can also analyse the results orders of magnitude more quickly than with existing methods.},
 	language = {en},
 	number = {5},
 	urldate = {2020-01-09},
@@ -168,7 +168,7 @@
 	file = {Full Text PDF:/home/deren/Zotero/storage/L9HRBWGL/Eaton - Toytree A minimalist tree visualization and manip.pdf:application/pdf;Snapshot:/home/deren/Zotero/storage/Q47HVPE3/2041-210X.html:text/html}
 }
 
-@article{adrion_community-maintained_2019,
+@article{adrion_community_maintained_2019,
 	title = {A community-maintained standard library of population genetic models},
 	copyright = {© 2019, Posted by Cold Spring Harbor Laboratory. This pre-print is available under a Creative Commons License (Attribution 4.0 International), CC BY 4.0, as described at http://creativecommons.org/licenses/by/4.0/},
 	url = {https://www.biorxiv.org/content/10.1101/2019.12.20.885129v1},
@@ -213,3 +213,82 @@
 	month = may,
 	year = {2011}
 }
+
+@article{schrider_learning_2017,
+title = "Supervised Machine Learning for Population Genetics: A New Paradigm",
+journal = "Trends in Genetics",
+volume = "34",
+number = "4",
+pages = "301 - 312",
+year = "2018",
+issn = "0168-9525",
+doi = "https://doi.org/10.1016/j.tig.2017.12.005",
+url = "http://www.sciencedirect.com/science/article/pii/S0168952517302251",
+author = "Daniel R. Schrider and Andrew D. Kern",
+abstract = "As population genomic datasets grow in size, researchers are faced with the daunting task of making sense of a flood of information. To keep pace with this explosion of data, computational methodologies for population genetic inference are rapidly being developed to best utilize genomic sequence data. In this review we discuss a new paradigm that has emerged in computational population genomics: that of supervised machine learning (ML). We review the fundamentals of ML, discuss recent applications of supervised ML to population genetics that outperform competing methods, and describe promising future directions in this area. Ultimately, we argue that supervised ML is an important and underutilized tool that has considerable potential for the world of evolutionary genomics."
+}
+
+@article{rambaut_seqgen_1997,
+    author = {Rambaut, Andrew and Grass, Nicholas C.},
+    title = "{Seq-Gen: an application for the Monte Carlo simulation of DNA sequence evolution along phylogenetic trees}",
+    journal = {Bioinformatics},
+    volume = {13},
+    number = {3},
+    pages = {235-238},
+    year = {1997},
+    month = {06},
+    abstract = "{Motivation: Seq-Gen is a program that will simulate the evolution of nucleotide sequences along a phylogeny, using common models of the substitution process. A range of models of molecular evolution are implemented, including the general reversible model. Nucleotide frequencies and other parameters of the model may be given and site-specific rate heterogeneity can also be incorporated in a number of ways. Any number of trees may be read in and the program will produce any number of data sets for each tree. Thus, large sets of replicate simulations can be easily created. This can be used to test phylogenetic hypotheses using the parametric bootstrap.Availability: Seq-Gen can be obtained by WWW from http://evolve.zoo.ox.ac.uk/Seq-Gen/seq-gen.html or by FTP from ftp://evolve.zoo.ox.ac.uk/packages/Seq-Gen/. The package includes the source code, manual and example files. An Apple Macintosh version is available from the same sites.}",
+    issn = {1367-4803},
+    doi = {10.1093/bioinformatics/13.3.235},
+    url = {https://doi.org/10.1093/bioinformatics/13.3.235},
+    eprint = {https://academic.oup.com/bioinformatics/article-pdf/13/3/235/1170463/13-3-235.pdf},
+}
+
+@article{chung_bayesian_2017,
+    author = {Chung, Yujin and Hey, Jody},
+    title = "{Bayesian Analysis of Evolutionary Divergence with Genomic Data under Diverse Demographic Models}",
+    journal = {Molecular Biology and Evolution},
+    volume = {34},
+    number = {6},
+    pages = {1517-1528},
+    year = {2017},
+    month = {02},
+    abstract = "{We present a new Bayesian method for estimating demographic and phylogenetic history using population genomic data. Several key innovations are introduced that allow the study of diverse models within an Isolation-with-Migration framework. The new method implements a 2-step analysis, with an initial Markov chain Monte Carlo (MCMC) phase that samples simple coalescent trees, followed by the calculation of the joint posterior density for the parameters of a demographic model. In step 1, the MCMC sampling phase, the method uses a reduced state space, consisting of coalescent trees without migration paths, and a simple importance sampling distribution without the demography of interest. Once obtained, a single sample of trees can be used in step 2 to calculate the joint posterior density for model parameters under multiple diverse demographic models, without having to repeat MCMC runs. Because migration paths are not included in the state space of the MCMC phase, but rather are handled by analytic integration in step 2 of the analysis, the method is scalable to a large number of loci with excellent MCMC mixing properties. With an implementation of the new method in the computer program MIST, we demonstrate the method’s accuracy, scalability, and other advantages using simulated data and DNA sequences of two common chimpanzee subspecies: Pan troglodytes (P. t.) troglodytes and P. t. verus.}",
+    issn = {0737-4038},
+    doi = {10.1093/molbev/msx070},
+    url = {https://doi.org/10.1093/molbev/msx070},
+    eprint = {https://academic.oup.com/mbe/article-pdf/34/6/1517/24366828/msx070.pdf},
+}
+
+@article {beerli_coalescent_2001,
+	author = {Beerli, Peter and Felsenstein, Joseph},
+	title = {Maximum likelihood estimation of a migration matrix and effective population sizes in n subpopulations by using a coalescent approach},
+	volume = {98},
+	number = {8},
+	pages = {4563--4568},
+	year = {2001},
+	doi = {10.1073/pnas.081068098},
+	publisher = {National Academy of Sciences},
+	abstract = {A maximum likelihood estimator based on the coalescent for unequal migration rates and different subpopulation sizes is developed. The method uses a Markov chain Monte Carlo approach to investigate possible genealogies with branch lengths and with migration events. Properties of the new method are shown by using simulated data from a four-population n-island model and a source{\textendash}sink population model. Our estimation method as coded in migrate is tested against genetree; both programs deliver a very similar likelihood surface. The algorithm converges to the estimates fairly quickly, even when the Markov chain is started from unfavorable parameters. The method was used to estimate gene flow in the Nile valley by using mtDNA data from three human populations. MH,Metropolis{\textendash}Hastings Markov chain Monte Carlo approach},
+	issn = {0027-8424},
+	URL = {https://www.pnas.org/content/98/8/4563},
+	eprint = {https://www.pnas.org/content/98/8/4563.full.pdf},
+	journal = {Proceedings of the National Academy of Sciences}
+}
+
+@article{brown_predictive_2014,
+    author = {Brown, Jeremy M.},
+    title = "{Predictive Approaches to Assessing the Fit of Evolutionary Models}",
+    journal = {Systematic Biology},
+    volume = {63},
+    number = {3},
+    pages = {289-292},
+    year = {2014},
+    month = {02},
+    abstract = "{One increasingly popular class of predictive techniques in evolutionary biology is known as approximate Bayesian computation (ABC; Beaumont 2010). Developed largely in response to the challenges posed by complex population genetic models (e.g., Beaumont et al. 2002), ABC obviates the need to formulate a likelihood function in order to perform inference under complicated scenarios. Instead, replicate data sets are simulated from the prior predictive distribution (the distribution that specifies the probability of any data set based on what is believed a priori about appropriate values for model parameters) and compared to observations. Simulations producing data that are sufficiently similar to the observed data are “accepted” while all others are “rejected”. The collection of parameter values associated with the accepted simulations provides a simulated draw from the posterior distribution. When the simulate-accept/reject procedure is performed sufficiently many times, this collection of parameter values mimics the shape of the posterior distribution with increasing accuracy.}",
+    issn = {1063-5157},
+    doi = {10.1093/sysbio/syu009},
+    url = {https://doi.org/10.1093/sysbio/syu009},
+    eprint = {https://academic.oup.com/sysbio/article-pdf/63/3/289/13589536/syu009.pdf},
+}
+
