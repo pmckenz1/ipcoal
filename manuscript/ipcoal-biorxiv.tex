@@ -1,0 +1,160 @@
+% !BIB program  = bibtex ipcoal-biorxiv
+% !TEX program  = pdflatex ipcoal-biorxiv
+
+\documentclass[11pt]{article}
+
+\usepackage{natbib}
+\usepackage{times}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[pdftex]{graphicx}
+\usepackage[letterpaper, left=1.0in, right=1.0in, top=1in, bottom=1in]{geometry}
+
+\usepackage{ragged2e}
+\usepackage{upquote}
+
+\usepackage[backref=page]{hyperref}
+\usepackage{hyperref}
+\usepackage{rotating}
+\usepackage{booktabs}
+\usepackage[hypcap, labelsep=period]{caption}
+\usepackage{array}
+\usepackage{color}
+\usepackage{newfloat}
+\usepackage{url}
+\usepackage{bm}
+\usepackage{lineno}
+\usepackage{setspace}
+\usepackage{float}
+
+% single (1) or double (2) line spacing
+\linespread{1.1}
+
+\linenumbers
+\urlstyle{same}
+\DeclareFloatingEnvironment[name={Supplementary Figure}]{suppfigure}
+\DeclareFloatingEnvironment[name={Supplementary Table}]{supptable}
+
+\usepackage[usenames,dvipsnames,svgnames,table]{xcolor}
+\hypersetup{
+     colorlinks   = true,
+     citecolor    = Indigo,
+     linkcolor    = DarkCyan
+}
+
+\setlength{\RaggedRightParindent}{\parindent}
+
+\captionsetup{%
+  labelfont=bf,
+  skip=10pt,
+  singlelinecheck=off,
+}
+
+\renewcommand{\thefigure}{\arabic{figure}}
+\renewcommand{\thetable}{\arabic{table}}
+
+\begin{document}
+
+\noindent Running title: Toytree: minimalist tree plotting in Python\\
+
+\begin{center}
+{\bf \Large 
+ipcoal: An interactive Python package for simulating and analyzing genealogies and sequences on a species tree or network
+}\\[0.25cm]
+
+Patrick F. McKenzie$^{1, 2}$ and Deren A. R. Eaton$^{1}$\\[0.25cm]
+
+$^{1}$ Department of Ecology, Evolution, and Environmental Biology, Columbia University, New York, NY 10027 \\
+$^{2}$ To whom correspondence should be addressed
+
+\end{center}
+\noindent
+
+\subsection*{Abstract--}
+\textbf{Summary:} \emph{ipcoal} is a free and open source Python package for simulating and analyzing genealogies and sequences. It automates the task of describing complex demographic models (e.g., with divergence times, effective population sizes, migration events) to the msprime coalescent simulator by parsing a user-supplied species tree or network. Genealogies, sequences, and metadata are returned in tabular format allowing for easy downstream analyses. ipcoal includes phylogenetic inference tools to automate gene tree inference from simulated sequence data, and visualization tools for analyzing results and verifying model accuracy. The ipcoal package is a powerful tool for posterior predictive data analysis, methods validation, and for teaching coalescent methods in an interactive and visual environment. \\
+
+\noindent \textbf{Availability and implementation:} Source code is available from the GitHub repository (\url{https://github.com/pmckenz1/ipcoal/}), and distributed for packaged installation with conda. Complete documentation is available at \url{https://ipcoal.readthedocs.io/}, and interactive notebooks prepared for teaching purposes are available at \url{https:/.../binder/ipcoal/}.\\
+
+\noindent Keywords: coalescent, evolution, simulation, Python, phylogeny
+
+\RaggedRight
+\bigskip
+
+\section{Introduction}
+The coalescent process \cite{kingman_coalescent_1982,hudson_testing_1983} is used to model the distribution of genealogical ancestry across a set of sampled genomes. It approximates a neutral Wright-Fisher process of random mating within populations where the expected waiting times between subsequent coalescent events can be drawn from a statistical distribution based on the effective population size. This makes simulation of genealogies under the coalescent process \cite{hudson_generating_2002} a computationally efficient approach for integrating over genealogical variation (i.e., treating it as a latent random variable) when making population genetic inferences \cite{}(Felsenstein and Beerli). 
+
+Demographic models describe the parameters involved in a coalescent simulation. Highly complex models may include factors such as changes in population sizes, population divergence times, and gene flow (admixture) between populations. For example, in the study of human population history, a demographic model may describe the divergence of human populations among different continents, the expansion of these population sizes separately in Africa, Eurasia, and the Americas, and subsequent admixture among populations (Reich et al…; Adrion et al. 2019). Demographic models are also routinely used in phylogenetics, where the goal is to jointly infer a topology (i.e., the relationships among connected populations) in addition to the parameters of a demographic model applied to the topology (Degnan and Rosenberg 2009, Knowles and Kubatko 2011). 
+
+The ability to simulate realistic sequence data evolving on genealogies sampled from complex demographic models has enabled new types of inference from genomic data, from fitting parameters to demographic models and performing model comparisons (Reich); to performing posterior predictive data analyses (Brown); to generating training datasets for machine learning methods (Kern) or validating new inference methods (Adrion…). Despite the impressive design and capabilities of recent state-of-the-art coalescent simulation tools, like msprime (Kelleher), it is difficult for a single package to be optimized for all types of use. To this end, msprime lacks functionality in several ways that limit its utility for studying deeper-scale (e.g., phylogenetic) data sets. Here we describe a new Python package, ipcoal, which acts as a wrapper around msprime with the aim of filling this niche: to provide a simple method for simulating genealogies and sequences on species trees or networks for phylogenetic-scale analyses.
+
+\section{Phylogenomic data simulation}
+We make the following distinctions among terms in ipcoal: a genealogy is the true history of ancestry among a set of sampled genes; a gene tree is an empirical estimate of a genealogy based on sequences from some region of the genome; and a species tree is a demographic model including a topology. As phylogenetics transitions from a focus on multi-locus data sets (Knowles \& kubatko 20xx) to the analysis of whole genomes -- and the spatial distribution of correlated genealogical variation along chromosomes -- the distinction between unobservable genealogical variation and the empirical gene tree estimates that can be made from observable sequence data will become increasingly relevant. 
+
+Simulating realistic sequence data under the multispecies coalescent model has typically been achieved through a two-step approach: a set of independent genealogies is first simulated, and then a model of sequence evolution is applied to model substitution along the edges of each tree to produce sequence alignments. This phylogenetic workflow differs from standard population-level coalescent simulations in several ways: (1) phylogenies generally contain many more lineages than population genetic analyses which makes describing demographic models to coalescent simulators burdensome and error-prone; (2) the phylogenetic workflow typically ignores recombination, but such data can now be simulated easily by modern coalescent software; and (3) the phylogenetic workflow applies a Markov model of sequence substitution rather than the more simple infinite-sites process, and therefore allows for more complex substitution models that can include homoplasy. In ipcoal we have combined the best aspects of each approach so that it is easy to describe demographic models for large trees, sequence data can be simulated on independent or linked genealogies, and sequence data can be simulated under complex models of sequence evolution. 
+
+\section{Implementation}
+\label{sec:headings}
+\subsection{Reproducible and robust workflow}
+The ipcoal library is designed for interactive use within jupyter-notebooks (kluyver), where simulations can be run in the same document as downstream statistical analyses; visualization tools can be used to validate model accuracy; and code, figures, and results are easily organized into reproducible and shareable documents. The code is designed to be easy to use, and follows a minimalist and object-oriented design with few user-facing classes and functions.
+
+\subsection{Defining demographic models}
+The primary object that users interact with in ipcoal is the Model class object (Fig. 1a). This takes a number of user supplied parameter arguments to initialize demographic and substitution models. The greatest convenience of the Model class object comes from its ability to automate the construction of a demographic model by parsing a tree object. For large phylogenies this is important; for example, to programatically describe a demographic model for a phylogenetic tree with 20 tips would require writing code in msprime to describe 39 divergence events (MassMigrations). ipcoal uses the Python tree manipulation and plotting library toytree (Eaton 2019) to parse, visualize, and annotate trees, which makes it easy to verify whether variable Ne values and admixture scenarios have been properly defined (Fig. 1a-b). 
+
+\subsection{Simulating unlinked SNPs}
+Many inference tools require the input of unlinked single nucleotide polymorphisms (SNPs) as a work around to ignore the effect of recombination (e.g., SVDquartets (...) and SNAPP (...)). ipcoal can generate a distribution of independent genealogies, and unlinked SNPs evolved on those genealogies, using the Model.sim\_snps() function call (Fig. 1c-d). Notably, we take care that the probability a substitution is observed is proportional to the total edge lengths of the genealogy by testing each genealogy for a SNP and moving on to the next independently sampled genealogy if a SNP is not observed. By contrast, you can alternatively enforce that a SNP is placed on every visited genealogy (using the argument repeat\_on\_trees=True), which will increase the speed of simulations but introduce a bias towards shallower divergence times. 
+
+\subsection{Simulating loci}
+The ipcoal.Model object can also simulate entire chromosomes (loci) with recombination to produce a sequence of linked genealogies by calling the Model.sim\_loci() function. Linked genealogies are correlated since some samples share the same ancestors at neighboring genomic regions, and thus are more similar in topology and edge lengths than unlinked trees (Fig. 1d). This type of variation is increasingly of interest for genome-wide analyses.
+
+\subsection{Simulating sequence evolution}
+To simulate sequence data on genealogies in ipcoal a Markov model of sequence evolution is applied iteratively to each edge of the tree from root to tips. We have implemented this sequence simulator using just-in-time compiled code to achieve high performance. We additionally provide the option to use the external tool seq-gen (cite), which offers a larger range of models than we currently support. Our internal implementation is used by default since it achieves faster speeds by avoiding repeated subprocess calls. The documentation includes test notebooks demonstrating that our implementation converges to the same results as seq-gen.
+
+\subsection{Results}
+Upon calling a simulation function two results are stored to the Model object, a sequence array (Model.seqs) and a dataframe with the genealogy and statistics about each genealogical window (Model.df). The sequence array can be written to disk in Nexus or Phylip format, and as separate or concatenated loci, and the DataFrame can be saved as a CSV (Fig. 1e-f). However, to simplify analytical workflows, we provide convenience functions for inferring gene trees directly from sequence data which avoids the need to work with and organize many files.
+
+\section{Conclusions}
+\label{sec:conclusions}
+Coalescent simulations for studying genome-wide patterns are routinely used in population genetics, but have not yet achieved widespread use in phylogenetics where the focus has traditionally been limited to a smaller number of unlinked loci. Our new software tool ipcoal makes it easy to simulate and explore linked or unlinked genealogical and sequence variation across genomes, providing new opportunities for investigating phylogenetic methods and theory.
+
+\begin{figure}
+  \centering
+  %%\fbox{\rule[-.5cm]{4cm}{4cm} \rule[-.5cm]{4cm}{0cm}}
+  \includegraphics[width=15cm]{figures/composite.pdf}
+  \caption{Simulation of coalescent genealogies and sequence data in ipcoal. A species tree can be entered as a newick file or toytree object with edge lengths in units of generations. A single Ne value can be set to all nodes or variable Nes can be applied by mapping values to nodes using toytree. (a) The model class object of ipcoal is used to initialize parameterized demographic and mutational models. Simulated genealogies can sample multiple individuals per population. (b) Genealogical variation across the genome will reflect parameterized processes like genealogical discordance and admixture. (c-d) Sequence data can be simulated as unlinked SNPs or as genomic segments in which recombination affects linkage among neighboring genealogies. (e)... (f)... }
+  \label{fig:fig1}
+\end{figure}
+
+
+\bibliographystyle{ecol_let}
+\bibliography{ipcoal}  
+
+
+%%% Remove comment to use the external .bib file (using bibtex).
+%%% and comment out the ``thebibliography'' section.
+
+
+%%% Comment out this section when you \bibliography{references} is enabled.
+%\begin{thebibliography}{1}
+
+%\bibitem{kour2014real}
+%George Kour and Raid Saabne.
+%\newblock Real-time segmentation of on-line handwritten arabic %script.
+%\newblock In {\em Frontiers in Handwriting Recognition (ICFHR), 2014 14th
+%  International Conference on}, pages 417--422. IEEE, 2014.
+
+%\bibitem{kour2014fast}
+%George Kour and Raid Saabne.
+%\newblock Fast classification of handwritten on-line arabic characters.
+%\newblock In {\em Soft Computing and Pattern Recognition (SoCPaR), 2014 6th
+%  International Conference of}, pages 312--318. IEEE, 2014.
+
+%\bibitem{hadash2018estimate}
+%Guy Hadash, Einat Kermany, Boaz Carmeli, Ofer Lavi, George Kour, and Alon
+%  Jacovi.
+%\newblock Estimate and replace: A novel approach to integrating deep neural
+%  networks with existing applications.
+%\newblock {\em arXiv preprint arXiv:1804.09028}, 2018.
+
+%\end{thebibliography}
+
+\end{document}

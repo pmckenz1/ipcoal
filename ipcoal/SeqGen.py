@@ -15,15 +15,34 @@ class SeqGen:
     cycled through without the overhead of opening/closing subprocesses.
     """
 
-    def __init__(self):
+    def __init__(self, **kwargs):
 
         # set binary path for conda env and check for binary
+        self.kwargs = kwargs
         self.binary = os.path.join(sys.prefix, "bin", "seq-gen")
         assert os.path.exists(self.binary), (
             "binary {} not found".format(self.binary))
 
         # call open_subprocess to set the shell 
         self.shell = None
+
+        # store substitution model kwargs
+        self.kwargs = {
+            "kappa": 1.0,
+            "state_frequencies": (0.25, 0.25, 0.25, 0.25),
+        }
+        self.kwargs.update(kwargs)
+
+        # set tstv based on kappa
+        self.state_frequencies = self.kwargs["state_frequencies"]
+        freqR = self.state_frequencies[0] + self.state_frequencies[2]
+        freqY = self.state_frequencies[1] + self.state_frequencies[3]
+        self.kwargs["tstv"] = (
+            self.kwargs["kappa"] * sum([
+                self.state_frequencies[0] * self.state_frequencies[2],
+                self.state_frequencies[1] * self.state_frequencies[3]
+            ])) / (freqR * freqY)
+
 
 
     def open_subprocess(self):
@@ -44,15 +63,28 @@ class SeqGen:
         self.shell.wait(timeout=1.0)
 
 
-    def feed_tree(self, newick, nsites, mut, seed, **kwargs):
+    def feed_tree(self, newick, nsites, mut, seed):
         """
         Feed a command string a read results until empty line.
         TODO: allow kwargs to add additional seq-gen args.
         """
+        # if newick is a tree then write it back to nwk
+        newick = newick.write()
+
         # command string
         cmd = (
-            "{} -mGTR -l {} -s {} -z {} -q <<< \"{}\"; echo done\n"
-            .format(self.binary, nsites, mut, seed, newick)
+            "{} -mHKY -l {} -s {} -z {} -t {} -f {} {} {} {} -q <<< \"{}\"; echo done\n"
+            .format(
+                self.binary,
+                nsites,
+                mut, 
+                seed,
+                self.kwargs["tstv"], 
+                self.kwargs["state_frequencies"][0],
+                self.kwargs["state_frequencies"][1],
+                self.kwargs["state_frequencies"][2],
+                self.kwargs["state_frequencies"][3],
+                newick)
         )
 
         # feed to the shell

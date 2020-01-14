@@ -16,19 +16,22 @@ import toytree
 SUPPORTED = {
     "raxml": "raxmlHPC-PTHREADS",
     "iqtree": "iqtree",
-    "mb": "mb"
+    "mb": "mb",
+    "mrbayes": "mb",
 }
 
 
 class TreeInfer:
-
+    """
+    Class for selecting and implementing phylogenetic inference methods.
+    """
     def __init__(self, model, inference_method="raxml", inference_args={}):
         """
         DocString...
         """
         self.model = model
         self.seqs = model.seqs
-        self.names = model.names
+        self.names = model.alpha_ordered_names
         self.binary = ""
         self.method = inference_method.lower()        
         self.inference_args = inference_args
@@ -61,6 +64,7 @@ class TreeInfer:
         }
         self.mb_kwargs.update(inference_args)
 
+
     def check_method_and_binary(self):
         """
         Checks that the 'method' is supported and finds existing binary
@@ -92,14 +96,24 @@ class TreeInfer:
                 name=str(os.getpid()) + ".phy",
                 idxs=[idx],
             )
-            return os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".phy")
+            path = os.path.join(
+                tempfile.gettempdir(), 
+                str(os.getpid()) + ".phy"
+            )
+            return path
+
+
         if self.method == "mb":
             writer.write_concat_to_nexus(
                 outdir=tempfile.gettempdir(),
                 name=str(os.getpid()) + ".nex",
                 idxs=[idx],
             )
-            return os.path.join(tempfile.gettempdir(), str(os.getpid()) + ".nex")
+            path = os.path.join(
+                tempfile.gettempdir(), 
+                str(os.getpid()) + ".nex",
+            )
+            return path
 
 
 
@@ -177,6 +191,7 @@ class TreeInfer:
 
     def infer_iqtree(self):
         pass
+
 
     def infer_mb(self, tmp):
         """

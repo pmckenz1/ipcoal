@@ -325,6 +325,50 @@ class Params(object):
                 _repr += _printstr.format(key, _val)
         return _repr
 
+def calculate_pairwise_dist(mod, model=None, locus = None):
+    """
+    Return a pandas dataframe with pairwise distances between taxa.
+    The model object should have already run sim.snps or sim.loci to generate
+    sequence data in .seqs.
+    """
+    # a dataframe to fill with distances
+    df = pd.DataFrame(
+        np.zeros((mod.nstips, mod.nstips)),
+        index=mod.alpha_ordered_names,
+        columns=mod.alpha_ordered_names,
+        )
+    if locus:
+        # grab the locus requested
+        arr = mod.seqs[locus]
+    else:
+        # concatenate seqs across all loci
+        arr = np.concatenate(mod.seqs, axis=1)
+
+    # calculate all pairs
+    for i in range(mod.nstips):
+        for j in range(mod.nstips):
+
+            # sample taxa
+            seq0 = arr[i]
+            seq1 = arr[j]
+
+            # hamming distance (proportion that are not matching)
+            if model == "JC":
+                dist = jukes_cantor_distance(seq0, seq1)
+            else:
+                dist = sum(seq0 != seq1) / seq0.size
+            df.iloc[i, j] = dist
+            df.iloc[j, i] = dist
+    return df
+
+
+
+def jukes_cantor_distance(seq0, seq1):
+    "calculate the jukes cantor distance"
+    dist = sum(seq0 != seq1) / seq0.size
+    jcdist = (-3. / 4.) * np.log(1. - ((4. / 3.) * dist))
+    return jcdist
+
 
 # def tile_reps(array, nreps):
 #     "used to fill labels in the simcat.Database for replicates"

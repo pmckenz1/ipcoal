@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import ipcoal
-import toytree
 import numpy as np
 from scipy.linalg import expm
 
@@ -45,7 +44,6 @@ class SeqModel():
     def __init__(
         self,
         state_frequencies=None,
-        rate_matrix=None,
         kappa=None,
         alpha=None,
         gamma=None,
@@ -58,16 +56,16 @@ class SeqModel():
         self.state_frequencies = (
             state_frequencies if np.any(state_frequencies) else RATES
         )
-        self.rate_matrix = (
-            rate_matrix if np.any(rate_matrix) else RATES
-        )
 
+        # this is reported in seqmodel summary but not used in computation
+        # since it is redundant with kappa
         freqR = self.state_frequencies[0] + self.state_frequencies[2]
         freqY = self.state_frequencies[1] + self.state_frequencies[3]
-
-        # calculate tstv, used by seq-gen
-        self.tstv = (self.kappa*(self.state_frequencies[0]*self.state_frequencies[2] +
-                     self.state_frequencies[1]*self.state_frequencies[3]))/(freqR*freqY)
+        self.tstv = (
+            self.kappa * sum([
+                self.state_frequencies[0] * self.state_frequencies[2],
+                self.state_frequencies[1] * self.state_frequencies[3]
+            ])) / (freqR * freqY)
 
         # get Q matrix from model params
         self.Q = None
@@ -104,40 +102,63 @@ class SeqModel():
 
 
 
-    def feed_tree(self, newick, nsites=1, mut=1e-8, seed=None):
+    def feed_tree(self, tree, nsites=1, mut=1e-8, seed=None):
         """
-        Simulate markov mutation process on tree and return sequences.        
-        The returned seq array is ordered with taxa on rows by their idx
-        number from 0-ntips. It is not ordered by tip 'name' order.
-        """
-        # seed numpy and numba if not provided
-        if not seed:
-            seed = np.random.randint(1e20)
+        Simulate markov mutation process on a gene tree and return a 
+        sequence array. The returned array is ordered by...
 
-        # get all as arrays
+        rows by their idx number from 0-ntips. It is not ordered by tip 'name' order.
+        # 1. input tree has idx labels 0-nnodes
+        # 2. seqs is (nnodes + 1, nsites)
+        # 3. 
+
+        """
         np.random.seed(seed)
-        tree = toytree._rawtree(newick)
+
+        # empty array to store seqs, size determined by tree.
         seqs = np.zeros((tree.nnodes + 1, nsites), dtype=np.int8)
-        idxs = np.zeros(tree.nnodes, dtype=int)
-        brlens = np.zeros(tree.nnodes)
-        relate = np.zeros((tree.nnodes, 2), dtype=int)
+
+        # empty array to store traversal order (ints between 1 - nnodes+1)
+        traversal = np.zeros(tree.nnodes, dtype=int)
+
+        # store edge lengths
+        brlens = np.zeros(tree.nnodes + 1)
+
+        # store (offspring, parent) pairs for msprime numeric names
+        relate = np.zeros((tree.nnodes + 1, 2), dtype=int)
 
         # prefill info needed to do jit funcs
         for idx, node in enumerate(tree.treenode.traverse()):
-            idxs[idx] = node.idx
-            if not node.is_root():
-                brlens[node.idx] = node.dist * mut
-                relate[node.idx] = node.idx, node.up.idx
+
+            # store the bls and parent name of each node
+            if node.is_root():
+                traversal[idx] = int(node.name) + 1
+                relate[int(node.name) + 1] = int(node.name) + 1, 0
+
+            # leaf parent has internal parent name + 1
+            elif node.is_leaf():
+                traversal[idx] = int(node.name)
+                brlens[int(node.name)] = node.dist * mut
+                relate[int(node.name)] = node.name, int(node.up.name) + 1
+
+            # internal node names are currently idx labels b/c msprime 
+            # internal names are not preserved (written), so they need
+            # to be pushed +1 to be 1-indexed.
             else:
-                relate[node.idx] = node.idx, node.idx + 1
+                traversal[idx] = int(node.name) + 1
+                brlens[int(node.name) + 1] = node.dist * mut
+                relate[int(node.name) + 1] = (
+                    int(node.name) + 1, int(node.up.name) + 1)               
 
         # fill starting value to root
         start = np.random.choice(range(4), nsites, p=self.state_frequencies)
-        seqs[-1] = start
+        seqs[0] = start
 
-        # run jitted funcs on arrays           
-        seqs = jevolve(self.Q, seqs, idxs, brlens, relate, seed)
-        return seqs[:tree.ntips]
+        # run jitted funcs on arrays. Returns an array in traversal order.
+        seqs = jevolve(self.Q, seqs, traversal, brlens, relate, seed)
+
+        # reorder seqs array alphanumeric tip-name order
+        return seqs[1:tree.ntips + 1]
 
 
     def close(self):
@@ -161,14 +182,27 @@ def jevolve_branch_probs(brlenQ):
 
 
 @njit
-def jevolve(Q, seqs, idxs, brlens, relate, seed):
+def jevolve(Q, seqs, traversal, brlens, relate, seed):
     """
     jitted function to sample substitutions on edges
     """
-    for idx in idxs:
+    np.random.seed(seed)
+
+    # traverse tree from root to tips [44, 43, 24, 22, 42, ... 2, 1]
+    # there is no zero value in traversal b/c they are msprime node names.
+    # Thus seqs[0] is used to store the starting sequence.
+    for idx in traversal:
+
+        # get length of edge (e.g., 0.00123)
         bl = brlens[idx]
+
+        # get who the parent is (e.g., 43)
         pidx = relate[idx, 1]
+
+        # get transition probabilities for edge this length ([[x x],[x x]])
         probmat = jevolve_branch_probs(bl * Q)
+
+        # apply evolution to parent sequence to get child sequence
         seqs[idx] = jsubstitute(seqs[pidx], probmat)
     return seqs
 

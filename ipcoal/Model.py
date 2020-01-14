@@ -18,7 +18,7 @@ import pandas as pd
 import msprime as ms
 import toytree
 
-from .utils import get_all_admix_edges, ipcoalError
+from .utils import get_all_admix_edges, ipcoalError, calculate_pairwise_dist
 from .TreeInfer import TreeInfer
 from .Writer import Writer
 from .SeqModel import SeqModel
@@ -45,6 +45,7 @@ class Model:
         mut=1e-8,
         seed=None,
         seed_mutations=None,
+        substitution_model=None,
         debug=False,
         ):
 
@@ -110,8 +111,20 @@ class Model:
         seed_mutations (int):
             Random number generator used for seq-gen. If not set then the
             generic seed is used for both msprime and seq-gen.
-        """
 
+        substitution_model (dict):
+            A dictionary of arguments to the markov process mutation model.
+            example:
+            substitution_model = {
+                state_frequencies=[0.25, 0.25, 0.25, 0.25],
+                kappa=3,
+                gamma=4,
+            }
+
+        seqgen (bool):
+            Use seqgen as the sequence simulation program.
+
+        """
         # initialize random seed for msprime and seq-gen
         self.random = np.random.RandomState(seed)
         self.random_mut = (
@@ -177,9 +190,13 @@ class Model:
                     idx += 1
 
         # alphanumeric ordered tip names -- order of printing to seq files
-        _tmp = {j: i for (i, j) in self.tipdict.items()}       
-        self.names = sorted(self.tipdict.values())
-        self.order = [_tmp[i] - 1 for i in self.names]
+        self.alpha_ordered_names = sorted(self.tipdict.values())
+
+        # for reordering seq array (in 1-indexed tip order) to alpha tipnames
+        self._order = {
+            i: self.alpha_ordered_names.index(j) for (i, j) 
+            in self.tipdict.items()
+        }
 
         # check formats of admixture args
         self.admixture_edges = (admixture_edges if admixture_edges else [])
@@ -209,9 +226,78 @@ class Model:
         # get popconfig as msprime input
         self._get_popconfig()
 
-        # hold the model outputs
+        # to hold the model outputs
         self.df = None
         self.seqs = None
+
+        # check substitution model kwargs and assert it is a dict
+        self.substitution_model = substitution_model
+        self._check_substitution_kwargs()
+
+
+
+    def get_substitution_model_summary(self):
+        """
+        Returns a summary of the demographic model and sequence substitution
+        model that will used in simulations.
+        """
+        # init a seqmodel to get calculated matrices
+        seqmodel = SeqModel(**self.substitution_model)
+
+        # print state frequencies
+        print(
+            "state_frequencies:\n{}"
+            .format(
+                pd.DataFrame(
+                    [seqmodel.state_frequencies],
+                    columns=list("ACGT"),
+                ).to_string(index=False))
+            )
+
+        # the tstv parameters
+        print("\nkappa: {}".format(seqmodel.kappa))
+        print("ts/tv: {}".format(seqmodel.tstv))
+
+        # the Q matrix 
+        print(
+            "\ninstantaneous transition rate matrix:\n{}".
+            format(
+                pd.DataFrame(
+                    seqmodel.Q, 
+                    index=list("ACGT"), 
+                    columns=list("ACGT"),
+                ).round(4)
+            ))
+
+        # the alpha and gamma ...
+
+
+
+    def _check_substitution_kwargs(self):
+        """
+        check that user supplied substitution kwargs make sense.
+        """
+        # must be a dictionary
+        if self.substitution_model is None:
+            self.substitution_model = {}
+
+        # check each item
+        for key, val in self.substitution_model.items():
+
+            # do not allow typos or unsupported params
+            if key not in ["state_frequencies", "kappa"]:
+                raise TypeError(
+                    "substitution_model param {} not currently supported."
+                    .format(key))
+
+            # check that state_frequencies sum to 1
+            if self.substitution_model.get("state_frequencies"):
+                fsum = sum(self.substitution_model['state_frequencies'])
+                if not fsum == 1:
+                    raise ipcoalError("state_frequencies must sum to 1.0")
+
+            # check that kappa in the range...
+            pass
 
 
 
@@ -336,28 +422,44 @@ class Model:
             else:
                 node._schild = node.idx
 
-        # Add divergence events (converts time to N generations)
+        # traverse tree from root to tips
         for node in self.tree.treenode.traverse():
+
+            # if children add div events
             if node.children:
                 dest = min([i._schild for i in node.children])
                 source = max([i._schild for i in node.children])
                 time = int(node.height)
                 demog.add(ms.MassMigration(time, source, dest))
+
+                # for all nodes set Ne changes
                 demog.add(ms.PopulationParametersChange(
                     time,
                     initial_size=node.Ne,
                     population=dest),
                 )
-                if self._debug:
-                    print(
-                        'div time:  {:>9}, {:>2} {:>2}, {:>2} {:>2}, Ne={}'
-                        .format(
-                            int(time), source, dest,
-                            node.children[0].idx, node.children[1].idx,
-                            node.Ne,
-                            ),
-                        file=sys.stderr,
-                    )
+
+            # tips set populations sizes (popconfig seemings does this too,
+            # but it didn't actually work for tips until I added this...
+            else:
+                time = int(node.height)
+                demog.add(ms.PopulationParametersChange(
+                    time,
+                    initial_size=node.Ne,
+                    population=node.idx,
+                ))
+
+            # debugging helper
+            if self._debug:
+                print(
+                    'div time:  {:>9}, {:>2} {:>2}, {:>2} {:>2}, Ne={}'
+                    .format(
+                        int(time), source, dest,
+                        node.children[0].idx, node.children[1].idx,
+                        node.Ne,
+                        ),
+                    file=sys.stderr,
+                )
 
         # Add migration pulses
         if not self.admixture_type:
@@ -488,7 +590,7 @@ class Model:
         Simulate tree sequence for each locus and sequence data for each 
         genealogy and return all in a dataframe. 
         """
-        # get the msprime ts generator 
+        # get the msprime ts generator (np.random val is pulled here)
         msgen = self._get_tree_sequence_generator(nsites)
 
         # get the treesequence and its breakpoints
@@ -526,23 +628,27 @@ class Model:
 
             # only simulate data if there is bp 
             if gtlen:
-                # parse the mstree
+                # parse the mstree one time
+                # TODO:
+                # parse the mstree | node_labels is currently a workaround
+                # for buffer error on large trees. We could maybe use this
+                # permanently in which case it should use the order dict.
                 nwk = mstree.newick()
+                # node_labels={i: i for i in range(1, self.nstips + 1)})
+                gtree = toytree._rawtree(nwk, tree_format=5)
 
-                # get seq ordered by genealogy tips
+                # get seq ordered by msprime tipnames (1-ntips)
                 seed = self.random_mut.randint(1e9)
-                seq = mkseq.feed_tree(nwk, gtlen, self.mut, seed)
+                seq = mkseq.feed_tree(gtree, gtlen, self.mut, seed)
 
-                # reset .names on msprime tree with node_labels 1-indexed
-                gtree = toytree._rawtree(nwk)
+                # reorder seq from msprime tipnames to alphanumeric tipnames
+                norder = [self._order[int(i)] for i in range(1, gtree.ntips + 1)]
+                seqarr[:, bidx:bidx + gtlen] = seq[norder, :]
+
+                # replace msprime tipnames on tree with original tiplabels
                 for node in gtree.treenode.get_leaves():
                     node.name = self.tipdict[int(node.name)]
                 newick = gtree.write(tree_format=5)
-
-                # reorder rows to order by tip name and store in seqarr
-                # tipnames corresponding to current sequence order:
-                curr_order = gtree.treenode.get_leaf_names()[::-1]
-                seqarr[:, bidx:bidx + gtlen] = seq[np.argsort(curr_order), :]
 
                 # record the number of snps in this locus
                 subseq = seqarr[:, bidx:bidx + gtlen]
@@ -551,7 +657,6 @@ class Model:
 
                 # advance site counter
                 bidx += gtlen
-
                 df.loc[idx, "genealogy"] = newick
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
@@ -580,6 +685,10 @@ class Model:
         seqgen (bool):
             Use seqgen as simulator backend. TO BE REMOVED.
         """
+        # allow scientific notation, e.g., 1e6
+        nsites = int(nsites)
+        nloci = int(nloci)        
+
         # multidimensional array of sequence arrays to fill 
         seqarr = np.zeros((nloci, self.nstips, nsites), dtype=np.uint8)
 
@@ -588,10 +697,10 @@ class Model:
 
         # open the subprocess to seqgen
         if seqgen:
-            mkseq = SeqGen()
+            mkseq = SeqGen(**self.substitution_model)
             mkseq.open_subprocess()
         else:
-            mkseq = SeqModel()
+            mkseq = SeqModel(**self.substitution_model)
 
         # iterate over nloci to simulate, get df and arr to store.
         for lidx in range(nloci):
@@ -617,7 +726,7 @@ class Model:
         self.seqs = seqarr
 
         # allows chaining funcs
-        return self
+        # return self
 
 
 
@@ -625,8 +734,16 @@ class Model:
         """
         Record tree sequence without simulating any sequence data.
         This is faster than simulating snps or loci when you are only 
-        interested in the tree sequence. 
+        interested in the tree sequence. To examine genealogical variation 
+        within the same locus use nsites.
+
+        Parameters:
+        -----------
+        See sim_loci()
         """
+        # allow scientific notation, e.g., 1e6
+        nsites = int(nsites)
+        nloci = int(nloci)        
 
         # store dfs
         dflist = []
@@ -668,17 +785,16 @@ class Model:
 
                 # only simulate data if there is bp 
                 if gtlen:
-                    # parse the mstree
-                    nwk = mstree.newick()
+                    # when node_labels arg is provided the names are actually
+                    # 0-indexed, so we use a -1 in the tipdict to change names
+                    # back to their original strings and save the tree.
+                    nwk = mstree.newick(
+                        precision=0,
+                        node_labels={i - 1: j for i, j in self.tipdict.items()}
+                    )
+                    df.loc[idx, "genealogy"] = nwk
 
-                    # reset .names on msprime tree with node_labels 1-indexed
-                    gtree = toytree._rawtree(nwk)
-                    for node in gtree.treenode.get_leaves():
-                        node.name = self.tipdict[int(node.name)]
-                    newick = gtree.write(tree_format=5)
-                    df.loc[idx, "genealogy"] = newick
-
-            # drop intervals that are 0 bps in length (sum bps will still = nsites)
+            # drop intervals 0 bps in length (sum bps will still = nsites)
             df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
 
             # store the genetree df in a list for now
@@ -692,7 +808,7 @@ class Model:
         self.df = df
 
         # allows chaining funcs
-        return self
+        # return self
 
 
 
@@ -719,23 +835,16 @@ class Model:
         seqgen (bool):
             A (hidden) argument to use seqgen to test our mutation
             models against its results.
-
-        substitution_model (dict):
-            A dictionary of arguments to the markov process mutation model.
-            This includes: 
-                mutation_model = {
-                    state_frequencies=[0.25, 0.25, 0.25, 0.25],
-                    kappa=3,
-                    gamma=...,
-                }
         """
+        # allow scientific notation, e.g., 1e6
+        nsnps = int(nsnps)
 
         # initialize a sequence simulator
         if seqgen:
-            mkseq = SeqGen()
+            mkseq = SeqGen(**self.substitution_model)
             mkseq.open_subprocess()
         else:
-            mkseq = SeqModel()
+            mkseq = SeqModel(**self.substitution_model)
 
         # get the msprime ts generator 
         msgen = self._get_tree_sequence_generator(1, snp=True)
@@ -752,37 +861,40 @@ class Model:
             if snpidx == nsnps:
                 break
 
-            # get first tree from next tree_sequence
-            mstre = next(msgen).first()
-            newick = mstre.newick()
+            # get first tree from next tree_sequence and parse it
+            mstree = next(msgen).first()
 
-            # simulate first base
+            # TODO:
+            # parse the mstree | node_labels is currently a workaround
+            # for buffer error on large trees. We could maybe use this
+            # permanently in which case it should use the order dict.
+            nwk = mstree.newick()
+            gtree = toytree._rawtree(nwk)
+
+            # simulate evolution of 1 base
             seed = self.random_mut.randint(1e9)    
-            seq = mkseq.feed_tree(newick, 1, self.mut, seed)
+            seq = mkseq.feed_tree(gtree, 1, self.mut, seed)
 
             # if repeat_on_trees then keep sim'n til we get a SNP
             if repeat_on_trees:
                 # if not variable
                 while np.all(seq == seq[0]):
                     seed = self.random_mut.randint(1e9)    
-                    seq = mkseq.feed_tree(newick, 1, self.mut, seed)
+                    seq = mkseq.feed_tree(gtree, 1, self.mut, seed)
 
             # otherwise just move on to the next generated tree
             else:
                 if np.all(seq == seq[0]):
                     continue
 
-            # reset .names on msprime tree with node_labels 1-indexed
-            gtree = toytree._rawtree(newick)
+            # update 1-indexed msprime names to original names
             for node in gtree.treenode.get_leaves():
                 node.name = self.tipdict[int(node.name)]
             newick = gtree.write(tree_format=5)
-            # newick = mstre.newick(node_labels=self.tipdict)
 
             # reorder SNPs to be alphanumeric nameordered by tipnames 
-            # tipnames corresponding to current sequence order:
-            curr_order = gtree.treenode.get_leaf_names()[::-1]
-            seq = seq[np.argsort(curr_order), :]
+            norder = [self._order[i] for i in range(1, gtree.ntips + 1)]
+            seq = seq[norder, :]
 
             # Store result and advance counter
             snparr[:, snpidx] = seq.flatten()
@@ -806,7 +918,7 @@ class Model:
         self.seqs = snparr
 
         # allows chaining funcs
-        return self
+        # return self
 
 
 
@@ -833,13 +945,13 @@ class Model:
             To write a single locus file provide the idx. If None then all loci
             are written to separate files.
         """
-        writer = Writer(self.seqs, self.names)
+        writer = Writer(self.seqs, self.alpha_ordered_names)
         writer.write_loci_to_phylip(outdir, idxs, name_prefix, name_suffix)
 
         # report
         print("wrote {} loci ({} x {}bp) to {}/[...].phy".format(
             writer.written, self.seqs.shape[1], self.seqs.shape[2],
-            writer.outdir.strip("/")
+            writer.outdir.rstrip("/")
             ),
         )
 
@@ -859,12 +971,12 @@ class Model:
         outfile (str):
             The name/path of the outfile to write. Default is "./test.phy"
         """       
-        writer = Writer(self.seqs, self.names)
+        writer = Writer(self.seqs, self.alpha_ordered_names)
         writer.write_concat_to_phylip(outdir, name, idxs)
 
         # report 
         print(
-            "wrote concatenated loci ({} x {}bp) to {}"
+            "wrote concat loci ({} x {}bp) to {}"
             .format(writer.shape[0], writer.shape[1], writer.outfile),
             )
 
@@ -915,3 +1027,23 @@ class Model:
                 except ipcoalError as err:
                     print(err)
                     raise err
+
+
+
+    def get_pairwise_distances(self, model=None):
+        """
+        Returns pairwise distance matrix.
+
+        Parameters:
+        -----------
+        model (str):
+            Default is None meaning the Hamming distance. Supported options:
+                None: Hamming distance, i.e., proportion of differences.
+                "JC": Jukes-Cantor distance, i.e., -3/4 ln((1-(4/3)d))
+                "HKY": Not yet implemented.  
+        """
+        # requires data
+        if self.seqs is None:
+            raise ipcoalError("You must first run .sim_snps() or .sim_loci")
+
+        return calculate_pairwise_dist(self, model)
