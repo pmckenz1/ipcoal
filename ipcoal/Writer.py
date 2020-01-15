@@ -132,7 +132,6 @@ class Writer:
 
 
     def write_concat_to_nexus(self, outdir, name, idxs=None):
-
         """
         Write all seq data (loci or snps) concated to a single phylip file.
 

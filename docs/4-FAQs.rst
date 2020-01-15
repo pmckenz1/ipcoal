@@ -64,3 +64,12 @@ This is easy to do in *ipcoal*.
 Can I simulate variable recombination rate (hotspots, recomb map)?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Currently you cannot, but this would be easy to add, we simply haven't done it yet. Please raise a feature request.
+
+
+
+Can I sample multiple individuals per population/species?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Yes, you can do this using the `samples` argument to the Model object. The samples from each tip in the species tree will be labeled as [tip-name]-0, [tip-name]-1, etc. 
+
+
+

@@ -3,6 +3,7 @@
 
 Terminology and units
 =====================
+.. In general we try to follow the terminology used by `msprime <https://msprime.readthedocs.io>`__ when referring to simulation parameters such as the per-site mutation rate, or admixture proportions, so that further details can be sought from their documentation. However, we 
 
 
 Terminology

@@ -1003,7 +1003,7 @@ class Model:
                 )
 
         # expand self.df to include an inferred_trees column
-        self.df["inferred_{}_tree".format(inference_method)] = np.nan  # or should we use ""?
+        self.df["inferred_tree"] = np.nan
 
         # init the TreeInference object (similar to ipyrad inference code)
         ti = TreeInfer(
@@ -1021,7 +1021,7 @@ class Model:
                 try:
                     tree = ti.run(lidx)
                     # enter result
-                    self.df.loc[self.df.locus == lidx, "inferred_{}_tree".format(inference_method)] = tree
+                    self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
 
                 # caught raxml exception (prob. low data)
                 except ipcoalError as err:
