@@ -9,11 +9,14 @@ Welcome to ipcoal's documentation!
 .. toctree::
    :maxdepth: 2
    
-   ethos.rst
-   installation.rst
+   1-ethos.rst
+   2-terminology.rst
+   3-installation.rst
    ./notebooks/Tutorial.ipynb
-   ./notebooks/User-Guide.ipynb
-   ./notebooks/Cookbook.ipynb
+   4-FAQs.rst
+
+..   ./notebooks/User-Guide.ipynb
+..   ./notebooks/Cookbook.ipynb
 ..   ./notebooks/Setting-Ne.ipynb
 ..   ./notebooks/Setting-admixture.ipynb
 ..   ./notebooks/Results-Table.ipynb
