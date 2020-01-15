@@ -24,6 +24,7 @@ setup(
         "pandas>=0.16",
         "toytree>=1.0.4",
         "msprime",
+        "numba",
         # seq-gen (optional)
         # "ipyparallel",
     ],
