@@ -6,7 +6,6 @@ import sys
 import numpy as np
 import subprocess as sps
 from .utils import ipcoalError
-import toytree
 
 
 class SeqGen:
@@ -111,20 +110,23 @@ class SeqGen:
                 .format(cmd)
                 )
 
-        # store names and seqs to a dict (names are 1-indexed msprime tips)
+        # store names and seqs to a dict
         seqd = {}
         for line in hold.split("\n")[1:-1]:
             name, seq = line.split()
-            seqd[int(name)] = list(seq)
-        
+            seqd[name] = list(seq)
+
         # convert seqs to int array 
-        rt_genealogy = toytree._rawtree(newick)
-        arr = np.array([seqd[int(i)] for i in rt_genealogy.treenode.get_leaf_names()[::-1]])
+        # rt_genealogy = toytree._rawtree(newick)
+        # arr = np.array([seqd[int(i)] for i in rt_genealogy.treenode.get_leaf_names()[::-1]])
+        arr = np.array(list(seqd.values()))
+        order = np.argsort(list(seqd.keys()))
+        arr = arr[order]
+
+        # convert bases to ints
         arr[arr == "A"] = 0
         arr[arr == "C"] = 1
         arr[arr == "G"] = 2
         arr[arr == "T"] = 3
         arr = arr.astype(np.uint8)
-
-        # reorder rows to return 1-indexed numeric tip name order
         return arr
