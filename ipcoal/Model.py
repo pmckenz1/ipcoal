@@ -666,8 +666,12 @@ class Model:
             "nbps": bps,
             "nsnps": 0,
             "locus": locus_idx,
+            "tidx": 0,
             },
-            columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
+            columns=[
+                'locus', 'start', 'end', 'nbps', 
+                'nsnps', 'tidx', 'genealogy',
+            ],
         )
 
         # the full sequence array to fill
@@ -675,6 +679,7 @@ class Model:
         seqarr = np.zeros((self.nstips, nsites), dtype=np.uint8)
 
         # iterate over the index of the dataframe to sim for each genealogy
+        pseudoindex = 0
         for idx, mstree in zip(df.index, msts.trees()):
 
             # get the number of base pairs taken up by this gene tree
@@ -701,6 +706,11 @@ class Model:
                 # advance site counter and store newick string in table
                 bidx += gtlen
                 df.loc[idx, "genealogy"] = gtree.write(tree_format=5)
+
+                # TODO: this will skip zero length segment indices that we 
+                # drop, so we use our own index instead...
+                df.loc[idx, "tidx"] = pseudoindex
+                pseudoindex += 1
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
         df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
@@ -815,9 +825,13 @@ class Model:
                 "genealogy": "",
                 "nbps": bps,
                 "nsnps": 0,
+                "tidx": 0,
                 "locus": lidx,
                 },
-                columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
+                columns=[
+                    'locus', 'start', 'end', 'nbps', 
+                    'nsnps', 'tidx', 'genealogy'
+                ],
             )
 
             # iterate over the index of the dataframe to sim for each genealogy
@@ -831,6 +845,7 @@ class Model:
                     # convert nwk to original names
                     nwk = mstree.newick(node_labels=self.tipdict)
                     df.loc[idx, "genealogy"] = nwk
+                    df.loc[idx, "tidx"] = mstree.index
 
             # drop intervals 0 bps in length (sum bps will still = nsites)
             df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
@@ -942,9 +957,13 @@ class Model:
             "genealogy": newicks,
             "nbps": 1, 
             "nsnps": 1,
+            "tidx": 0,
             "locus": range(nsnps),
             },
-            columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
+            columns=[
+                'locus', 'start', 'end', 'nbps', 
+                'nsnps', 'tidx', 'genealogy',
+            ],
         )
         self.seqs = snparr
 
@@ -1045,8 +1064,10 @@ class Model:
 
         # complain if no seq data exists
         if self.seqs is None:
-            print("Cannot infer trees because no seq data exists. "
-                  "You likely called sim_trees() instead of sim_loci()")
+            raise ipcoalError(
+                "Cannot infer trees because no seq data exists. "
+                "You likely called sim_trees() instead of sim_loci()."
+            )
 
         # TODO; if sim_snps() infer one concatenated tree.
         # ...
