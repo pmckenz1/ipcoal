@@ -11,8 +11,6 @@ from builtins import range
 
 # imports
 import sys
-from copy import deepcopy
-
 import numpy as np
 import pandas as pd
 import msprime as ms
@@ -40,13 +38,14 @@ class Model:
         Ne=10000,   
         admixture_edges=None,
         admixture_type=0,
-        samples=1,
+        nsamples=1,
         recomb=1e-9,
         mut=1e-8,
         seed=None,
         seed_mutations=None,
         substitution_model=None,
         debug=False,
+        **kwargs,
         ):
 
         """
@@ -108,6 +107,11 @@ class Model:
             Random number generator used for msprime (and seqgen unless a 
             separate seed is set for seed_mutations.
 
+        nsamples (int or list):
+            An integer for the number of samples from each lineage, or a list
+            of the number of samples from each lineage ordered by the tip
+            order of the tree when plotted.
+
         seed_mutations (int):
             Random number generator used for seq-gen. If not set then the
             generic seed is used for both msprime and seq-gen.
@@ -121,6 +125,9 @@ class Model:
                 gamma=4,
             }
         """
+        # legacy support warning messages
+        self._legacy_support(kwargs)
+
         # initialize random seed for msprime and seq-gen
         self.random = np.random.RandomState(seed)
         self.random_mut = (
@@ -134,34 +141,25 @@ class Model:
         # parse the input tree (and store original)
         if isinstance(tree, toytree.Toytree.ToyTree):
             self.treeorig = tree
-            self.tree = deepcopy(self.treeorig)
+            self.tree = self.treeorig.copy()
         elif isinstance(tree, str):
             self.treeorig = toytree.tree(tree)
-            self.tree = deepcopy(self.treeorig)
+            self.tree = self.treeorig.copy()
         else:
             raise TypeError("input tree must be newick str or Toytree object")
 
-        # the order of samples given tree (5 tips) and samples [3, 2, 1, 2, 3]
-        # ladderized tree tip order from top to bottom.
-        # 
-        # |--------0  0-0, 0-1, 0-2
-        #  |-------1  1-0, 1-1
-        #   |------2  2-0, 
-        #     |----3  3-0, 3-1
-        #       |--4  4-0, 4-1, 4-2
-        #
-        # namedict: {0: '0-0', 1: '0-1', 2: '0-2', 3: '1-0', 4: '1-1'...}
+        # expand nsamples to ordered list, e.g., [2, 1, 1, 2, 10, 10]
         self.ntips = len(self.tree)
-        if isinstance(samples, int):
-            self.samples = [int(samples) for i in range(self.ntips)]
-            self.nstips = int(samples) * self.ntips
+        if isinstance(nsamples, int):
+            self.nsamples = [int(nsamples) for i in range(self.ntips)]
+            self.nstips = int(nsamples) * self.ntips
         else:
-            assert isinstance(samples, (list, tuple)), (
-                "samples should be a list")
-            assert len(samples) == self.ntips, (
-                "samples list should be same length as ntips in tree.")
-            self.samples = samples
-            self.nstips = sum(self.samples)
+            assert isinstance(nsamples, (list, tuple)), (
+                "nsamples should be a list")
+            assert len(nsamples) == self.ntips, (
+                "nsamples list should be same length as ntips in tree.")
+            self.nsamples = nsamples
+            self.nstips = sum(self.nsamples)
 
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
@@ -173,14 +171,14 @@ class Model:
 
         # store tip names for renaming on the ms tree (ntips * nsamples)
         _tlabels = self.tree.get_tip_labels()
-        if samples == 1:
+        if nsamples == 1:
             self.tipdict = {i: j for (i, j) in enumerate(_tlabels)}
-            self.sampledict = {i: j for (i, j) in zip(_tlabels, self.samples)}
+            self.sampledict = {i: j for (i, j) in zip(_tlabels, self.nsamples)}
         else:
             self.tipdict = {}
             self.sampledict = {}
             idx = 0
-            for tip, ns in zip(_tlabels, self.samples):
+            for tip, ns in zip(_tlabels, self.nsamples):
                 for nidx in range(ns):
                     self.tipdict[idx] = "{}-{}".format(tip, nidx)
                     idx += 1
@@ -231,7 +229,7 @@ class Model:
         self._get_popconfig()
 
         # this is used when tips are not ultrametric
-        self._get_samples()
+        self._get_nsamples()
 
         # to hold the model outputs
         self.df = None
@@ -245,6 +243,13 @@ class Model:
         # so that if a sim call is repeated on a Model it returns the same
         # result instead of being advanced to a new random seed.
         # TODO..
+
+
+    def _legacy_support(self, kwargs):
+        for i in kwargs:
+            print("The parameter name '{}' is not supported.\nPlease check "
+                  "the documentation, argument names may have changed."
+                  .format(i))
 
 
     def get_substitution_model_summary(self):
@@ -524,7 +529,7 @@ class Model:
 
 
 
-    def _get_samples(self):
+    def _get_nsamples(self):
         """
         If tips are not ultrametric then individuals must be entered to 
         sim using the samples=[ms.Sample(popname, time), ...] format. If 
@@ -573,7 +578,7 @@ class Model:
             # list of popconfig objects for each tip
             population_configurations = [
                 ms.PopulationConfiguration(
-                    sample_size=self.samples[i], initial_size=nes[i])
+                    sample_size=self.nsamples[i], initial_size=nes[i])
                 for i in range(self.ntips)]
 
             # set the max Ne value as the global Ne
@@ -583,7 +588,7 @@ class Model:
         else:
             population_configurations = [
                 ms.PopulationConfiguration(
-                    sample_size=self.samples[i], initial_size=self.Ne)
+                    sample_size=self.nsamples[i], initial_size=self.Ne)
                 for i in range(self.ntips)]
 
         # debug printer
@@ -685,7 +690,7 @@ class Model:
 
                 # mutate sequences on this tree; return array alphanum-ordered
                 seed = self.random_mut.randint(1e9)
-                seq = mkseq.feed_named_tree(gtree, gtlen, self.mut, seed)
+                seq = mkseq.feed_tree(gtree, gtlen, self.mut, seed)
 
                 # store the seqs to locus array
                 seqarr[:, bidx:bidx + gtlen] = seq
