@@ -104,6 +104,31 @@ class SeqModel():
 
     def feed_tree(self, tree, nsites=1, mut=1e-8, seed=None):
         """
+        This takes a _rawtree that has already been renamed from msprime 
+        numeric labels to the original alphanumeric tipnames. It uses the 
+        idx labels to correctly traverse the tree and returns seqs in the
+        proper alphanumeric roworder. 
+        """
+        # set seed
+        np.random.seed(seed)    
+
+        # set starting sequence to the root node idx
+        seqs = np.zeros((tree.nnodes, nsites), dtype=np.int8)
+        seqs[-1] = np.random.choice(range(4), nsites, p=self.state_frequencies)
+
+        # mutate sequence along edges of the tree
+        for node in tree.treenode.traverse():
+            if not node.is_root():
+                probmat = jevolve_branch_probs(node.dist * mut * self.Q)
+                seqs[node.idx] = jsubstitute(seqs[node.up.idx], probmat)
+
+        # return seqs in alphanumeric order
+        order = np.argsort(tree.treenode.get_leaf_names()[::-1])
+        return seqs[:tree.ntips][order]
+
+
+    def old_feed_tree(self, tree, nsites=1, mut=1e-8, seed=None):
+        """
         Simulate markov mutation process on a gene tree and return a 
         sequence array. The returned array is ordered by...
 
