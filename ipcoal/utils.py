@@ -325,7 +325,9 @@ class Params(object):
                 _repr += _printstr.format(key, _val)
         return _repr
 
-def calculate_pairwise_dist(mod, model=None, locus = None):
+
+
+def calculate_pairwise_dist(mod, model=None, locus=None):
     """
     Return a pandas dataframe with pairwise distances between taxa.
     The model object should have already run sim.snps or sim.loci to generate

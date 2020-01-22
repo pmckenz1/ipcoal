@@ -11,8 +11,6 @@ from builtins import range
 
 # imports
 import sys
-from copy import deepcopy
-
 import numpy as np
 import pandas as pd
 import msprime as ms
@@ -40,13 +38,14 @@ class Model:
         Ne=10000,   
         admixture_edges=None,
         admixture_type=0,
-        samples=1,
+        nsamples=1,
         recomb=1e-9,
         mut=1e-8,
         seed=None,
         seed_mutations=None,
         substitution_model=None,
         debug=False,
+        **kwargs,
         ):
 
         """
@@ -99,14 +98,19 @@ class Model:
             will use Ne=5000 except those nodes.
 
         mut (float): default=1e-8
-            ...
+            The per-site per-generation mutation rate
 
         recomb (float): default=1e-9
-            ...
+            The per-site per-generation recombination rate.
 
         seed (int):
             Random number generator used for msprime (and seqgen unless a 
             separate seed is set for seed_mutations.
+
+        nsamples (int or list):
+            An integer for the number of samples from each lineage, or a list
+            of the number of samples from each lineage ordered by the tip
+            order of the tree when plotted.
 
         seed_mutations (int):
             Random number generator used for seq-gen. If not set then the
@@ -120,11 +124,10 @@ class Model:
                 kappa=3,
                 gamma=4,
             }
-
-        seqgen (bool):
-            Use seqgen as the sequence simulation program.
-
         """
+        # legacy support warning messages
+        self._legacy_support(kwargs)
+
         # initialize random seed for msprime and seq-gen
         self.random = np.random.RandomState(seed)
         self.random_mut = (
@@ -138,34 +141,25 @@ class Model:
         # parse the input tree (and store original)
         if isinstance(tree, toytree.Toytree.ToyTree):
             self.treeorig = tree
-            self.tree = deepcopy(self.treeorig)
+            self.tree = self.treeorig.copy()
         elif isinstance(tree, str):
             self.treeorig = toytree.tree(tree)
-            self.tree = deepcopy(self.treeorig)
+            self.tree = self.treeorig.copy()
         else:
             raise TypeError("input tree must be newick str or Toytree object")
 
-        # the order of samples given tree (5 tips) and samples [3, 2, 1, 2, 3]
-        # ladderized tree tip order from top to bottom.
-        # 
-        # |--------0  0-0, 0-1, 0-2
-        #  |-------1  1-0, 1-1
-        #   |------2  2-0, 
-        #     |----3  3-0, 3-1
-        #       |--4  4-0, 4-1, 4-2
-        #
-        # namedict: {0: '0-0', 1: '0-1', 2: '0-2', 3: '1-0', 4: '1-1'...}
+        # expand nsamples to ordered list, e.g., [2, 1, 1, 2, 10, 10]
         self.ntips = len(self.tree)
-        if isinstance(samples, int):
-            self.samples = [int(samples) for i in range(self.ntips)]
-            self.nstips = int(samples) * self.ntips
+        if isinstance(nsamples, int):
+            self.nsamples = [int(nsamples) for i in range(self.ntips)]
+            self.nstips = int(nsamples) * self.ntips
         else:
-            assert isinstance(samples, (list, tuple)), (
-                "samples should be a list")
-            assert len(samples) == self.ntips, (
-                "samples list should be same length as ntips in tree.")
-            self.samples = samples
-            self.nstips = sum(self.samples)
+            assert isinstance(nsamples, (list, tuple)), (
+                "nsamples should be a list")
+            assert len(nsamples) == self.ntips, (
+                "nsamples list should be same length as ntips in tree.")
+            self.nsamples = nsamples
+            self.nstips = sum(self.nsamples)
 
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
@@ -176,18 +170,26 @@ class Model:
         self._get_Ne()
 
         # store tip names for renaming on the ms tree (ntips * nsamples)
-        # these are 1-indexed because the msprime trees tips are.
-        if samples == 1:
-            self.tipdict = {
-                i + 1: j for (i, j) in enumerate(self.tree.get_tip_labels())
-            }
+        _tlabels = self.tree.get_tip_labels()
+        if nsamples == 1:
+            self.tipdict = {i: j for (i, j) in enumerate(_tlabels)}
+            self.sampledict = {i: j for (i, j) in zip(_tlabels, self.nsamples)}
         else:
             self.tipdict = {}
-            idx = 1
-            for tip, ns in zip(self.tree.get_tip_labels(), self.samples):
+            self.sampledict = {}
+            idx = 0
+            for tip, ns in zip(_tlabels, self.nsamples):
                 for nidx in range(ns):
                     self.tipdict[idx] = "{}-{}".format(tip, nidx)
                     idx += 1
+                self.sampledict[tip] = ns
+
+        # dictionary of tip heights
+        self.tip_to_heights = self.tree.get_feature_dict("name", "height")
+        self.tip_to_heights = {
+            i: j for (i, j) in self.tip_to_heights.items() if i in _tlabels}
+        self._tips_are_ultrametric = (
+            len(set(self.tip_to_heights.values())) == 1)
 
         # alphanumeric ordered tip names -- order of printing to seq files
         self.alpha_ordered_names = sorted(self.tipdict.values())
@@ -220,11 +222,14 @@ class Model:
         # get migration time, rate {mrates: [], mtimes: []}
         self._get_migration()
 
-        # get demography dict for msprime input
+        # get .ms_demography dict for msprime input
         self._get_demography()
 
-        # get popconfig as msprime input
+        # get .ms_popconfig as msprime input
         self._get_popconfig()
+
+        # this is used when tips are not ultrametric
+        self._get_nsamples()
 
         # to hold the model outputs
         self.df = None
@@ -234,6 +239,17 @@ class Model:
         self.substitution_model = substitution_model
         self._check_substitution_kwargs()
 
+        # store post-init seed(s). These will be reset after any .sim call
+        # so that if a sim call is repeated on a Model it returns the same
+        # result instead of being advanced to a new random seed.
+        # TODO..
+
+
+    def _legacy_support(self, kwargs):
+        for i in kwargs:
+            print("The parameter name '{}' is not supported.\nPlease check "
+                  "the documentation, argument names may have changed."
+                  .format(i))
 
 
     def get_substitution_model_summary(self):
@@ -309,7 +325,7 @@ class Model:
         value to self.Ne.
         """
         # get map of {nidx: node}
-        ndict = self.tree.get_node_dict(True, True)
+        ndict = self.tree.get_feature_dict("idx", None)
 
         # set user entered arg (self.Ne) to any node without a Ne attr
         for nidx, node in ndict.items():
@@ -324,7 +340,7 @@ class Model:
             raise ipcoalError(
                 "Ne must be provided as an argument or tree node attribute.")
 
-        # set to the max value        
+        # set global to the max value        
         self.Ne = max(nes)
 
 
@@ -513,10 +529,46 @@ class Model:
 
 
 
+    def _get_nsamples(self):
+        """
+        If tips are not ultrametric then individuals must be entered to 
+        sim using the samples=[ms.Sample(popname, time), ...] format. If 
+        tips are ultrametric then this should be empty (None).
+        """
+        # set to None and return
+        if self._tips_are_ultrametric:
+            self._samples = None
+            return
+
+        # create a list of sample tuples: [(popname, time), ...]
+        self._samples = []
+
+        # iterate over all sampled tips
+        for otip, tip in enumerate(self.tree.get_tip_labels()):
+
+            # get height of this tip
+            height = int(self.tip_to_heights[tip])
+            nsamples = self.sampledict[tip]
+
+            # add for each nsamples
+            for _ in range(nsamples):
+                self._samples.append(ms.Sample(otip, height))
+
+
+
     def _get_popconfig(self):
         """
-        returns population_configurations for N tips of a tree
-        """       
+        Returns population_configurations for N tips of a tree. This is a list
+        of msprime objects. In the strange case that tips are not ultrametric
+        then we need to return a list of empty Popconfig objects.
+        """
+        # set to list of empty pops and return
+        if not self._tips_are_ultrametric:
+            self.ms_popconfig = [
+                ms.PopulationConfiguration() for i in range(self.ntips)
+            ]
+            return 
+
         # pull Ne values from the toytree nodes attrs.
         if not self.Ne:
             # get Ne values from tips of the tree
@@ -526,7 +578,7 @@ class Model:
             # list of popconfig objects for each tip
             population_configurations = [
                 ms.PopulationConfiguration(
-                    sample_size=self.samples[i], initial_size=nes[i])
+                    sample_size=self.nsamples[i], initial_size=nes[i])
                 for i in range(self.ntips)]
 
             # set the max Ne value as the global Ne
@@ -536,7 +588,7 @@ class Model:
         else:
             population_configurations = [
                 ms.PopulationConfiguration(
-                    sample_size=self.samples[i], initial_size=self.Ne)
+                    sample_size=self.nsamples[i], initial_size=self.Ne)
                 for i in range(self.ntips)]
 
         # debug printer
@@ -544,6 +596,7 @@ class Model:
             print(
                 "pop: Ne:{:.0f}, mut:{:.2E}".format(self.Ne, self.mut),
                 file=sys.stderr)
+
         self.ms_popconfig = population_configurations
 
 
@@ -578,8 +631,9 @@ class Model:
             recombination_rate=(None if snp else self.recomb),
             migration_matrix=migmat,
             num_replicates=(int(1e20) if snp else 1),        # ensures SNPs
-            population_configurations=self.ms_popconfig,     # applies Ne
-            demographic_events=self.ms_demography,           # applies popst
+            demographic_events=self.ms_demography,
+            population_configurations=self.ms_popconfig,
+            samples=self._samples,  # None if tips are ultrametric
         )
         return sim
 
@@ -612,8 +666,12 @@ class Model:
             "nbps": bps,
             "nsnps": 0,
             "locus": locus_idx,
+            "tidx": 0,
             },
-            columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
+            columns=[
+                'locus', 'start', 'end', 'nbps', 
+                'nsnps', 'tidx', 'genealogy',
+            ],
         )
 
         # the full sequence array to fill
@@ -621,6 +679,7 @@ class Model:
         seqarr = np.zeros((self.nstips, nsites), dtype=np.uint8)
 
         # iterate over the index of the dataframe to sim for each genealogy
+        pseudoindex = 0
         for idx, mstree in zip(df.index, msts.trees()):
 
             # get the number of base pairs taken up by this gene tree
@@ -628,36 +687,30 @@ class Model:
 
             # only simulate data if there is bp 
             if gtlen:
-                # parse the mstree one time
-                # TODO:
-                # parse the mstree | node_labels is currently a workaround
-                # for buffer error on large trees. We could maybe use this
-                # permanently in which case it should use the order dict.
-                nwk = mstree.newick()
-                # node_labels={i: i for i in range(1, self.nstips + 1)})
+                # write mstree to newick with original labels mapped on tips
+                nwk = mstree.newick(node_labels=self.tipdict)
+
+                # parse the newick to toytree
                 gtree = toytree._rawtree(nwk, tree_format=5)
 
-                # get seq ordered by msprime tipnames (1-ntips)
+                # mutate sequences on this tree; return array alphanum-ordered
                 seed = self.random_mut.randint(1e9)
                 seq = mkseq.feed_tree(gtree, gtlen, self.mut, seed)
 
-                # reorder seq from msprime tipnames to alphanumeric tipnames
-                norder = [self._order[int(i)] for i in range(1, gtree.ntips + 1)]
-                seqarr[:, bidx:bidx + gtlen] = seq[norder, :]
-
-                # replace msprime tipnames on tree with original tiplabels
-                for node in gtree.treenode.get_leaves():
-                    node.name = self.tipdict[int(node.name)]
-                newick = gtree.write(tree_format=5)
+                # store the seqs to locus array
+                seqarr[:, bidx:bidx + gtlen] = seq
 
                 # record the number of snps in this locus
-                subseq = seqarr[:, bidx:bidx + gtlen]
-                df.loc[idx, 'nsnps'] = (
-                    np.any(subseq != subseq[0], axis=0).sum())
+                df.loc[idx, 'nsnps'] = (np.any(seq != seq[0], axis=0).sum())
 
-                # advance site counter
+                # advance site counter and store newick string in table
                 bidx += gtlen
-                df.loc[idx, "genealogy"] = newick
+                df.loc[idx, "genealogy"] = gtree.write(tree_format=5)
+
+                # TODO: this will skip zero length segment indices that we 
+                # drop, so we use our own index instead...
+                df.loc[idx, "tidx"] = pseudoindex
+                pseudoindex += 1
 
         # drop intervals that are 0 bps in length (sum bps will still = nsites)
         df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
@@ -772,9 +825,13 @@ class Model:
                 "genealogy": "",
                 "nbps": bps,
                 "nsnps": 0,
+                "tidx": 0,
                 "locus": lidx,
                 },
-                columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
+                columns=[
+                    'locus', 'start', 'end', 'nbps', 
+                    'nsnps', 'tidx', 'genealogy'
+                ],
             )
 
             # iterate over the index of the dataframe to sim for each genealogy
@@ -785,14 +842,10 @@ class Model:
 
                 # only simulate data if there is bp 
                 if gtlen:
-                    # when node_labels arg is provided the names are actually
-                    # 0-indexed, so we use a -1 in the tipdict to change names
-                    # back to their original strings and save the tree.
-                    nwk = mstree.newick(
-                        precision=0,
-                        node_labels={i - 1: j for i, j in self.tipdict.items()}
-                    )
+                    # convert nwk to original names
+                    nwk = mstree.newick(node_labels=self.tipdict)
                     df.loc[idx, "genealogy"] = nwk
+                    df.loc[idx, "tidx"] = mstree.index
 
             # drop intervals 0 bps in length (sum bps will still = nsites)
             df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
@@ -864,12 +917,11 @@ class Model:
             # get first tree from next tree_sequence and parse it
             mstree = next(msgen).first()
 
-            # TODO:
-            # parse the mstree | node_labels is currently a workaround
-            # for buffer error on large trees. We could maybe use this
-            # permanently in which case it should use the order dict.
-            nwk = mstree.newick()
-            gtree = toytree._rawtree(nwk)
+            # write mstree to newick with original labels mapped on tips
+            nwk = mstree.newick(node_labels=self.tipdict)
+
+            # parse the newick to toytree
+            gtree = toytree._rawtree(nwk, tree_format=5)
 
             # simulate evolution of 1 base
             seed = self.random_mut.randint(1e9)    
@@ -887,14 +939,8 @@ class Model:
                 if np.all(seq == seq[0]):
                     continue
 
-            # update 1-indexed msprime names to original names
-            for node in gtree.treenode.get_leaves():
-                node.name = self.tipdict[int(node.name)]
+            # get newick string to store the tree the SNP landed on
             newick = gtree.write(tree_format=5)
-
-            # reorder SNPs to be alphanumeric nameordered by tipnames 
-            norder = [self._order[i] for i in range(1, gtree.ntips + 1)]
-            seq = seq[norder, :]
 
             # Store result and advance counter
             snparr[:, snpidx] = seq.flatten()
@@ -911,9 +957,13 @@ class Model:
             "genealogy": newicks,
             "nbps": 1, 
             "nsnps": 1,
+            "tidx": 0,
             "locus": range(nsnps),
             },
-            columns=['locus', 'start', 'end', 'nbps', 'nsnps', 'genealogy'],
+            columns=[
+                'locus', 'start', 'end', 'nbps', 
+                'nsnps', 'tidx', 'genealogy',
+            ],
         )
         self.seqs = snparr
 
@@ -1011,6 +1061,16 @@ class Model:
             inference_method=inference_method, 
             inference_args=inference_args,
         )
+
+        # complain if no seq data exists
+        if self.seqs is None:
+            raise ipcoalError(
+                "Cannot infer trees because no seq data exists. "
+                "You likely called sim_trees() instead of sim_loci()."
+            )
+
+        # TODO; if sim_snps() infer one concatenated tree.
+        # ...
 
         # iterate over nloci. This part could be easily parallelized...
         for lidx in range(self.seqs.shape[0]):
