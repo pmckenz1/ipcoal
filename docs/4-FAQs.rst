@@ -38,7 +38,7 @@ The edge lengths of you tree should be in units of generations, however, the spe
 
 Converting to generations from a time-scaled tree
 -------------------------------------------------
-...
+To convert branch lengths from absolute time to generations, divide the length of each branch (in time) by the generation time for that branch.
 
 
 Converting to generations from a coalescent-unit scaled tree
