@@ -21,40 +21,39 @@ Terminology
 **substitution model**: A parameterized Markov model for probabilistically modeling the evolution of sequences along the edges of a genealogical tree. This uses edge lengths described in units of generation times (g), a mutation rate in units of mutations per site per generation (u), and additional optional parameters of the Markov model (e.g., state frequencies, transition-transversion ratio). 
 
 
-**loci**: ...
+**loci**: pieces of chromosomes. Each locus is defined as just being an "nsites" length of chromosome, like what you'd expect from a sequenced read. This stretch can span multiple (unobserved) genealogies because recombination might happen within it, but it acts as the observed data for gene tree inference.
 
 
-
-**sites**: ...
+**sites**: a single position in the genome, at which any individual might have an A, C, G, or T.
 
 
 
 Units
 -----
 
-**genealogical branch lengths:**
+**genealogical branch lengths:** defined in number of generations.
 
 
-**gene tree branch lengths**:
+**gene tree branch lengths**: defined in inferred number of substitutions.
 
 
-**species tree branch lengths**:
+**species tree branch lengths**: defined in number of generations.
 
 
-**generation**: 
+**generation**: the length of time from birth until reproduction. Under the Wright-Fisher process, which the coalescent approximates, generations do not overlap.
 
 
-**coalescent units**:
+**coalescent units**: units of species tree branch lengths that incorporate both mutation rate and effective population size.
 
 
-**mutation rate**:
+**mutation rate**: the number of mutations per base per generation. 
 
 
-**recombination rate**:
+**recombination rate**: the number of recombinations expected per base per generation.
 
 
-**admixture time**:
+**admixture time**: a float between 0.0 and 1.0 defining the moment within the overlapping interval of two branches that an admixture event happens between them. (For example, if admixture time = 0.5, the event happens at the midpoint of the overlap between the two branches)
 
 
-**admixture proportion**: 
+**admixture proportion**: the proportion of the source population that migrates to the the destination branch.
 
