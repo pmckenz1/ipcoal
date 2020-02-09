@@ -6,11 +6,13 @@ import sys
 import glob
 import tempfile
 import subprocess as sps
+import numpy as np
+import toytree
 
 from .Writer import Writer
 from .mrbayes import MrBayes as mrbayes
 from .utils import ipcoalError
-import toytree
+
 
 
 SUPPORTED = {
@@ -25,13 +27,13 @@ class TreeInfer:
     """
     Class for selecting and implementing phylogenetic inference methods.
     """
-    def __init__(self, model, inference_method="raxml", inference_args={}):
+    def __init__(self, seqs, names, inference_method="raxml", inference_args={}):
         """
         DocString...
         """
-        self.model = model
-        self.seqs = model.seqs
-        self.names = model.alpha_ordered_names
+        self.random = np.random.RandomState()
+        self.seqs = seqs
+        self.names = names  # model.alpha_ordered_names
         self.binary = ""
         self.method = inference_method.lower()        
         self.inference_args = inference_args
@@ -89,13 +91,18 @@ class TreeInfer:
         """
         Writes a phylip or nexus file for xxx or mrbayes.
         """
+        # create a writer object with seqs and names
         writer = Writer(self.seqs, self.names)
+
         if self.method == "raxml":
+
+            # call write with selected idx 
             writer.write_concat_to_phylip(
                 outdir=tempfile.gettempdir(),
                 name=str(os.getpid()) + ".phy",
                 idxs=[idx],
             )
+            # return filepath to the phy file
             path = os.path.join(
                 tempfile.gettempdir(), 
                 str(os.getpid()) + ".phy"
@@ -162,14 +169,18 @@ class TreeInfer:
             "-n", os.path.basename(tmp),
             "-w", self.raxml_kwargs["w"],
             "-s", tmp,
-            "-p", str(self.model.random.randint(0, 1e9)),
+            "-p", str(self.random.randint(0, 1e9)),
         ]
+
+        # additional allowed arguments
         if "N" in self.raxml_kwargs:
             cmd += ["-N", str(self.raxml_kwargs["N"])]
         if "x" in self.raxml_kwargs:
             cmd += ["-x", str(self.raxml_kwargs["x"])]
         if "o" in self.raxml_kwargs:
             cmd += ["-o", str(self.raxml_kwargs["o"])]
+        if "a" in self.raxml_kwargs:
+            cmd += ["-a", str(self.raxml_kwargs["a"])]
 
         # call the command
         proc = sps.Popen(cmd, stdout=sps.PIPE, stderr=sps.STDOUT)
