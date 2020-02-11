@@ -1032,6 +1032,79 @@ class Model:
 
 
 
+    def infer_gene_tree_windows(
+        self, 
+        window_size=None, 
+        inference_method='raxml', 
+        inference_args={},
+        ):
+        """
+        Infer gene trees at every locus using the sequence in the locus 
+        interval. 
+
+        Parameters
+        ----------
+        window_size: 
+            The size of non-overlapping windows to be applied across the 
+            sequence alignment to infer gene tree windows. If None then 
+            a single gene tree is inferred for the entire concatenated seq.
+        method (str):
+            options include "iqtree", "raxml", "mrbayes".
+        kwargs (dict):
+            a limited set of supported inference options. See docs.
+
+        Returns
+        ----------
+        pd.DataFrame is returned, example below:
+        """
+        # bail out if the data is only unlinked SNPs
+        if self.df.nbps.max() == 1:
+            raise ipcoalError(
+                "gene tree inference cannot be performed on individual SNPs\n"
+                "perhaps you meant to run .sim_loci() instead of .sim_snps()."
+                )
+        # complain if no seq data exists
+        if self.seqs is None:
+            raise ipcoalError(
+                "Cannot infer trees because no seq data exists. "
+                "You likely called sim_trees() instead of sim_loci()."
+            )
+
+        # if window_size is None then use entire chrom
+        if window_size is None:
+            window_size = self.df.end.max()
+
+        # create the results dataframe
+        resdf = pd.DataFrame({
+            "start": np.arange(0, self.df.end.max(), window_size),
+            "end": np.arange(window_size, self.df.end.max() + window_size, window_size),
+            "nbps": window_size,
+            "nsnps": 0,
+            "inferred_tree": np.nan,
+        })
+
+        # reshape seqs: (nloc, ntips, nsites) to (nwins, ntips, win_size)
+        newseqs = np.zeros((resdf.shape[0], self.ntips, window_size), dtype=int)
+        for idx in resdf.index:
+            loc = self.seqs[0, :, resdf.start[idx]:resdf.end[idx]]
+            newseqs[idx] = loc
+            resdf.loc[idx, "nsnps"] = (np.any(loc != loc[0], axis=0).sum())
+
+        # init the TreeInference object (similar to ipyrad inference code)
+        ti = TreeInfer(
+            newseqs, 
+            self.alpha_ordered_names,
+            inference_method=inference_method, 
+            inference_args=inference_args,
+        )
+
+        # iterate over nloci. This part could be easily parallelized...
+        for idx in resdf.index:
+            resdf.loc[idx, "inferred_tree"] = ti.run(idx)
+        return resdf
+
+
+
     def infer_gene_trees(self, inference_method='raxml', inference_args={}):
         """
         Infer gene trees at every locus using the sequence in the locus 
@@ -1043,6 +1116,14 @@ class Model:
             options include "iqtree", "raxml", "mrbayes".
         kwargs (dict):
             a limited set of supported inference options. See docs.
+            Default:
+            raxml_kwargs = {
+                "f": "d", 
+                "N": "10",
+                "T": "4", 
+                "m": "GTRGAMMA",
+                "w": tempfile.gettempdir()
+            }
         """
 
         # bail out if the data is only unlinked SNPs
@@ -1057,7 +1138,8 @@ class Model:
 
         # init the TreeInference object (similar to ipyrad inference code)
         ti = TreeInfer(
-            self, 
+            self.seqs, 
+            self.alpha_ordered_names,
             inference_method=inference_method, 
             inference_args=inference_args,
         )
