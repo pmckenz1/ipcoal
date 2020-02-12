@@ -35,6 +35,8 @@ Generation time variation across the tree
 -----------------------------------------
 The edge lengths of you tree should be in units of generations, however, the species tree does not have to be ultrametric (all tips align at 0). If two sister lineages diverged and one is an annual and the other instantly became a biennial then all else being equal the annual's edge length should be 2X longer. See tips below for converting to generations from other time units.
 
+The Empirical Example with mammal phylogeny demonstrates this on real data.
+
 
 Converting to generations from a time-scaled tree
 -------------------------------------------------
