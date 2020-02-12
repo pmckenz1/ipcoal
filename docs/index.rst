@@ -13,6 +13,7 @@ Welcome to ipcoal's documentation!
    2-terminology.rst
    3-installation.rst
    ./notebooks/Tutorial.ipynb
+   ./notebooks/Empirical-Example.ipynb
    4-FAQs.rst
 
 ..   ./notebooks/User-Guide.ipynb
