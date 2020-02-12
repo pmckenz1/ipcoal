@@ -27,7 +27,6 @@ class Writer:
         self.outfile = None
 
 
-
     def write_loci_to_phylip(self, outdir, idxs=None, name_prefix=None, name_suffix=None):
         """
         Write all seq data for each locus to a separate phylip file in a shared
@@ -88,7 +87,6 @@ class Writer:
                 out.write(phystring)
 
         self.written = len(lrange)
-
 
 
     def write_concat_to_phylip(self, outdir, name, idxs=None):
@@ -186,6 +184,7 @@ class Writer:
             loclist.append(line)
         return "\n".join(loclist)
 
+
     def build_nexstring_from_loc(self, arr):
         """
         Builds nexus format string
@@ -214,6 +213,7 @@ class Writer:
             lines.append("\n")
         lines.append("\t;\nend;")
         return("".join(lines))
+
 
     # def write_seqs_as_fasta(self, loc, path):
     #     fastaseq = deepcopy(self.seqs[loc]).astype(str)

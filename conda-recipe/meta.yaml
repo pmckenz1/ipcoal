@@ -1,10 +1,10 @@
 package:
   name: ipcoal
-  version: '0.0.5'
+  version: '0.1.1'
 
 source:
-  url: https://github.com/eaton-lab/ipcoal/archive/0.0.5.tar.gz
-  sha256: abd06c47345e2a422453150d72e5a1d0675ee84bdb39ab49accbd655a1e30a43
+  url: https://github.com/eaton-lab/ipcoal/archive/0.1.1.tar.gz
+  sha256: ee2e45d77a07a61be2e61543f9526df5fb1bb3850bd4e471fd9ba7b7bcf9fdf5
 
 build:
   number: 0
@@ -18,13 +18,15 @@ requirements:
   run:
     - python
     - numpy >=1.10
-    - scipy >=0.10  # can remove soon
+    - scipy >=0.10
     - pandas >=0.16
-    - toytree >=1.0.4
+    - numba
+    - toytree >=1.0.9
     - future
     - msprime
     - raxml
     - seq-gen
+    - mrbayes
 
 test:
   imports:
