@@ -39,8 +39,9 @@ class Model:
         admixture_edges=None,
         admixture_type=0,
         nsamples=1,
-        recomb=1e-9,
         mut=1e-8,
+        recomb=1e-9,
+        recomb_map=None,
         seed=None,
         seed_mutations=None,
         substitution_model=None,
@@ -103,6 +104,15 @@ class Model:
         recomb (float): default=1e-9
             The per-site per-generation recombination rate.
 
+        recomb_map (DataFrame): default=None
+            A recombination map in hapmap format as a pandas dataframe.
+            Columns should be as desired by msprime.
+
+            Example:
+            Chromosome\tPosition\tRate\tMap\n
+            chr1\t0\t0\t0\n
+            chr1\t55550\t2.981822\t0.000000
+
         seed (int):
             Random number generator used for msprime (and seqgen unless a 
             separate seed is set for seed_mutations.
@@ -164,6 +174,7 @@ class Model:
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
         self.recomb = recomb
+        self.recomb_map = recomb_map
 
         # global Ne will be overwritten by Ne attrs in .tree. This sets node.Ne
         self.Ne = Ne
@@ -634,6 +645,7 @@ class Model:
             demographic_events=self.ms_demography,
             population_configurations=self.ms_popconfig,
             samples=self._samples,  # None if tips are ultrametric
+            recombination_map=self.recomb_map,  # None unless specified
         )
         return sim
 
