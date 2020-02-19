@@ -372,6 +372,28 @@ def jukes_cantor_distance(seq0, seq1):
     return jcdist
 
 
+
+def return_rec_map(length, num_pos, num_peaks, height_peaks, even_spacing=True):
+    sampspace_max = num_peaks*2*np.pi
+    sampspace_min = 0
+    if even_spacing:
+        sampspace_x = np.linspace(sampspace_min,
+                                  sampspace_max,
+                                  num_pos)
+    else:
+        samp_points = np.hstack([np.random.uniform(sampspace_min,
+                                 sampspace_max,
+                                 num_pos-2),
+                                [sampspace_min,
+                                 sampspace_max]
+                                 ])
+        sampspace_x = np.sort(samp_points)
+    pos_rates = (-np.cos(sampspace_x)+1) * (height_peaks / 2)
+    pos = sampspace_x * (length / 2 / np.pi / num_peaks)
+    return([list(pos),list(pos_rates)])
+
+
+
 # def tile_reps(array, nreps):
 #     "used to fill labels in the simcat.Database for replicates"
 #     ts = array.size
