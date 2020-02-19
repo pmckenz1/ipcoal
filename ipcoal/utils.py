@@ -374,6 +374,36 @@ def jukes_cantor_distance(seq0, seq1):
 
 
 def return_rec_map(length, num_pos, num_peaks, height_peaks, even_spacing=True):
+    """
+    Generates a discrete recombination map in the shape of a sine wave, with
+    troughs going down to 0 cM/Mb and peaks going up to `height_peaks`. There
+    are `num_peaks` peaks in the sine wave, and (`num_peaks`+1) troughs.
+
+    Parameters:
+    -----------
+    length (integer):
+        The number of base pairs in the chromosome
+
+    num_pos (integer):
+        Number of positions at which to have sampled recombination rate.
+
+    num_peaks (integer):
+        Number of peaks to the sine wave.
+
+    height_peaks (float):
+        The height of the sine wave peaks in cM/Mb
+
+    even_spacing (True):
+        If true, the rate sampling positions are evenly spread. If not, they
+        are drawn from a uniform distribution along the length of the chrom.
+
+    Returns:
+    ---------
+    list
+        Element 0: positions along the chromosome
+        Element 1: recombination rates in cM/Mb
+
+    """
     sampspace_max = num_peaks*2*np.pi
     sampspace_min = 0
     if even_spacing:
