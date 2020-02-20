@@ -637,15 +637,16 @@ class Model:
 
         # msprime simulation to make tree_sequence generator
         sim = ms.simulate(
-            length=nsites,
+            length=(None if self.recomb_map else nsites),
             random_seed=self.random.randint(1e9),
-            recombination_rate=(None if snp else self.recomb),
+            recombination_rate=(None if snp or self.recomb_map else self.recomb),
             migration_matrix=migmat,
             num_replicates=(int(1e20) if snp else 1),        # ensures SNPs
             demographic_events=self.ms_demography,
             population_configurations=self.ms_popconfig,
             samples=self._samples,  # None if tips are ultrametric
-            recombination_map=self.recomb_map,  # None unless specified
+            recombination_map=ms.RecombinationMap(self.recomb_map[0],
+                                                  self.recomb_map[1]),  # None unless specified
         )
         return sim
 
@@ -653,8 +654,8 @@ class Model:
 
     def _sim_locus(self, nsites, locus_idx, mkseq):
         """
-        Simulate tree sequence for each locus and sequence data for each 
-        genealogy and return all in a dataframe. 
+        Simulate tree sequence for each locus and sequence data for each
+        genealogy and return all in a dataframe.
         """
         # get the msprime ts generator (np.random val is pulled here)
         msgen = self._get_tree_sequence_generator(nsites)
