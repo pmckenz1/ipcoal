@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import msprime as ms
 import toytree
+import warnings
 
 from .utils import get_all_admix_edges, ipcoalError, calculate_pairwise_dist
 from .TreeInfer import TreeInfer
@@ -174,7 +175,8 @@ class Model:
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
         self.recomb = recomb
-        self.recomb_map = recomb_map
+        self.recomb_map = (ms.RecombinationMap(recomb_map[0], recomb_map[1]) if recomb_map else None)
+
 
         # global Ne will be overwritten by Ne attrs in .tree. This sets node.Ne
         self.Ne = Ne
@@ -645,8 +647,7 @@ class Model:
             demographic_events=self.ms_demography,
             population_configurations=self.ms_popconfig,
             samples=self._samples,  # None if tips are ultrametric
-            recombination_map=ms.RecombinationMap(self.recomb_map[0],
-                                                  self.recomb_map[1]),  # None unless specified
+            recombination_map=self.recomb_map,  # None unless specified
         )
         return sim
 
@@ -752,6 +753,11 @@ class Model:
             Use seqgen as simulator backend. TO BE REMOVED.
         """
         # allow scientific notation, e.g., 1e6
+        if self.recomb_map:
+            if nsites:
+                raise Exception("nsites specified but recombination map provided. To use recombination map, specify nsites=None.")
+            nsites = self.recomb_map.get_length()
+
         nsites = int(nsites)
         nloci = int(nloci)        
 
@@ -807,6 +813,12 @@ class Model:
         -----------
         See sim_loci()
         """
+
+        if self.recomb_map:
+            if nsites:
+                raise Exception("nsites specified but recombination map provided. To use recombination map, specify nsites=None.")
+            nsites = self.recomb_map.get_length()
+
         # allow scientific notation, e.g., 1e6
         nsites = int(nsites)
         nloci = int(nloci)        
