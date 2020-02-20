@@ -373,7 +373,7 @@ def jukes_cantor_distance(seq0, seq1):
 
 
 
-def return_rec_map(length, num_pos, num_peaks, height_peaks, even_spacing=True):
+def generate_recomb_map(length, num_pos, num_peaks, height_peaks, even_spacing=True):
     """
     Generates a discrete recombination map in the shape of a sine wave, with
     troughs going down to 0 cM/Mb and peaks going up to `height_peaks`. There
