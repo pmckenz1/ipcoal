@@ -141,7 +141,7 @@ class TreeInfer:
             tree = self.infer_mb(tmp)
 
         # cleanup (TODO) remove phy file extensions
-        os.remove(tmp)
+        #os.remove(tmp)
 
         # return result
         return tree

@@ -1111,15 +1111,16 @@ class Model:
         # reshape seqs: (nloc, ntips, nsites) to (nwins, ntips, win_size)
         newseqs = np.zeros((resdf.shape[0], self.ntips, window_size), dtype=int)
         for idx in resdf.index:
+            # TODO: HERE IT'S ONLY INFERRING AT LOC 0
             loc = self.seqs[0, :, resdf.start[idx]:resdf.end[idx]]
             newseqs[idx] = loc
             resdf.loc[idx, "nsnps"] = (np.any(loc != loc[0], axis=0).sum())
 
         # init the TreeInference object (similar to ipyrad inference code)
         ti = TreeInfer(
-            newseqs, 
+            newseqs,
             self.alpha_ordered_names,
-            inference_method=inference_method, 
+            inference_method=inference_method,
             inference_args=inference_args,
         )
 
