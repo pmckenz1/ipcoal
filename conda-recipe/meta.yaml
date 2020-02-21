@@ -1,10 +1,10 @@
 package:
   name: ipcoal
-  version: '0.1.1'
+  version: '0.1.2'
 
 source:
-  url: https://github.com/eaton-lab/ipcoal/archive/0.1.1.tar.gz
-  sha256: ee2e45d77a07a61be2e61543f9526df5fb1bb3850bd4e471fd9ba7b7bcf9fdf5
+  url: https://github.com/eaton-lab/ipcoal/archive/0.1.2.tar.gz
+  sha256: 68b9474c9b0e34ee6efe3106ffd508d1614b8c96ec648987b43bae5cc0a6acbb
 
 build:
   number: 0
@@ -25,8 +25,8 @@ requirements:
     - future
     - msprime
     - raxml
-    - seq-gen
-    - mrbayes
+    # - seq-gen
+    # - mrbayes
 
 test:
   imports:
