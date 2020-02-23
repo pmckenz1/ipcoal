@@ -11,12 +11,16 @@ version: 2
 python:
   version: 3.7
   install: 
-    - requirements: docs/requirements.txt
+    - requirements: docs/sphinx-requirements.txt
     - method: pip
       path: .
+  system_packages: true
+
 # conda:
   # environment: docs/environment.yml
+
 build:
   image: latest
+
 sphinx:
   configuration: docs/conf.py

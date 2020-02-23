@@ -1,0 +1,16 @@
+
+name: ipcoal
+channels:
+	- conda-forge
+	- bioconda
+	- eaton-lab
+dependencies:
+	- python
+	- ipython
+	- numpy
+	- pandas
+	- scipy
+	- toytree
+	- msprime
+	- numba
+
