@@ -17,11 +17,11 @@ requirements:
     - python
   run:
     - python
-    - numpy >=1.10
-    - scipy >=0.10
-    - pandas >=0.16
+    - numpy
+    - scipy
+    - pandas
     - numba
-    - toytree >=1.0.9
+    - toytree >=1.1.0
     - future
     - msprime
     - raxml
