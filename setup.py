@@ -19,12 +19,12 @@ setup(
     author="Patrick McKenzie and Deren Eaton",
     author_email="p.mckenzie@columbia.edu",
     install_requires=[
-        "scipy>0.10",
         "numpy>=1.9",
-        "pandas>=0.16",
-        "toytree>=1.0.4",
+        "pandas>=1.0",
+        "toytree>=1.1.2",
         "msprime",
         "numba",
+        "scipy>0.10",
         # seq-gen (optional)
         # "ipyparallel",
     ],
