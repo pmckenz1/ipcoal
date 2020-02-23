@@ -2,6 +2,9 @@
 # Read the Docs configuration file
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
 
+
+# CURRENTLY NOT USED (NOT ON GITHUB)
+
 # Required
 version: 2
 
@@ -11,7 +14,6 @@ python:
     - requirements: docs/requirements.txt
     - method: pip
       path: .
-
 # conda:
   # environment: docs/environment.yml
 build:
