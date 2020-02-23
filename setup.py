@@ -21,7 +21,7 @@ setup(
     install_requires=[
         "numpy>=1.9",
         "pandas>=1.0",
-        "toytree>=1.1.2",
+        "toytree>=1.1.0",
         "msprime",
         "numba",
         "scipy>0.10",
