@@ -19,12 +19,12 @@ if on_rtd:
     install_requires = []
 else:
     install_requires = [
-        "numpy>=1.9",
-        "pandas>=1.0",
-        "toytree>=1.1.0",
+        "numpy",
+        "pandas",
+        "toytree",
         "msprime",
         "numba",
-        "scipy>0.10",
+        "scipy",
         # seq-gen (optional)
     ]
 
