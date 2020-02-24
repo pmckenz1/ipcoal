@@ -1,11 +1,8 @@
 name: ipcoal
 channels:
-    - eaton-lab
     - conda-forge
+    - bioconda
+    - eaton-lab
 dependencies:
     - python>=3
     - ipcoal
-
-
-
-

@@ -18,10 +18,11 @@ Terminology
 **species tree**: a model describing the topology (ancestral relationships) and demographic parameters for a number of lineages. This includes divergence times, effective population sizes, and admixture events. 
 
 
-**substitution model**: A parameterized Markov model for probabilistically modeling the evolution of sequences along the edges of a genealogical tree. This uses edge lengths described in units of generation times (g), a mutation rate in units of mutations per site per generation (u), and additional optional parameters of the Markov model (e.g., state frequencies, transition-transversion ratio). 
+**substitution model**: a parameterized Markov model for probabilistically modeling the evolution of sequences along the edges of a genealogical tree. This uses edge lengths described in units of generation times (g), a mutation rate in units of mutations per site per generation (u), and additional optional parameters of the Markov model (e.g., state frequencies, transition-transversion ratio). 
 
 
-**loci**: pieces of chromosomes. Each locus is defined as just being an "nsites" length of chromosome, like what you'd expect from a sequenced read. This stretch can span multiple (unobserved) genealogies because recombination might happen within it, but it acts as the observed data for gene tree inference.
+**loci**: a region of length "nsites" spanning some interval of a chromosome. The ancestry for some number of samples may represent multiple distinct genealogies across the length of a locus, if recombination has occurred within it. *ipcoal* includes functions to infer gene trees for individual loci, or in subwindows across
+loci (e.g., sliding windows across a locus/chromosome), or to concatenate many loci to infer a concatenated gene tree.
 
 
 **sites**: a single position in the genome, at which any individual might have an A, C, G, or T.
@@ -31,29 +32,29 @@ Terminology
 Units
 -----
 
-**genealogical branch lengths:** defined in number of generations.
+**genealogical branch lengths:** defined in number of generations.  
 
 
-**gene tree branch lengths**: defined in inferred number of substitutions.
+**gene tree branch lengths**:  Depends on the inference method. If using the default ML implementation in raxml then gene tree branch lengths are estimated parameters representing the expected number of substitutions per site.   
 
 
-**species tree branch lengths**: defined in number of generations.
+**species tree branch lengths**: defined in number of generations.  
 
 
-**generation**: the length of time from birth until reproduction. Under the Wright-Fisher process, which the coalescent approximates, generations do not overlap.
+**generation**: the length of time from birth until reproduction. Under the Wright-Fisher process, which the coalescent approximates, generations do not overlap.   
 
 
-**coalescent units**: units of species tree branch lengths that incorporate both mutation rate and effective population size.
+**coalescent units**: units of species tree branch lengths that describe the probability that n samples coalesce over a length of a branch. It is calculated as (time in generations) / 2Ne.  
 
 
-**mutation rate**: the number of mutations per base per generation. 
+**mutation rate**: the expected number of mutations per base per generation.   
 
 
-**recombination rate**: the number of recombinations expected per base per generation.
+**recombination rate**: the expected number of recombinations per base per generation.  
 
 
-**admixture time**: a float between 0.0 and 1.0 defining the moment within the overlapping interval of two branches that an admixture event happens between them. (For example, if admixture time = 0.5, the event happens at the midpoint of the overlap between the two branches)
+**admixture time**: a float between 0.0 and 1.0 defining the moment within the overlapping interval of two branches that an admixture event occurred. (For example, if admixture time=0.5, the event happens at the midpoint of the overlap between the two branches)
 
 
-**admixture proportion**: the proportion of the source population that migrates to the the destination branch.
+**admixture proportion**: the proportion of the source population that migrates to the destination branch.  
 

@@ -2,14 +2,25 @@
 # Read the Docs configuration file
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
 
+
+# CURRENTLY NOT USED (NOT ON GITHUB)
+
 # Required
 version: 2
 
 python:
   version: 3.7
-conda:
-  environment: docs/environment.yml
+  install: 
+    - requirements: docs/sphinx-requirements.txt
+    - method: pip
+      path: .
+  system_packages: true
+
+# conda:
+  # environment: docs/environment.yml
+
 build:
   image: latest
+
 sphinx:
   configuration: docs/conf.py

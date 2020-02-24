@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import re
 from setuptools import setup
 
@@ -11,6 +12,23 @@ with open("ipcoal/__init__.py") as init:
         re.M,
     ).group(1)
 
+
+# nasty workaround for RTD low memory limits
+on_rtd = os.environ.get('READTHEDOCS') == 'True'
+if on_rtd:
+    install_requires = []
+else:
+    install_requires = [
+        "numpy",
+        "pandas",
+        "toytree",
+        "msprime",
+        "numba",
+        "scipy",
+        # seq-gen (optional)
+    ]
+
+
 # setup installation
 setup(
     name="ipcoal",
@@ -18,20 +36,13 @@ setup(
     version=CUR_VERSION,
     author="Patrick McKenzie and Deren Eaton",
     author_email="p.mckenzie@columbia.edu",
-    install_requires=[
-        "scipy>0.10",
-        "numpy>=1.9",
-        "pandas>=0.16",
-        "toytree>=1.0.4",
-        "msprime",
-        "numba",
-        # seq-gen (optional)
-        # "ipyparallel",
-    ],
+    install_requires=install_requires,
     license='GPL',
     classifiers=[
         'Programming Language :: Python',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',                
     ],
 )
