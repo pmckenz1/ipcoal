@@ -995,6 +995,37 @@ class Model:
         # allows chaining funcs
         # return self
 
+    def write_loci_to_vcf(
+        self, 
+        filename,
+        outdir="./ipcoal-sims/",
+        idxs=None,
+        ):
+        """
+        Write all seq data for each locus to a separate phylip file in a shared
+        directory with each locus named by ids locus index. 
+
+        Parameters:
+        -----------
+        outdir (str):
+            A directory in which to write all the phylip files. It will be 
+            created if it does not yet exist. Default is "./ipcoal_loci/".
+        outfile (str):
+            Only used if idx is not None. Set the name of the locus file being
+            written. This is used internally to write tmpfiles for TreeInfer.
+        idx (int):
+            To write a single locus file provide the idx. If None then all loci
+            are written to separate files.
+        """
+        writer = Writer(self.seqs, self.alpha_ordered_names)
+        writer.write_loci_to_vcf(filename, outdir, idxs)
+
+        # report
+        print("wrote {} loci ({} x {}bp) to {}/[...].phy".format(
+            writer.written, self.seqs.shape[1], self.seqs.shape[2],
+            writer.outdir.rstrip("/")
+            ),
+        )
 
 
     def write_loci_to_phylip(
