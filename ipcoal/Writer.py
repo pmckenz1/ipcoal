@@ -88,6 +88,121 @@ class Writer:
 
         self.written = len(lrange)
 
+    def write_loci_to_vcf(self, filename, outdir, idxs=None):
+        # make outdir if it does not yet exist
+        self.outdir = os.path.realpath(os.path.expanduser(outdir))
+        if not os.path.exists(self.outdir):
+            os.makedirs(self.outdir)
+
+
+        # get loci to write
+        if idxs is None:
+            lrange = range(self.seqs.shape[0])
+        else:
+            # if int make it iterable
+            if isinstance(idxs, int):
+                lrange = [idxs]
+            else:
+                lrange = list(idxs)
+
+            # check that idxs exist
+            for loc in lrange:
+                if loc not in range(self.seqs.shape[0]):
+                    raise ipcoalError("idx {} is not in the data set")
+
+        vcfstr = "{}{}{}".format(VCFHEADER, '\t'.join(self.names), '\n')
+
+        # iterate over loci (or single selected locus)
+        for loc in lrange:
+
+            # get locus and convert to bases
+            arr = self.seqs[loc].astype(bytes)
+            arr = convert_intarr_to_bytearr(arr)
+
+            # get snp locations
+            snp_locs = np.where(np.array([len(np.unique(i)) for i in arr.T]) > 1)[0]
+
+            # get (nsamps x nsnps) array of snps
+            snps = arr[:, snp_locs]
+
+            # chrom column (ZERO INDEXED)
+            CHROM = np.repeat(str(loc), snps.shape[1])
+
+            # pos column (ONE INDEXED)
+            POS = (snp_locs+1).astype(str)
+
+            # ID
+            ID = np.repeat('.', snps.shape[1])
+            # REF
+            REF = snps[0].astype(str)
+
+            # ALT
+            ALT = []
+            allele_dict = []
+            for i in range(len(snps.T)):
+                curr_snp = snps.T[i].astype(str)
+                alls = set(curr_snp)
+                alls.remove(REF[i].astype(str))
+                ALT.append(','.join(list(alls)))
+                # add to dict mapping letters to allele numbers for each SNP
+                tmp_allele_dict = {REF[i].astype(str): "0"}
+                for i in range(len(list(alls))):
+                    tmp_allele_dict[list(alls)[i]] = str(i)
+                allele_dict.append(tmp_allele_dict)
+            ALT = np.array(ALT)
+
+            # make a dict mapping letters to allele numbers for each SNP
+            
+
+            # QUAL
+            QUAL = np.repeat('.', snps.shape[1])
+
+            # FILTER
+            FILTER = np.repeat('PASS', snps.shape[1])
+
+            # INFO
+            INFO = np.repeat('.', snps.shape[1])
+
+            # FORMAT
+            #FORMAT = np.repeat('GT', snps.shape[1])
+
+            # SAMPLES
+            SAMPLES = np.zeros((snps.T.shape), dtype=str)
+            for i in range(SAMPLES.shape[0]):
+                for q in range(SAMPLES.shape[1]):
+                    SAMPLES[i, q] = allele_dict[i][snps[q, i].astype(str)]
+
+            loclines = ''
+            for i in range(snps.shape[1]):
+                SAMP = "\t".join(SAMPLES[i])
+                loclines = loclines + "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(CHROM[i],
+                                                            POS[i],
+                                                            ID[i],
+                                                            REF[i],
+                                                            ALT[i],
+                                                            QUAL[i],
+                                                            FILTER[i],
+                                                            INFO[i],
+                                                            #FORMAT[i],
+                                                            SAMP
+                                                            )
+            vcfstr = vcfstr + loclines
+
+        # open file handle numbered unless user
+        fhandle = os.path.join(
+            self.outdir, 
+            "{}.vcf".format(filename),
+        )
+
+        # write to file
+        with open(fhandle, 'w') as out:
+            out.write(vcfstr)
+
+        self.written = len(lrange)
+        return(vcfstr)
+
+    #def write_concat_to_vcf(self)
+
 
     def write_concat_to_phylip(self, outdir, name, idxs=None):
         """
@@ -269,3 +384,7 @@ begin data;
   format datatype=DNA missing=N gap=- interleave=yes;
   matrix\n
 """
+
+VCFHEADER = """
+##fileformat=VCFv4.2
+#CHROM\tPOS\tID\tREF\tALT QUAL\tFILTER\tINFO\tFORMAT\t"""
