@@ -154,7 +154,10 @@ class Writer:
             # ID
             ID = np.repeat('.', snps.shape[1])
             # REF
-            REF = snps[0].astype(str)
+            if reference:
+                REF = snps[np.argmax(np.array(self.names) == reference)].astype(str)
+            else:
+                REF = snps[0].astype(str)
 
             # ALT
             ALT = []

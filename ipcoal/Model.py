@@ -1000,6 +1000,7 @@ class Model:
         filename=None,
         outdir="./ipcoal-sims/",
         idxs=None,
+        reference=None,
         ):
         """
         Write all seq data for each locus to a separate phylip file in a shared
@@ -1018,7 +1019,7 @@ class Model:
             are written to separate files.
         """
         writer = Writer(self.seqs, self.alpha_ordered_names)
-        writer.write_loci_to_vcf(filename, outdir, idxs)
+        writer.write_loci_to_vcf(filename, outdir, idxs, reference)
 
         if filename:
             # report
