@@ -404,23 +404,30 @@ def generate_recomb_map(length, num_pos, num_peaks, height_peaks, even_spacing=T
         Element 1: recombination rates in cM/Mb
 
     """
-    sampspace_max = num_peaks*2*np.pi
+    # wavelength
+    sampspace_max = num_peaks * 2 * np.pi
     sampspace_min = 0
+
+    # spacing between SNP markers
     if even_spacing:
-        sampspace_x = np.linspace(sampspace_min,
-                                  sampspace_max,
-                                  num_pos)
+        sampspace_x = np.linspace(sampspace_min, sampspace_max, num_pos)
     else:
-        samp_points = np.hstack([np.random.uniform(sampspace_min,
-                                 sampspace_max,
-                                 num_pos-2),
-                                [sampspace_min,
-                                 sampspace_max]
-                                 ])
+        samp_points = np.hstack([
+            np.random.uniform(sampspace_min, sampspace_max, num_pos - 2),
+            [sampspace_min, sampspace_max]
+        ])
         sampspace_x = np.sort(samp_points)
-    pos_rates = (-np.cos(sampspace_x)+1) * (height_peaks / 2)
+
+    # ...
+    pos_rates = (-np.cos(sampspace_x) + 1) * (height_peaks / 2)
     pos = sampspace_x * (length / 2 / np.pi / num_peaks)
-    return([list(pos),list(pos_rates)])
+
+    # convert to a dataframe
+    recomb_map = pd.DataFrame({
+        "position": pos,
+        "recomb_rate": pos_rates,
+    })
+    return recomb_map
 
 
 
