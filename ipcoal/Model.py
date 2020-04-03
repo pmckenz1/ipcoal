@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import msprime as ms
 import toytree
-import warnings
+# import warnings
 
 from .utils import get_all_admix_edges, ipcoalError, calculate_pairwise_dist
 from .TreeInfer import TreeInfer
@@ -1017,11 +1017,12 @@ class Model:
             To write a single locus file provide the idx. If None then all loci
             are written to separate files.
         """
+        # TODO: allow returning as a DF if no filename
         writer = Writer(self.seqs, self.alpha_ordered_names)
         writer.write_loci_to_vcf(filename, outdir, idxs)
 
-        # report
-        print("wrote {} loci ({} x {}bp) to {}/[...].phy".format(
+        # TODO: report number of SNPs
+        print("wrote {} loci ({} x {}bp) to {}/[...].vcf".format(
             writer.written, self.seqs.shape[1], self.seqs.shape[2],
             writer.outdir.rstrip("/")
             ),
