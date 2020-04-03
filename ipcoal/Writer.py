@@ -3,6 +3,7 @@
 
 import os
 import numpy as np
+import pandas as pd
 from .utils import ipcoalError
 
 
@@ -88,11 +89,15 @@ class Writer:
 
         self.written = len(lrange)
 
-    def write_loci_to_vcf(self, filename, outdir, idxs=None):
-        # make outdir if it does not yet exist
-        self.outdir = os.path.realpath(os.path.expanduser(outdir))
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
+    def write_loci_to_vcf(self, filename=None, outdir=".", idxs=None, reference=None):
+        return_dataframe = False
+        if not filename:
+            return_dataframe = True
+        if not return_dataframe:
+            # make outdir if it does not yet exist
+            self.outdir = os.path.realpath(os.path.expanduser(outdir))
+            if not os.path.exists(self.outdir):
+                os.makedirs(self.outdir)
 
 
         # get loci to write
@@ -114,6 +119,17 @@ class Writer:
 
         # object to hold number of SNPs.
         nsnps = 0
+
+        if return_dataframe:
+            CHROM_full = []
+            POS_full = []
+            ID_full = []
+            REF_full = []
+            ALT_full = []
+            QUAL_full = []
+            FILTER_full = []
+            INFO_full = []
+            SAMPLES_full = []
 
         # iterate over loci (or single selected locus)
         for loc in lrange:
@@ -155,9 +171,6 @@ class Writer:
                 allele_dict.append(tmp_allele_dict)
             ALT = np.array(ALT)
 
-            # make a dict mapping letters to allele numbers for each SNP
-            
-
             # QUAL
             QUAL = np.repeat('.', snps.shape[1])
 
@@ -193,18 +206,64 @@ class Writer:
                                                             )
             vcfstr = vcfstr + loclines
 
-        # open file handle numbered unless user
-        fhandle = os.path.join(
-            self.outdir, 
-            "{}.vcf".format(filename),
-        )
-
-        # write to file
-        with open(fhandle, 'w') as out:
-            out.write(vcfstr)
+            if return_dataframe:
+                CHROM_full.append(CHROM)
+                POS_full.append(POS)
+                ID_full.append(ID)
+                REF_full.append(REF)
+                ALT_full.append(ALT)
+                QUAL_full.append(QUAL)
+                FILTER_full.append(FILTER)
+                INFO_full.append(INFO)
+                SAMPLES_full.append(SAMPLES)
 
         self.written = len(lrange)
         self.nsnps = nsnps
+        self.vcf = vcfstr
+
+        CHROM_full = np.concatenate(CHROM_full)
+        POS_full = np.concatenate(POS_full)
+        ID_full = np.concatenate(ID_full)
+        REF_full = np.concatenate(REF_full)
+        ALT_full = np.concatenate(ALT_full)
+        QUAL_full = np.concatenate(QUAL_full)
+        FILTER_full = np.concatenate(FILTER_full)
+        INFO_full = np.concatenate(INFO_full)
+        SAMPLES_full = np.concatenate(SAMPLES_full)
+
+        df = pd.DataFrame([CHROM_full,
+                           POS_full,
+                           ID_full,
+                           REF_full,
+                           ALT_full,
+                           QUAL_full,
+                           FILTER_full,
+                           INFO_full],
+                          index=["#CHROM",
+                                   "POS",
+                                   "ID",
+                                   "REF",
+                                   "ALT",
+                                   "QUAL",
+                                   "FILTER",
+                                   "INFO"])
+        samples_df = pd.DataFrame(SAMPLES_full,
+                                  columns=self.names).T
+
+        df = df.append(samples_df).T
+
+        if not return_dataframe:
+            # open file handle numbered unless user
+            fhandle = os.path.join(
+                self.outdir, 
+                "{}.vcf".format(filename),
+            )
+
+            # write to file
+            with open(fhandle, 'w') as out:
+                out.write(vcfstr)
+        else:
+            self.df = df
 
     #def write_concat_to_vcf(self)
 

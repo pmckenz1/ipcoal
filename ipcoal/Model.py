@@ -997,7 +997,7 @@ class Model:
 
     def write_loci_to_vcf(
         self, 
-        filename,
+        filename=None,
         outdir="./ipcoal-sims/",
         idxs=None,
         ):
@@ -1020,13 +1020,16 @@ class Model:
         writer = Writer(self.seqs, self.alpha_ordered_names)
         writer.write_loci_to_vcf(filename, outdir, idxs)
 
-        # report
-        print("wrote {} linkage blocks with {} SNPs to {}/{}.vcf".format(
-            writer.written, writer.nsnps,
-            writer.outdir.rstrip("/"),
-            filename
-            ),
-        )
+        if filename:
+            # report
+            print("wrote {} linkage blocks with {} SNPs to {}/{}.vcf".format(
+                writer.written, writer.nsnps,
+                writer.outdir.rstrip("/"),
+                filename
+                ),
+            )
+        else:
+            return(writer.df)
 
 
     def write_loci_to_phylip(
