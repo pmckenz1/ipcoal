@@ -420,7 +420,14 @@ def generate_recomb_map(length, num_pos, num_peaks, height_peaks, even_spacing=T
         sampspace_x = np.sort(samp_points)
     pos_rates = (-np.cos(sampspace_x)+1) * (height_peaks / 2)
     pos = sampspace_x * (length / 2 / np.pi / num_peaks)
-    return([list(pos),list(pos_rates)])
+
+    # convert to a dataframe
+    RECOMB_MAP = pd.DataFrame({
+        "position": pos,
+        "recomb_rate": pos_rates,
+    })
+    return(RECOMB_MAP)
+#    return([list(pos),list(pos_rates)])
 
 
 

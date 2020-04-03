@@ -268,8 +268,6 @@ class Writer:
         else:
             self.df = df
 
-    #def write_concat_to_vcf(self)
-
 
     def write_concat_to_phylip(self, outdir, name, idxs=None):
         """

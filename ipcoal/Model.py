@@ -175,7 +175,7 @@ class Model:
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
         self.recomb = recomb
-        self.recomb_map = (ms.RecombinationMap(recomb_map[0], recomb_map[1]) if recomb_map else None)
+        self.recomb_map = (None if recomb_map is None else ms.RecombinationMap(list(recomb_map['position']), list(recomb_map['recomb_rate'])))
 
 
         # global Ne will be overwritten by Ne attrs in .tree. This sets node.Ne
