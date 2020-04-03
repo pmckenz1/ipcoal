@@ -1021,9 +1021,10 @@ class Model:
         writer.write_loci_to_vcf(filename, outdir, idxs)
 
         # report
-        print("wrote {} loci ({} x {}bp) to {}/[...].phy".format(
-            writer.written, self.seqs.shape[1], self.seqs.shape[2],
-            writer.outdir.rstrip("/")
+        print("wrote {} linkage blocks with {} SNPs to {}/{}.vcf".format(
+            writer.written, writer.nsnps,
+            writer.outdir.rstrip("/"),
+            filename
             ),
         )
 

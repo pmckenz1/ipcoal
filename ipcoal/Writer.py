@@ -112,6 +112,9 @@ class Writer:
 
         vcfstr = "{}{}{}".format(VCFHEADER, '\t'.join(self.names), '\n')
 
+        # object to hold number of SNPs.
+        nsnps = 0
+
         # iterate over loci (or single selected locus)
         for loc in lrange:
 
@@ -124,6 +127,7 @@ class Writer:
 
             # get (nsamps x nsnps) array of snps
             snps = arr[:, snp_locs]
+            nsnps += snps.shape[1]
 
             # chrom column (ZERO INDEXED)
             CHROM = np.repeat(str(loc), snps.shape[1])
@@ -146,8 +150,8 @@ class Writer:
                 ALT.append(','.join(list(alls)))
                 # add to dict mapping letters to allele numbers for each SNP
                 tmp_allele_dict = {REF[i].astype(str): "0"}
-                for i in range(len(list(alls))):
-                    tmp_allele_dict[list(alls)[i]] = str(i)
+                for idx in range(len(list(alls))):
+                    tmp_allele_dict[list(alls)[idx]] = str(idx+1)
                 allele_dict.append(tmp_allele_dict)
             ALT = np.array(ALT)
 
@@ -167,10 +171,11 @@ class Writer:
             #FORMAT = np.repeat('GT', snps.shape[1])
 
             # SAMPLES
-            SAMPLES = np.zeros((snps.T.shape), dtype=str)
-            for i in range(SAMPLES.shape[0]):
-                for q in range(SAMPLES.shape[1]):
-                    SAMPLES[i, q] = allele_dict[i][snps[q, i].astype(str)]
+            SAMPLES = np.zeros((snps.shape), dtype=str)
+            for sample_rows in range(SAMPLES.shape[0]):
+                for base_columns in range(SAMPLES.shape[1]):
+                    SAMPLES[sample_rows, base_columns] = allele_dict[base_columns][snps[sample_rows, base_columns].astype(str)]
+            SAMPLES = SAMPLES.T
 
             loclines = ''
             for i in range(snps.shape[1]):
@@ -199,7 +204,7 @@ class Writer:
             out.write(vcfstr)
 
         self.written = len(lrange)
-        return(vcfstr)
+        self.nsnps = nsnps
 
     #def write_concat_to_vcf(self)
 
