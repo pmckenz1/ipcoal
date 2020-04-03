@@ -88,12 +88,16 @@ class Writer:
 
         self.written = len(lrange)
 
+
+
     def write_loci_to_vcf(self, filename, outdir, idxs=None):
+        """
+        Shapes 
+        """
         # make outdir if it does not yet exist
         self.outdir = os.path.realpath(os.path.expanduser(outdir))
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
-
 
         # get loci to write
         if idxs is None:
@@ -152,7 +156,6 @@ class Writer:
             ALT = np.array(ALT)
 
             # make a dict mapping letters to allele numbers for each SNP
-            
 
             # QUAL
             QUAL = np.repeat('.', snps.shape[1])
@@ -175,20 +178,25 @@ class Writer:
             loclines = ''
             for i in range(snps.shape[1]):
                 SAMP = "\t".join(SAMPLES[i])
-                loclines = loclines + "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(CHROM[i],
-                                                            POS[i],
-                                                            ID[i],
-                                                            REF[i],
-                                                            ALT[i],
-                                                            QUAL[i],
-                                                            FILTER[i],
-                                                            INFO[i],
-                                                            #FORMAT[i],
-                                                            SAMP
-                                                            )
+                loclines = loclines + (
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n"
+                    .format(
+                        CHROM[i],
+                        POS[i],
+                        ID[i],
+                        REF[i],
+                        ALT[i],
+                        QUAL[i],
+                        FILTER[i],
+                        INFO[i],
+                        #FORMAT[i],
+                        SAMP
+                    )
+                )
             vcfstr = vcfstr + loclines
 
         # open file handle numbered unless user
+        filename = filename.rsplit(".vcf")[0]
         fhandle = os.path.join(
             self.outdir, 
             "{}.vcf".format(filename),
@@ -201,7 +209,6 @@ class Writer:
         self.written = len(lrange)
         return(vcfstr)
 
-    #def write_concat_to_vcf(self)
 
 
     def write_concat_to_phylip(self, outdir, name, idxs=None):
@@ -385,6 +392,7 @@ begin data;
   matrix\n
 """
 
+# TODO add an attribution of the ipcoal version and list sim parameters.
 VCFHEADER = """
 ##fileformat=VCFv4.2
 #CHROM\tPOS\tID\tREF\tALT QUAL\tFILTER\tINFO\tFORMAT\t"""
