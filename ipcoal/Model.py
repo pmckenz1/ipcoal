@@ -49,7 +49,6 @@ class Model:
         debug=False,
         **kwargs,
         ):
-
         """
         Takes an input topology with edge lengths in units of generations
         entered as either a newick string or as a Toytree object, and defines
@@ -995,11 +994,16 @@ class Model:
         # allows chaining funcs
         # return self
 
+
+
     def write_loci_to_vcf(
         self, 
-        filename,
+        filename=None,
         outdir="./ipcoal-sims/",
+        reference=None,
+        diploid_map=None,
         idxs=None,
+        seed=None,
         ):
         """
         Write all seq data for each locus to a separate phylip file in a shared
@@ -1013,20 +1017,22 @@ class Model:
         outfile (str):
             Only used if idx is not None. Set the name of the locus file being
             written. This is used internally to write tmpfiles for TreeInfer.
-        idx (int):
-            To write a single locus file provide the idx. If None then all loci
-            are written to separate files.
         """
+
         # TODO: allow returning as a DF if no filename
         writer = Writer(self.seqs, self.alpha_ordered_names)
-        writer.write_loci_to_vcf(filename, outdir, idxs)
+        writer.write_loci_to_vcf(filename, outdir, idxs, reference)
+        if filename:
+            # report
+            print("wrote {} linkage blocks with {} SNPs to {}/{}.vcf".format(
+                writer.written, writer.nsnps,
+                writer.outdir.rstrip("/"),
+                filename
+                ),
+            )
+        else:
+            return(writer.df)
 
-        # TODO: report number of SNPs
-        print("wrote {} loci ({} x {}bp) to {}/[...].vcf".format(
-            writer.written, self.seqs.shape[1], self.seqs.shape[2],
-            writer.outdir.rstrip("/")
-            ),
-        )
 
 
     def write_loci_to_phylip(

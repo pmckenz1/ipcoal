@@ -3,7 +3,282 @@
 
 import os
 import numpy as np
+import pandas as pd
 from .utils import ipcoalError
+
+
+class VCF:
+    """
+    Write a haploid or diploid VCF output for all SNPs in a locus or SNP 
+    output from ipcoal and store all metadata about the simulation in the 
+    VCF file.
+    """
+    def __init__(
+        self, 
+        filename,
+        seqs, 
+        names,
+        reference=None, 
+        diploid_map=False, 
+        idxs=None, 
+        seed=None):
+        """
+        seqs: (ndarray int) 
+            ipcoal.Model.seqs
+        names: (ndarray str) 
+            ipcoal.Model.names 
+        diploid_map: (dict) 
+            map of population name to sample indices. Each population must 
+            have an even number of samples. Within each population diploids
+            are formed by randomly sampling two haploids without replacement.
+        idxs: (list, ndarray)
+            A list of ndarray of the indices of a subset of loci to write.
+            Default is to write all loci in .seqs.
+        seed: (int) 
+            seed random number generator.
+        """
+        # set random seed
+        if seed:
+            np.random.seed(seed)
+
+        # store input params
+        self.seqs = seqs
+        self.names = names
+        self.reference = reference
+        self.diploid_map = diploid_map
+
+        # setup functions
+        self.select_reference()
+        self.subset_loci()
+        self.sample_diploids()
+
+        # VCF building functions
+        self.build_vcf()
+        self.write()
+
+
+    def select_reference(self):
+        "if None then randomly select a sample a haploid reference."
+        if self.reference:
+            self.reference = snps[np.argmax(np.array(self.names) == reference)].astype(str)
+            else:
+                REF = snps[0].astype(str)
+
+
+
+    def sample_diploids(self):
+        "randomly sample two haploids to make diploids without replacement."
+
+        if self.diploid_map:
+            # check that population sizes are multiple of 2
+            assert all([len(i) % 2 == 0 for i in self.diploid_map.values()]), (
+                "all populations must have an even number of samples.")
+
+            # sample pairs in each population...
+
+
+    def get_path(self):
+        # if writing to file then make outdir if it does not yet exist
+        if filename:
+            self.outdir = os.path.realpath(os.path.expanduser(outdir))
+            if not os.path.exists(self.outdir):
+                os.makedirs(self.outdir)
+
+
+    def subset_loci(self):
+        """
+        If datasets is dim=3 then subset loci by idxs argument.
+        """
+        # subselect the linkage groups to write (default is to select all)
+        if idxs is None:
+            lrange = range(self.seqs.shape[0])
+        else:
+            # if int make it iterable
+            if isinstance(idxs, int):
+                lrange = [idxs]
+            else:
+                lrange = list(idxs)
+
+            # check that idxs exist
+            for loc in lrange:
+                if loc not in range(self.seqs.shape[0]):
+                    raise ipcoalError("idx {} is not in the data set")
+
+
+    def build_vcf(self):
+        """
+        Build VCF as a list of strings.
+        """
+        # get header and column names for VCF
+        vcfstr = "{}{}{}".format(VCFHEADER, '\t'.join(self.names), '\n')
+
+        # object to hold number of SNPs.
+        nsnps = 0
+
+        # stores for converting to dataframe
+        CHROM_full = []
+        POS_full = []
+        ID_full = []
+        REF_full = []
+        ALT_full = []
+        QUAL_full = []
+        FILTER_full = []
+        INFO_full = []
+        SAMPLES_full = []
+
+        # iterate over loci (or single selected locus)
+        for loc in range(self.seqs.shape[0]):
+
+            # get locus and convert to bases
+            arr = self.seqs[loc].astype(bytes)
+            arr = convert_intarr_to_bytearr(arr)
+
+            # get snp locations
+            snp_locs = np.where(np.array([len(np.unique(i)) for i in arr.T]) > 1)[0]
+
+            # get (nsamps x nsnps) array of snps
+            snps = arr[:, snp_locs]
+            nsnps += snps.shape[1]
+
+            # chrom column (ZERO INDEXED)
+            CHROM = np.repeat(str(loc), snps.shape[1])
+
+            # pos column (ONE INDEXED)
+            POS = (snp_locs+1).astype(str)
+
+            # ID
+            ID = np.repeat('.', snps.shape[1])
+            
+            # REF
+            REF = self.reference
+
+            # ALT
+            ALT = []
+            allele_dict = []
+            for i in range(len(snps.T)):
+                curr_snp = snps.T[i].astype(str)
+                alls = set(curr_snp)
+                alls.remove(REF[i].astype(str))
+                ALT.append(','.join(list(alls)))
+                # add to dict mapping letters to allele numbers for each SNP
+                tmp_allele_dict = {REF[i].astype(str): "0"}
+                for idx in range(len(list(alls))):
+                    tmp_allele_dict[list(alls)[idx]] = str(idx+1)
+                allele_dict.append(tmp_allele_dict)
+            ALT = np.array(ALT)
+
+            # QUAL
+            QUAL = np.repeat('.', snps.shape[1])
+
+            # FILTER
+            FILTER = np.repeat('PASS', snps.shape[1])
+
+            # INFO
+            INFO = np.repeat('.', snps.shape[1])
+
+            # FORMAT
+            #FORMAT = np.repeat('GT', snps.shape[1])
+
+            # SAMPLES
+            SAMPLES = np.zeros((snps.shape), dtype=str)
+            for sample_rows in range(SAMPLES.shape[0]):
+                for base_columns in range(SAMPLES.shape[1]):
+                    SAMPLES[sample_rows, base_columns] = allele_dict[base_columns][snps[sample_rows, base_columns].astype(str)]
+            SAMPLES = SAMPLES.T
+
+            loclines = ''
+            for i in range(snps.shape[1]):
+                SAMP = "\t".join(SAMPLES[i])
+                loclines = loclines + (
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n"
+                    .format(
+                        CHROM[i],
+                        POS[i],
+                        ID[i],
+                        REF[i],
+                        ALT[i],
+                        QUAL[i],
+                        FILTER[i],
+                        INFO[i],
+                        #FORMAT[i],
+                        SAMP
+                    )
+                )
+            vcfstr = vcfstr + loclines
+
+        # open file handle numbered unless user
+        filename = filename.rsplit(".vcf")[0]
+        fhandle = os.path.join(
+            self.outdir, 
+            "{}.vcf".format(filename),
+        )
+
+        # write to file
+        with open(fhandle, 'w') as out:
+            out.write(vcfstr)
+            if return_dataframe:
+                CHROM_full.append(CHROM)
+                POS_full.append(POS)
+                ID_full.append(ID)
+                REF_full.append(REF)
+                ALT_full.append(ALT)
+                QUAL_full.append(QUAL)
+                FILTER_full.append(FILTER)
+                INFO_full.append(INFO)
+                SAMPLES_full.append(SAMPLES)
+
+        self.written = len(lrange)
+        self.nsnps = nsnps
+        self.vcf = vcfstr
+
+        CHROM_full = np.concatenate(CHROM_full)
+        POS_full = np.concatenate(POS_full)
+        ID_full = np.concatenate(ID_full)
+        REF_full = np.concatenate(REF_full)
+        ALT_full = np.concatenate(ALT_full)
+        QUAL_full = np.concatenate(QUAL_full)
+        FILTER_full = np.concatenate(FILTER_full)
+        INFO_full = np.concatenate(INFO_full)
+        SAMPLES_full = np.concatenate(SAMPLES_full)
+
+        df = pd.DataFrame([CHROM_full,
+                           POS_full,
+                           ID_full,
+                           REF_full,
+                           ALT_full,
+                           QUAL_full,
+                           FILTER_full,
+                           INFO_full],
+                          index=["#CHROM",
+                                   "POS",
+                                   "ID",
+                                   "REF",
+                                   "ALT",
+                                   "QUAL",
+                                   "FILTER",
+                                   "INFO"])
+        samples_df = pd.DataFrame(SAMPLES_full,
+                                  columns=self.names).T
+
+        df = df.append(samples_df).T
+
+        if not return_dataframe:
+            # open file handle numbered unless user
+            fhandle = os.path.join(
+                self.outdir, 
+                "{}.vcf".format(filename),
+            )
+
+            # write to file
+            with open(fhandle, 'w') as out:
+                out.write(vcfstr)
+        else:
+            self.df = df
+
+
+
+
+
 
 
 class Writer:
@@ -87,128 +362,6 @@ class Writer:
                 out.write(phystring)
 
         self.written = len(lrange)
-
-
-
-    def write_loci_to_vcf(self, filename, outdir, idxs=None):
-        """
-        Shapes 
-        """
-        # make outdir if it does not yet exist
-        self.outdir = os.path.realpath(os.path.expanduser(outdir))
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
-
-        # get loci to write
-        if idxs is None:
-            lrange = range(self.seqs.shape[0])
-        else:
-            # if int make it iterable
-            if isinstance(idxs, int):
-                lrange = [idxs]
-            else:
-                lrange = list(idxs)
-
-            # check that idxs exist
-            for loc in lrange:
-                if loc not in range(self.seqs.shape[0]):
-                    raise ipcoalError("idx {} is not in the data set")
-
-        vcfstr = "{}{}{}".format(VCFHEADER, '\t'.join(self.names), '\n')
-
-        # iterate over loci (or single selected locus)
-        for loc in lrange:
-
-            # get locus and convert to bases
-            arr = self.seqs[loc].astype(bytes)
-            arr = convert_intarr_to_bytearr(arr)
-
-            # get snp locations
-            snp_locs = np.where(np.array([len(np.unique(i)) for i in arr.T]) > 1)[0]
-
-            # get (nsamps x nsnps) array of snps
-            snps = arr[:, snp_locs]
-
-            # chrom column (ZERO INDEXED)
-            CHROM = np.repeat(str(loc), snps.shape[1])
-
-            # pos column (ONE INDEXED)
-            POS = (snp_locs+1).astype(str)
-
-            # ID
-            ID = np.repeat('.', snps.shape[1])
-            # REF
-            REF = snps[0].astype(str)
-
-            # ALT
-            ALT = []
-            allele_dict = []
-            for i in range(len(snps.T)):
-                curr_snp = snps.T[i].astype(str)
-                alls = set(curr_snp)
-                alls.remove(REF[i].astype(str))
-                ALT.append(','.join(list(alls)))
-                # add to dict mapping letters to allele numbers for each SNP
-                tmp_allele_dict = {REF[i].astype(str): "0"}
-                for i in range(len(list(alls))):
-                    tmp_allele_dict[list(alls)[i]] = str(i)
-                allele_dict.append(tmp_allele_dict)
-            ALT = np.array(ALT)
-
-            # make a dict mapping letters to allele numbers for each SNP
-
-            # QUAL
-            QUAL = np.repeat('.', snps.shape[1])
-
-            # FILTER
-            FILTER = np.repeat('PASS', snps.shape[1])
-
-            # INFO
-            INFO = np.repeat('.', snps.shape[1])
-
-            # FORMAT
-            #FORMAT = np.repeat('GT', snps.shape[1])
-
-            # SAMPLES
-            SAMPLES = np.zeros((snps.T.shape), dtype=str)
-            for i in range(SAMPLES.shape[0]):
-                for q in range(SAMPLES.shape[1]):
-                    SAMPLES[i, q] = allele_dict[i][snps[q, i].astype(str)]
-
-            loclines = ''
-            for i in range(snps.shape[1]):
-                SAMP = "\t".join(SAMPLES[i])
-                loclines = loclines + (
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n"
-                    .format(
-                        CHROM[i],
-                        POS[i],
-                        ID[i],
-                        REF[i],
-                        ALT[i],
-                        QUAL[i],
-                        FILTER[i],
-                        INFO[i],
-                        #FORMAT[i],
-                        SAMP
-                    )
-                )
-            vcfstr = vcfstr + loclines
-
-        # open file handle numbered unless user
-        filename = filename.rsplit(".vcf")[0]
-        fhandle = os.path.join(
-            self.outdir, 
-            "{}.vcf".format(filename),
-        )
-
-        # write to file
-        with open(fhandle, 'w') as out:
-            out.write(vcfstr)
-
-        self.written = len(lrange)
-        return(vcfstr)
-
 
 
     def write_concat_to_phylip(self, outdir, name, idxs=None):
@@ -395,4 +548,8 @@ begin data;
 # TODO add an attribution of the ipcoal version and list sim parameters.
 VCFHEADER = """
 ##fileformat=VCFv4.2
-#CHROM\tPOS\tID\tREF\tALT QUAL\tFILTER\tINFO\tFORMAT\t"""
+##fileDate={date}
+##source=ipcoal {version}
+##reference={reference_sample}
+#CHROM\tPOS\tID\tREF\tALT QUAL\tFILTER\tINFO\tFORMAT\t
+"""
