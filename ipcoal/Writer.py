@@ -266,6 +266,7 @@ class Writer:
         diploid=None, 
         diploid_map=None,
         seed=None,
+        bgzip=False,
         quiet=False,
         ):
         """
@@ -302,9 +303,16 @@ class Writer:
             outfile = os.path.join(outdir, name.rstrip(".vcf") + ".vcf")
 
             # write to filepath
-            with open(outfile, 'w') as vout:
+            with open(outfile, 'wt') as vout:
+                vcf.build_header()
                 vout.write(vcf.header)
-                vout.write(vcfdf.to_string(header=False))
+                vout.write(vcfdf.to_csv(header=False, index=False, sep="\t"))
+
+            # call bgzip from tabix so that bcftools can be used on VCF.
+            # this will not work with normal gzip compression.
+            if bgzip:
+                import subprocess
+                subprocess.call(["bgzip", outfile])
 
             # report
             if not quiet:
@@ -551,11 +559,24 @@ class VCF:
         self.dindex_map = txf.dindex_map
         self.dnames = txf.names
 
+
+    def build_header(self):
+        """
+        Called AFTER the .df vcf is built.
+        """
         # build the header
+        contig_lines = []
+        for loc in range(self.seqs.shape[0]):
+            arr = self.seqs[loc]
+            if np.any(arr != arr[0], axis=0).sum():
+                contig_lines.append(
+                    "##contig=<ID={},length={}>".format(loc, arr.shape[1])) 
+
         self.header = VCFHEADER.format(**{
             "date": datetime.datetime.now(),
             "version": ipcoal.__version__, 
-            "reference": "the true ancestral simulated sequence",
+            "reference": "true_simulated_ancestral_sequence",
+            "contig_lines": "\n".join(contig_lines)
         })
         self.header = "{}{}\n".format(self.header, "\t".join(self.dnames))
 
@@ -684,7 +705,9 @@ begin data;
 VCFHEADER = """\
 ##fileformat=VCFv4.2
 ##fileDate={date}
-##source=ipcoal {version}
+##source=ipcoal-v.{version}
 ##reference={reference}
+{contig_lines}
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 #CHROM\tPOS\tID\tREF\tALT QUAL\tFILTER\tINFO\tFORMAT\t\
 """
