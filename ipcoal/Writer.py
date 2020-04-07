@@ -313,6 +313,7 @@ class Writer:
             if bgzip:
                 import subprocess
                 subprocess.call(["bgzip", outfile])
+                outfile = outfile.rstrip(".gz") + ".gz"
 
             # report
             if not quiet:
