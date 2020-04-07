@@ -21,10 +21,11 @@ requirements:
     - scipy
     - pandas
     - numba
-    - toytree >=1.1.0
+    - toytree >=1.1.4
     - future
     - msprime
     - raxml
+    - tabix
     # - seq-gen
     # - mrbayes
 
