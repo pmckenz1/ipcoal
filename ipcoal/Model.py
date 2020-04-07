@@ -1119,6 +1119,7 @@ class Model(object):
         diploid=None,
         diploid_map=None,
         seed=None,
+        bgzip=False,
         quiet=False,
         ):
         """
@@ -1141,6 +1142,7 @@ class Model(object):
             diploid, 
             diploid_map, 
             seed,
+            bgzip,
         )
         if name is None:
             return df
