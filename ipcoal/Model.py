@@ -17,7 +17,8 @@ import msprime as ms
 import toytree
 # import warnings
 
-from .utils import get_all_admix_edges, ipcoalError, calculate_pairwise_dist
+from .utils import get_all_admix_edges, ipcoalError
+from .utils import draw_seqview, calculate_pairwise_dist
 from .TreeInfer import TreeInfer
 from .Writer import Writer
 from .SeqModel import SeqModel
@@ -28,7 +29,7 @@ pd.set_option("max_colwidth", 28)
 
 
 
-class Model:
+class Model(object):
     """
     An ipcoal.Model object for defining demographic models for coalesent 
     simulation in msprime. 
@@ -139,11 +140,9 @@ class Model:
         self._legacy_support(kwargs)
 
         # initialize random seed for msprime and seq-gen
-        self.random = np.random.RandomState(seed)
-        self.random_mut = (
-            np.random.RandomState(seed_mutations) if seed_mutations 
-            else self.random
-        )
+        self._init_seed = seed
+        self._init_mseed = seed_mutations
+        self._reset_random_seed()
 
         # hidden argument to turn on debugging
         self._debug = debug
@@ -174,8 +173,13 @@ class Model:
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
         self.recomb = recomb
-        self.recomb_map = (ms.RecombinationMap(recomb_map[0], recomb_map[1]) if recomb_map else None)
-
+        self.recomb_map = (
+            None if recomb_map is None 
+            else ms.RecombinationMap(
+                list(recomb_map['position']), 
+                list(recomb_map['recomb_rate'])
+            )
+        )
 
         # global Ne will be overwritten by Ne attrs in .tree. This sets node.Ne
         self.Ne = Ne
@@ -246,6 +250,7 @@ class Model:
         # to hold the model outputs
         self.df = None
         self.seqs = None
+        self.ancestral_seq = None
 
         # check substitution model kwargs and assert it is a dict
         self.substitution_model = substitution_model
@@ -255,6 +260,101 @@ class Model:
         # so that if a sim call is repeated on a Model it returns the same
         # result instead of being advanced to a new random seed.
         # TODO..
+
+
+    def _reset_random_seed(self):
+        """
+        Called after sim_trees(), sim_snps() or sim_loci to return all seeds
+        to their state during init so that an init'd mod object that was init'd
+        with some random seed will always return the same results even if 
+        run multiple times.
+        """
+        self.random = np.random.RandomState(self._init_seed)
+        self.random_mut = (
+            np.random.RandomState(self._init_mseed) if self._init_mseed 
+            else self.random
+        )
+
+
+    def draw_seqview(self, idx=None, start=None, end=None, width=None, height=None, show_text=False, **kwargs):
+        """
+        Returns a (Canvas, Table) tuple as a drawing of the sequence array.
+
+        Parameters
+        ----------
+        idx: (int)
+            The locus index of a locus to draw. If None and multiple loci are
+            present then it draws the first locus. If SNPs were simulated
+            then all SNPs are concatenated into a single 'locus'.
+        start: (int)
+            Slice start position of sequence array to draw. Default=0.
+        end: (int)
+            Slice end position of sequence array to draw. Default=end.
+        width: (int)
+            Width of the canvas drawing in pixels. Default: auto
+        height: (int)
+            Height of the canvas drawing in pixels. Deafult: auto
+        show_text: (bool)
+            Whether to show base labels on table cells.
+        kwargs: (dict)
+            Additional drawing arguments to toyplot table.
+        """
+        canvas, table = draw_seqview(
+            self, idx, start, end, width, height, show_text, **kwargs)
+        return canvas, table
+
+
+    def draw_genealogy(self, idx=None, **kwargs):
+        """
+        Returns a (Canvas, Axes) tuple as a drawing of the genealogy.
+
+        Parameters
+        ----------
+        idx: (int)
+            The index of the genealogy to draw from the (Model.df) dataframe.
+        """
+        tree = toytree.tree(self.df.genealogy[idx])
+        canvas, axes = tree.draw(ts='c', tip_labels=True, **kwargs)
+        return canvas, axes
+
+
+    def draw_sptree(self, idx, **kwargs):
+        """
+        Returns a 
+        """
+        tree = toytree.tree(self.df.genealogy[idx])
+        canvas, axes = tree.draw(
+            ts='p', 
+            tip_labels=True, 
+            adxmixture_edges=None,
+            **kwargs)
+        return canvas, axes
+
+
+    def draw_demography(self, idx=None, spacer=0.25, ymax=None, **kwargs):
+        """
+        ...
+        """
+        # bail out if self.admixture_edges
+        if self.admixture_edges:
+            raise NotImplementedError(
+                "admixture_edges are not yet supported in demography drawing.")
+
+        # return only the container
+        if idx is None:
+            ctre = toytree.container(self.tree, idx=0, spacer=spacer, **kwargs)
+
+        # return genealogy within container
+        else:
+            ctre = toytree.container(self, idx=idx, spacer=spacer, **kwargs)
+
+        # scale ymax to not require all coalescences
+        if ymax is None:
+            ctre.axes.y.domain.max = self.tree.treenode.height
+        elif isinstance(ymax, (int, float)):
+            ctre.axes.y.domain.max = ymax
+        return ctre.canvas, ctre.axes
+
 
 
     def _legacy_support(self, kwargs):
@@ -690,6 +790,7 @@ class Model:
         # the full sequence array to fill
         bidx = 0
         seqarr = np.zeros((self.nstips, nsites), dtype=np.uint8)
+        aseqarr = np.zeros((1, nsites), dtype=np.uint8)
 
         # iterate over the index of the dataframe to sim for each genealogy
         pseudoindex = 0
@@ -701,7 +802,7 @@ class Model:
             # only simulate data if there is bp 
             if gtlen:
                 # write mstree to newick with original labels mapped on tips
-                nwk = mstree.newick(node_labels=self.tipdict)
+                nwk = mstree.newick(node_labels=self.tipdict, precision=0)
 
                 # parse the newick to toytree
                 gtree = toytree._rawtree(nwk, tree_format=5)
@@ -712,16 +813,18 @@ class Model:
 
                 # store the seqs to locus array
                 seqarr[:, bidx:bidx + gtlen] = seq
+                aseqarr[:, bidx:bidx + gtlen] = mkseq.ancestral_seq
 
                 # record the number of snps in this locus
                 df.loc[idx, 'nsnps'] = (np.any(seq != seq[0], axis=0).sum())
 
-                # advance site counter and store newick string in table
+                # advance site counter
                 bidx += gtlen
+
+                # store newick string 
                 df.loc[idx, "genealogy"] = gtree.write(tree_format=5)
 
-                # TODO: this will skip zero length segment indices that we 
-                # drop, so we use our own index instead...
+                # this will skip zero length segments to we use pseudoindex
                 df.loc[idx, "tidx"] = pseudoindex
                 pseudoindex += 1
 
@@ -729,7 +832,7 @@ class Model:
         df = df.drop(index=df[df.nbps == 0].index).reset_index(drop=True)        
 
         # return the dataframe and seqarr
-        return df, seqarr
+        return df, seqarr, aseqarr
 
 
 
@@ -751,17 +854,22 @@ class Model:
         seqgen (bool):
             Use seqgen as simulator backend. TO BE REMOVED.
         """
-        # allow scientific notation, e.g., 1e6
-        if self.recomb_map:
+        # check conflicting args
+        if self.recomb_map is not None:
             if nsites:
-                raise Exception("nsites specified but recombination map provided. To use recombination map, specify nsites=None.")
+                raise ipcoalError(
+                    "Both nsites and recomb_map cannot be used together since"
+                    "the recomb_map also specifies nsites. To use a recomb_map"
+                    "specify nsites=None.")
             nsites = self.recomb_map.get_length()
 
+        # allow scientific notation, e.g., 1e6
         nsites = int(nsites)
         nloci = int(nloci)        
 
         # multidimensional array of sequence arrays to fill 
         seqarr = np.zeros((nloci, self.nstips, nsites), dtype=np.uint8)
+        aseqarr = np.zeros((nloci, nsites), dtype=np.uint8)
 
         # a list to be concatenated into the final dataframe of genealogies
         dflist = []
@@ -777,10 +885,11 @@ class Model:
         for lidx in range(nloci):
 
             # returns genetree_df and seqarray
-            df, arr = self._sim_locus(nsites, lidx, mkseq)
+            df, arr, anc = self._sim_locus(nsites, lidx, mkseq)
 
             # store seqs in a list for now
             seqarr[lidx] = arr
+            aseqarr[lidx] = anc
 
             # store the genetree df in a list for now
             dflist.append(df)
@@ -795,9 +904,10 @@ class Model:
         # store values to object
         self.df = df
         self.seqs = seqarr
+        self.ancestral_seq = aseqarr
 
-        # allows chaining funcs
-        # return self
+        # reset random seeds
+        self._reset_random_seed()
 
 
 
@@ -812,10 +922,13 @@ class Model:
         -----------
         See sim_loci()
         """
-
-        if self.recomb_map:
+        # check conflicting args
+        if self.recomb_map is not None:
             if nsites:
-                raise Exception("nsites specified but recombination map provided. To use recombination map, specify nsites=None.")
+                raise ipcoalError(
+                    "Both nsites and recomb_map cannot be used together since"
+                    "the recomb_map also specifies nsites. To use a recomb_map"
+                    "specify nsites=None.")
             nsites = self.recomb_map.get_length()
 
         # allow scientific notation, e.g., 1e6
@@ -867,7 +980,7 @@ class Model:
                 # only simulate data if there is bp 
                 if gtlen:
                     # convert nwk to original names
-                    nwk = mstree.newick(node_labels=self.tipdict)
+                    nwk = mstree.newick(node_labels=self.tipdict, precision=0)
                     df.loc[idx, "genealogy"] = nwk
                     df.loc[idx, "tidx"] = mstree.index
 
@@ -930,6 +1043,7 @@ class Model:
         newicks = []
         snpidx = 0
         snparr = np.zeros((self.nstips, nsnps), dtype=np.uint8)
+        ancarr = np.zeros(nsnps, np.uint8)
 
         # continue until we get nsnps
         while 1:
@@ -942,7 +1056,7 @@ class Model:
             mstree = next(msgen).first()
 
             # write mstree to newick with original labels mapped on tips
-            nwk = mstree.newick(node_labels=self.tipdict)
+            nwk = mstree.newick(node_labels=self.tipdict, precision=14)
 
             # parse the newick to toytree
             gtree = toytree._rawtree(nwk, tree_format=5)
@@ -963,11 +1077,12 @@ class Model:
                 if np.all(seq == seq[0]):
                     continue
 
-            # get newick string to store the tree the SNP landed on
-            newick = gtree.write(tree_format=5)
+            # get newick string to store the tree the SNP landed on            
+            newick = gtree.write(tree_format=5, dist_formatter="%0.3f")
 
             # Store result and advance counter
             snparr[:, snpidx] = seq.flatten()
+            ancarr[snpidx] = mkseq.ancestral_seq
             snpidx += 1
             newicks.append(newick)
 
@@ -990,20 +1105,21 @@ class Model:
             ],
         )
         self.seqs = snparr
+        self.ancestral_seq = ancarr
 
-        # allows chaining funcs
-        # return self
+        # reset random seeds
+        self._reset_random_seed()
 
 
 
-    def write_loci_to_vcf(
+    def write_vcf(
         self, 
-        filename=None,
-        outdir="./ipcoal-sims/",
-        reference=None,
+        name=None,
+        outdir=None,
+        diploid=None,
         diploid_map=None,
-        idxs=None,
         seed=None,
+        quiet=False,
         ):
         """
         Write all seq data for each locus to a separate phylip file in a shared
@@ -1018,20 +1134,16 @@ class Model:
             Only used if idx is not None. Set the name of the locus file being
             written. This is used internally to write tmpfiles for TreeInfer.
         """
-
-        # TODO: allow returning as a DF if no filename
-        writer = Writer(self.seqs, self.alpha_ordered_names)
-        writer.write_loci_to_vcf(filename, outdir, idxs, reference)
-        if filename:
-            # report
-            print("wrote {} linkage blocks with {} SNPs to {}/{}.vcf".format(
-                writer.written, writer.nsnps,
-                writer.outdir.rstrip("/"),
-                filename
-                ),
-            )
-        else:
-            return(writer.df)
+        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        df = writer.write_vcf(
+            name, 
+            outdir, 
+            diploid, 
+            diploid_map, 
+            seed,
+        )
+        if name is None:
+            return df
 
 
 
@@ -1041,6 +1153,10 @@ class Model:
         idxs=None, 
         name_prefix=None, 
         name_suffix=None,
+        diploid=False,
+        diploid_map=None,
+        seed=None,
+        quiet=False,
         ):
         """
         Write all seq data for each locus to a separate phylip file in a shared
@@ -1059,22 +1175,28 @@ class Model:
             are written to separate files.
         """
         writer = Writer(self.seqs, self.alpha_ordered_names)
-        writer.write_loci_to_phylip(outdir, idxs, name_prefix, name_suffix)
-
-        # report
-        print("wrote {} loci ({} x {}bp) to {}/[...].phy".format(
-            writer.written, self.seqs.shape[1], self.seqs.shape[2],
-            writer.outdir.rstrip("/")
-            ),
+        writer.write_loci_to_phylip(
+            outdir, 
+            idxs, 
+            name_prefix, 
+            name_suffix,
+            diploid,
+            diploid_map,
+            seed,
+            quiet,
         )
 
 
 
     def write_concat_to_phylip(
         self, 
+        name=None, 
         outdir="./",
-        name="test.phy",
         idxs=None,
+        diploid=None, 
+        diploid_map=None,
+        seed=None,
+        quiet=False,
         ):
         """
         Write all seq data (loci or snps) concated to a single phylip file.
@@ -1085,13 +1207,36 @@ class Model:
             The name/path of the outfile to write. Default is "./test.phy"
         """       
         writer = Writer(self.seqs, self.alpha_ordered_names)
-        writer.write_concat_to_phylip(outdir, name, idxs)
+        phystring = writer.write_concat_to_phylip(
+            outdir, name, idxs, diploid, diploid_map, seed)
+        if name is None:
+            return phystring
 
-        # report 
-        print(
-            "wrote concat loci ({} x {}bp) to {}"
-            .format(writer.shape[0], writer.shape[1], writer.outfile),
-            )
+
+
+    def write_concat_to_nexus(
+        self, 
+        name=None,
+        outdir="./",
+        idxs=None,
+        diploid=None, 
+        diploid_map=None,
+        seed=None,
+        quiet=False
+        ):
+        """
+        Write all seq data (loci or snps) concated to a single phylip file.
+
+        Parameters:
+        -----------
+        outfile (str):
+            The name/path of the outfile to write. Default is "./test.phy"
+        """       
+        writer = Writer(self.seqs, self.alpha_ordered_names)
+        nexstring = writer.write_concat_to_nexus(
+            outdir, name, idxs, diploid, diploid_map, seed)
+        if name is None:
+            return nexstring
 
 
 

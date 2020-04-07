@@ -5,6 +5,7 @@ import datetime
 import itertools
 
 import toytree
+import toyplot
 import numpy as np
 import pandas as pd
 from .jitted import count_matrix_int
@@ -428,6 +429,63 @@ def generate_recomb_map(length, num_pos, num_peaks, height_peaks, even_spacing=T
         "recomb_rate": pos_rates,
     })
     return recomb_map
+
+
+
+
+def draw_seqview(self, idx, start, end, width, height, show_text, **kwargs):
+    # bail out if no seqs array
+    if self.seqs is None:
+        return
+
+    # if SNPs then concatenate
+    if self.seqs.ndim == 2:
+        arr = self.seqs
+    else:
+        if not idx:
+            arr = self.seqs[0]
+        else:
+            arr = self.seqs[idx]
+    arr = arr[:, start:end]
+
+    # auto set a good looking height and width based on arr dims
+    if not height:
+        height = 16 * arr.shape[0]
+    if not width:
+        width = (16 * arr.shape[1]) + 50
+        width += width * .2
+
+    # build canvas and table
+    canvas = toyplot.Canvas(width, height)
+    table = canvas.table(
+        rows=arr.shape[0],
+        columns=arr.shape[1] + 1, 
+        bounds=("10%", "90%", "10%", "90%"),
+        **kwargs,            
+    )
+
+    # style table cells
+    colors = ['red', 'green', 'blue', 'orange', 'grey']
+    bases = ["A", "C", "T", "G", "N"]
+    for cidx in range(4):
+        tdx = np.where(arr[:, :] == cidx)
+        table.cells.cell[tdx[0], tdx[1] + 1].style = {
+            "fill": colors[cidx], "opacity": 0.5}
+        if show_text:
+            table.cells.cell[tdx[0], tdx[1] + 1].data = bases[cidx]
+    table.cells.cell[:, 1:].lstyle = {"font-size": "8px"}
+
+    # dividers
+    table.body.gaps.columns[...] = 1
+    table.body.gaps.rows[...] = 1
+
+    # add taxon labels
+    table.cells.cell[:, 0].data = self.alpha_ordered_names
+    table.cells.cell[:, 0].lstyle = {"text-anchor": "end", "font-size": "11px"}
+    table.cells.cell[:, 0].width = 50
+    return canvas, table
+
+
 
 
 
