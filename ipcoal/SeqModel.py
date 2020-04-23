@@ -72,6 +72,9 @@ class SeqModel():
         self.mu = None
         self.get_model_Q()
 
+        # store the ancestral starting sequence
+        self.ancestral_seq = None
+
         # set the threading layer before any parallel target compilation
         if ipcoal.__forksafe__:
             config.THREADING_LAYER = 'forksafe'
@@ -115,6 +118,7 @@ class SeqModel():
         # set starting sequence to the root node idx
         seqs = np.zeros((tree.nnodes, nsites), dtype=np.int8)
         seqs[-1] = np.random.choice(range(4), nsites, p=self.state_frequencies)
+        self.ancestral_seq = seqs[-1]
 
         # mutate sequence along edges of the tree
         for node in tree.treenode.traverse():
