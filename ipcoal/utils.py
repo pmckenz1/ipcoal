@@ -379,7 +379,7 @@ def generate_recomb_map(length, num_pos, num_peaks, min_rate, max_rate, even_spa
     Generates a discrete recombination map in the shape of a sine wave, with
     troughs going down to min_rate and peaks going up to max_rate. There
     are `num_peaks` peaks in the sine wave, and (`num_peaks`+1) troughs. The
-    rates are unitless, and can be cM/Mb or recombs/bp/gen, it's up to you.
+    rates are unitless, and can be cM/Mb or crossovers/bp/gen, it's up to you.
 
     Parameters:
     -----------
