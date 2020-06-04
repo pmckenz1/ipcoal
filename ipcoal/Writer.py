@@ -65,6 +65,7 @@ class Writer:
         represent hetero sites.
         """
         txf = Transformer(self.seqs, self.names, diploid, diploid_map, seed)
+        txf.transform_seqs()
         self.seqs = txf.seqs
         self.names = txf.names
 
@@ -386,6 +387,24 @@ class Writer:
 
 
 class Transformer:
+    """
+    writer: (class)
+        A writer class object from ipcoal with .seqs and .names.
+    diploid: (bool)
+        Form diploids by randomly joining 2 samples from a population.
+        If no diploid_map is provided then it is expected that individuals
+        in a population are named [prefix]-[0-n] with a matching prefix.
+    diploid_map: (dict) 
+        If using diploid=True but sample names do not match the naming
+        convention then you can use a dictionary to select haploid
+        individuals that should be combined into diploids.
+        Example: diploid_map={'1': [1A-0, 1A-1], '2': [1B-0, 1B-1], ... }
+    idxs: (list, ndarray)
+        A list of ndarray of the indices of a subset of loci to write.
+        Default is to write all loci in .seqs.
+    seed: (int) 
+        seed random number generator.
+    """    
     def __init__(
         self,
         seqs,
@@ -393,24 +412,7 @@ class Transformer:
         diploid=True,
         diploid_map=False, 
         seed=None):
-        """
-        writer: (class)
-            A writer class object from ipcoal with .seqs and .names.
-        diploid: (bool)
-            Form diploids by randomly joining 2 samples from a population.
-            If no diploid_map is provided then it is expected that individuals
-            in a population are named [prefix]-[0-n] with a matching prefix.
-        diploid_map: (dict) 
-            If using diploid=True but sample names do not match the naming
-            convention then you can use a dictionary to select haploid
-            individuals that should be combined into diploids.
-            Example: diploid_map={'1': [1A-0, 1A-1], '2': [1B-0, 1B-1], ... }
-        idxs: (list, ndarray)
-            A list of ndarray of the indices of a subset of loci to write.
-            Default is to write all loci in .seqs.
-        seed: (int) 
-            seed random number generator.
-        """
+
         # set random seed
         if seed:
             np.random.seed(seed)
@@ -424,7 +426,7 @@ class Transformer:
 
         # setup functions
         self.get_diploid_map()
-        self.transform_seqs()
+        # self.transform_seqs()
 
 
     def get_diploid_map(self):
@@ -512,7 +514,7 @@ class Transformer:
         """
         # simply convert to bytes
         if not self.diploid:
-            self.seqs = convert_intarr_to_bytearr(self.seqs.astype(bytes))
+            self.seqs = convert_intarr_to_bytearr(self.seqs)  # .astype(bytes))
 
         # combine alleles to get heterozygotes
         else:
@@ -553,7 +555,7 @@ class VCF:
         self.seqs = seqs
         self.diploid = diploid
         self.diploid_map = diploid_map
-        self.aseqs = convert_intarr_to_bytearr(ancestral.astype(bytes))
+        self.aseqs = convert_intarr_to_bytearr(ancestral)  # .astype(bytes))
 
         # do not combine for ambiguity codes, but get diploid_map and names.
         txf = Transformer(self.seqs, self.names, diploid, diploid_map, seed)
@@ -583,6 +585,9 @@ class VCF:
 
 
     def build_vcf(self):
+        """
+        Build a DF of genotypes and metadata.
+        """
 
         # get nrows (snps) in VCF
         arr = np.concatenate(self.seqs, axis=1)
@@ -615,7 +620,7 @@ class VCF:
         for loc in range(self.seqs.shape[0]):
 
             # get locus and SNP indices
-            arr = convert_intarr_to_bytearr(self.seqs[loc].astype(bytes))
+            arr = convert_intarr_to_bytearr(self.seqs[loc])
             slocs = np.where(np.any(arr != arr[0], axis=0))[0]
             nsnps = len(slocs)
 
@@ -660,13 +665,23 @@ class VCF:
 
 
 
-def convert_intarr_to_bytearr(arr):
-    "An array of ints was turned into bytes and this converts to bytestrings"
-    arr[arr == b"0"] = b"A"
-    arr[arr == b"1"] = b"C"
-    arr[arr == b"2"] = b"G"
-    arr[arr == b"3"] = b"T"
-    return arr
+def convert_intarr_to_bytearr(iarr):
+    "An array of ints converted to bytes"
+    barr = np.zeros(iarr.shape, dtype="S1")
+    barr[iarr == 0] = b"A"
+    barr[iarr == 1] = b"C"
+    barr[iarr == 2] = b"G"
+    barr[iarr == 3] = b"T"
+    return barr
+
+
+# def convert_intarr_to_bytearr(arr):
+#     "An array of ints was turned into bytes and this converts to bytestrings"
+#     arr[arr == b"0"] = b"A"
+#     arr[arr == b"1"] = b"C"
+#     arr[arr == b"2"] = b"G"
+#     arr[arr == b"3"] = b"T"
+#     return arr
 
 
 def convert_intarr_to_bytearr_diploid(arr):
@@ -710,5 +725,5 @@ VCFHEADER = """\
 ##reference={reference}
 {contig_lines}
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
-#CHROM\tPOS\tID\tREF\tALT QUAL\tFILTER\tINFO\tFORMAT\t\
+#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t\
 """
