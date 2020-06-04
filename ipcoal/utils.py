@@ -374,11 +374,12 @@ def jukes_cantor_distance(seq0, seq1):
 
 
 
-def generate_recomb_map(length, num_pos, num_peaks, height_peaks, even_spacing=True):
+def generate_recomb_map(length, num_pos, num_peaks, min_rate, max_rate, even_spacing=True):
     """
     Generates a discrete recombination map in the shape of a sine wave, with
-    troughs going down to 0 cM/Mb and peaks going up to `height_peaks`. There
-    are `num_peaks` peaks in the sine wave, and (`num_peaks`+1) troughs.
+    troughs going down to min_rate and peaks going up to max_rate. There
+    are `num_peaks` peaks in the sine wave, and (`num_peaks`+1) troughs. The
+    rates are unitless, and can be cM/Mb or recombs/bp/gen, it's up to you.
 
     Parameters:
     -----------
@@ -386,13 +387,16 @@ def generate_recomb_map(length, num_pos, num_peaks, height_peaks, even_spacing=T
         The number of base pairs in the chromosome
 
     num_pos (integer):
-        Number of positions at which to have sampled recombination rate.
+        Number of positions delimiting windowed regions with estimated rates.
 
     num_peaks (integer):
         Number of peaks to the sine wave.
 
-    height_peaks (float):
-        The height of the sine wave peaks in cM/Mb
+    min_rate (float):
+        The max rate of the sine wave peaks.
+
+    max_rate (float):
+        The min rate of the sine wave peaks.
 
     even_spacing (True):
         If true, the rate sampling positions are evenly spread. If not, they
@@ -400,10 +404,9 @@ def generate_recomb_map(length, num_pos, num_peaks, height_peaks, even_spacing=T
 
     Returns:
     ---------
-    list
-        Element 0: positions along the chromosome
-        Element 1: recombination rates in cM/Mb
-
+    pandas.DataFrame
+        column 0: positions along the chromosome
+        column 1: recombination rates
     """
     # wavelength
     sampspace_max = num_peaks * 2 * np.pi
@@ -419,8 +422,9 @@ def generate_recomb_map(length, num_pos, num_peaks, height_peaks, even_spacing=T
         ])
         sampspace_x = np.sort(samp_points)
 
-    # ...
-    pos_rates = (-np.cos(sampspace_x) + 1) * (height_peaks / 2)
+    # scale rates between min and max
+    pos_rates = (-np.cos(sampspace_x) + 1) * ((max_rate - min_rate) / 2)
+    pos_rates += min_rate
     pos = sampspace_x * (length / 2 / np.pi / num_peaks)
 
     # convert to a dataframe
@@ -434,6 +438,9 @@ def generate_recomb_map(length, num_pos, num_peaks, height_peaks, even_spacing=T
 
 
 def draw_seqview(self, idx, start, end, width, height, show_text, **kwargs):
+    """
+    Draws a sequence array as a colored toyplot table.
+    """
     # bail out if no seqs array
     if self.seqs is None:
         return
