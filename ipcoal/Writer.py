@@ -65,7 +65,6 @@ class Writer:
         represent hetero sites.
         """
         txf = Transformer(self.seqs, self.names, diploid, diploid_map, seed)
-        txf.transform_seqs()
         self.seqs = txf.seqs
         self.names = txf.names
 
@@ -260,6 +259,148 @@ class Writer:
                       .format(arr.shape[0], arr.shape[1], outfile))
 
 
+    def write_loci_to_hdf5(self, name, outdir, diploid, quiet):
+        """
+        Optional writing option to write output to HDF5 database format 
+        used by ipyrad analysis toolkit. This will check that you have 
+        the h5py package installed and raise an exception if it is missing.
+
+        The .snps.hdf5 output file can be used in ipa.tetrad, 
+        ipa.window_extracter, ipa.treeslider, etc.
+        """
+        # if non-dependency h5py is not installed then raise exception.
+        try:
+            import h5py
+        except ImportError:
+            raise ImportError(
+                "Writing to HDF5 format requires the additional dependency "
+                "'h5py' which you can install with the following command:\n "
+                "  conda install h5py -c conda-forge \n"
+                "After installing you will need to restart your notebook."
+            )
+
+        # get seqs as bytes 
+        txf = Transformer(self.seqs, self.names, diploid, None, None)
+
+        # open h5py database handle
+        if name is None:
+            name = "test"
+        if outdir is None:
+            outdir = "."
+        outdir = os.path.realpath(os.path.expanduser(outdir))
+        h5file = os.path.join(outdir, name + ".seqs.hdf5")
+        with h5py.File(h5file, 'w') as io5:
+
+            # write the concatenated seqs bytes array to 'seqs'
+            io5.create_dataset("phy", data=np.concatenate(txf.seqs, 1).view(np.uint8))
+
+            # write the phymap array
+            nloci = txf.seqs.shape[0]
+            loclen = txf.seqs.shape[2]
+            phymap = io5.create_dataset(
+                "phymap", shape=(nloci, 5), dtype=np.int64)
+            phymap[:, 0] = range(1, nloci + 1)  # 1-indexed 
+            phymap[:, 1] = range(0, nloci * loclen, loclen)
+            phymap[:, 2] = phymap[:, 1] + loclen
+            phymap[:, 3] = 0
+            phymap[:, 4] = 0
+
+            # placeholders for now
+            io5.create_dataset("scaffold_lengths", data=np.repeat(loclen, nloci))
+            io5.create_dataset("scaffold_names", data=(
+                ['loc-{}'.format(i).encode() for i in range(1, nloci + 1)]))
+
+            # meta info stored to phymap
+            phymap.attrs["columns"] = (b'chroms', b'phy0', b'phy1', b'pos0', b'pos1')
+            phymap.attrs["phynames"] = [i.encode() for i in txf.names]
+            phymap.attrs["reference"] = 'ipcoal-simulation'
+
+        # report
+        if not quiet:
+            print("wrote {} loci to {}".format(nloci, h5file))
+
+
+    def write_snps_to_hdf5(self, name, outdir, diploid, quiet):
+        """
+
+        """
+        # if non-dependency h5py is not installed then raise exception.
+        try:
+            import h5py
+        except ImportError:
+            raise ImportError(
+                "Writing to HDF5 format requires the additional dependency "
+                "'h5py' which you can install with the following command:\n "
+                "  conda install h5py -c conda-forge \n"
+                "After installing you will need to restart your notebook."
+            )
+
+        # reshape SNPs to be like loci.
+        if self.seqs.ndim == 2:
+            self.seqs = self.seqs.T.reshape(
+                self.seqs.shape[1], self.seqs.shape[0], 1)
+            self.ancestral_seq = self.ancestral_seq.reshape(
+                self.ancestral_seq.size, 1)
+
+        # get seqs as bytes 
+        txf = Transformer(self.seqs, self.names, diploid, None, None)
+
+        # get indices of variable sitex
+        arr = np.concatenate(txf.seqs, axis=1)
+        varsites = np.where(np.any(arr != arr[0], axis=0))[0]
+        nsites = varsites.size
+
+        # get genos as string array [0|0, 0|1, 1|1, ...]
+        genos = Genos(self.seqs, self.ancestral_seq, varsites, txf.dindex_map)
+        gmat = genos.get_genos_matrix()
+
+        # get snpsmap ()
+        smap = np.zeros((nsites, 5), dtype=np.uint32)
+        gidx = 0
+        for loc in range(self.seqs.shape[0]):
+            larr = self.seqs[loc]
+            lvar = np.where(np.any(larr != larr[0], axis=0))[0]
+            lidx = 0
+            for snpidx in lvar:
+                smap[gidx] = loc + 1, lidx, snpidx, 0, gidx + 1
+                lidx += 1
+                gidx += 1
+
+        # open h5py database handle
+        if name is None:
+            name = "test"
+        if outdir is None:
+            outdir = "."
+        outdir = os.path.realpath(os.path.expanduser(outdir))
+        h5file = os.path.join(outdir, name + ".snps.hdf5")
+
+        with h5py.File(h5file, 'w') as io5:
+
+            # write the concatenated seqs bytes array to 'seqs'
+            snps = io5.create_dataset(
+                name="snps",
+                data=arr[:, varsites].view(np.uint8),
+            )
+
+            # write snpsmap [chrom1, locsnpidx0, locsnppos0, 0, snpidx1]
+            snpsmap = io5.create_dataset("snpsmap", data=smap)
+
+            # genotype calls (derived/ancestral) compared to known ancestral
+            io5.create_dataset(name="genos", data=gmat)
+
+            # placeholders for now
+            io5.create_dataset(name="psuedoref", shape=(nsites, 2))
+
+            # meta info stored to phymap
+            snpsmap.attrs["columns"] = (
+                b'locus', b'locidx', b'locpos', b'scaf', b'scafpos')
+            snps.attrs['names'] = [i.encode() for i in txf.names]
+
+        # report
+        if not quiet:
+            print("wrote {} SNPs to {}".format(nsites, h5file))
+
+
     def write_vcf(
         self, 
         name=None, 
@@ -385,6 +526,69 @@ class Writer:
     #             file.write(line)
 
 
+class Genos:
+    """
+
+    """
+    def __init__(self, seqs, anc, snpidxs, dindex_map):
+
+        self.seqs = seqs
+        self.anc = anc
+        self.snpidxs = snpidxs
+        self.dindex_map = dindex_map
+
+
+    def get_genos_matrix(self):
+        """
+        Returns genos matrix as ints array (nsnps, nsamples, 2)
+        """
+        # concatenate seqs to -1 dim
+        aseq = np.concatenate(self.anc)
+        seqs = np.concatenate(self.seqs, axis=1)
+
+        # subsample to varible sites if SNPs only
+        if self.snpidxs is not None:
+            aseq = aseq[self.snpidxs]
+            seqs = seqs[:, self.snpidxs]
+
+        # get genotype calls
+        genos = np.invert(seqs == aseq).astype(int)
+
+        # shape into char array 
+        gmat = np.zeros((seqs.shape[1], len(self.dindex_map), 2), dtype=np.uint8)
+        for idx in self.dindex_map:
+            left, right = self.dindex_map[idx]
+            gmat[:, idx, :] = genos[(left, right), :].T
+        return gmat
+
+
+
+    def get_genos_string(self):
+        """
+        Return string representation of genotypes, e.g., 0|0, 1|0, ...
+        """
+        # concatenate seqs to -1 dim
+        aseq = np.concatenate(self.anc)
+        seqs = np.concatenate(self.seqs, axis=1)
+
+        # subsample to varible sites if SNPs only
+        if self.snpidxs is not None:
+            aseq = aseq[self.snpidxs]
+            seqs = seqs[:, self.snpidxs]
+
+        # get genotype calls
+        genos = np.invert(seqs == aseq).astype(int)
+
+        # shape into char array 
+        if self.dindex_map is None:
+            gmat = np.char.array(genos) + b"|" + np.char.array(genos)
+        else:
+            gmat = np.chararray(seqs.shape, 3)
+            for idx in self.dindex_map:
+                left, right = self.dindex_map[idx]
+                gmat[idx] = ["{}|{}".format(i, j) for (i, j) in zip(genos)]
+        return gmat
+
 
 class Transformer:
     """
@@ -426,12 +630,17 @@ class Transformer:
 
         # setup functions
         self.get_diploid_map()
-        # self.transform_seqs()
+        self.transform_seqs()
 
 
     def get_diploid_map(self):
-        "randomly sample two haploids to make diploids without replacement."
+        """
+        Randomly sample two haploids to make diploids without replacement.
 
+        ... this isn't really necessary, it is already assumed that samples
+        within a population are panmictic, so we can just sample 2 samples
+        at a time in order from 0-nsamples. TODO.
+        """
         if self.diploid:
 
             # try to auto-generate a diploid map
@@ -506,6 +715,12 @@ class Transformer:
                     "all values in diploid map must be unique.")
 
 
+    def get_genos(self):
+        """
+        gets geno calls from 
+        """
+
+
     def transform_seqs(self):
         """
         Transforms seqs from ints to strings. If using diploid map this also
@@ -539,7 +754,6 @@ class Transformer:
             self.names = self.dnames
             del self.dseqs
             del self.dnames
-
 
 
 class VCF:

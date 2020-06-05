@@ -1112,13 +1112,35 @@ class Model(object):
 
 
 
+    def write_loci_to_hdf5(self, name=None, outdir=None, diploid=False, quiet=False):
+        """
+        Writes a database file in .seqs.hdf5 format which is compatible with
+        the ipyrad-analysis toolkit. This requires the additional dependency
+        h5py and will raise an exception if the library is missing.
+        """
+        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        writer.write_loci_to_hdf5(name, outdir, diploid, quiet=False)
+
+
+
+    def write_snps_to_hdf5(self, name=None, outdir=None, diploid=False, quiet=False):
+        """
+        Writes a database file in .snps.hdf5 format which is compatible with
+        the ipyrad-analysis toolkit. This requires the additional dependency
+        h5py and will raise an exception if the library is missing.
+        """
+        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        writer.write_snps_to_hdf5(name, outdir, diploid, quiet=False)
+
+
+
     def write_vcf(
         self, 
         name=None,
-        outdir=None,
+        outdir="./",
         diploid=None,
-        diploid_map=None,
-        seed=None,
+        # diploid_map=None,
+        # seed=None,
         bgzip=False,
         quiet=False,
         ):
@@ -1140,8 +1162,8 @@ class Model(object):
             name, 
             outdir, 
             diploid, 
-            diploid_map, 
-            seed,
+            # diploid_map, 
+            # seed,
             bgzip,
         )
         if name is None:
@@ -1151,7 +1173,7 @@ class Model(object):
 
     def write_loci_to_phylip(
         self, 
-        outdir="./ipcoal-sims/", 
+        outdir="./",
         idxs=None, 
         name_prefix=None, 
         name_suffix=None,
@@ -1172,7 +1194,7 @@ class Model(object):
         outfile (str):
             Only used if idx is not None. Set the name of the locus file being
             written. This is used internally to write tmpfiles for TreeInfer.
-        idx (int):
+        idxs (int):
             To write a single locus file provide the idx. If None then all loci
             are written to separate files.
         """
