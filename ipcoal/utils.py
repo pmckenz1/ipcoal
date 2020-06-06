@@ -474,10 +474,19 @@ def draw_seqview(self, idx, start, end, width, height, show_text, **kwargs):
     # style table cells
     colors = ['red', 'green', 'blue', 'orange', 'grey']
     bases = ["A", "C", "T", "G", "N"]
-    for cidx in range(4):
-        tdx = np.where(arr[:, :] == cidx)
+    for cidx in range(5):
+
+        # select bases in 0-3 or 9
+        if cidx == 4:
+            tdx = np.where(arr[:, :] == 9)
+        else:
+            tdx = np.where(arr[:, :] == cidx)
+
+        # color the cells
         table.cells.cell[tdx[0], tdx[1] + 1].style = {
             "fill": colors[cidx], "opacity": 0.5}
+
+        # optionally overlay text
         if show_text:
             table.cells.cell[tdx[0], tdx[1] + 1].data = bases[cidx]
     table.cells.cell[:, 1:].lstyle = {"font-size": "8px"}
