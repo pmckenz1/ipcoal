@@ -314,21 +314,21 @@ class Model(object):
             The index of the genealogy to draw from the (Model.df) dataframe.
         """
         tree = toytree.tree(self.df.genealogy[idx])
-        canvas, axes = tree.draw(ts='c', tip_labels=True, **kwargs)
-        return canvas, axes
+        canvas, axes, mark = tree.draw(ts='c', tip_labels=True, **kwargs)
+        return canvas, axes, mark
 
 
-    def draw_sptree(self, idx, **kwargs):
+    def draw_sptree(self, **kwargs):
         """
         Returns a 
         """
-        tree = toytree.tree(self.df.genealogy[idx])
-        canvas, axes = tree.draw(
+        # tree = toytree.tree(self.df.genealogy[idx])
+        canvas, axes, mark = self.tree.draw(
             ts='p', 
             tip_labels=True, 
             adxmixture_edges=None,
             **kwargs)
-        return canvas, axes
+        return canvas, axes, mark
 
 
     def draw_demography(self, idx=None, spacer=0.25, ymax=None, **kwargs):
@@ -362,6 +362,7 @@ class Model(object):
             print("The parameter name '{}' is not supported.\nPlease check "
                   "the documentation, argument names may have changed."
                   .format(i))
+
 
 
     def get_substitution_model_summary(self):
@@ -1198,7 +1199,7 @@ class Model(object):
             To write a single locus file provide the idx. If None then all loci
             are written to separate files.
         """
-        writer = Writer(self.seqs, self.alpha_ordered_names)
+        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
         writer.write_loci_to_phylip(
             outdir, 
             idxs, 
@@ -1230,7 +1231,7 @@ class Model(object):
         outfile (str):
             The name/path of the outfile to write. Default is "./test.phy"
         """       
-        writer = Writer(self.seqs, self.alpha_ordered_names)
+        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
         phystring = writer.write_concat_to_phylip(
             outdir, name, idxs, diploid, diploid_map, seed)
         if name is None:
@@ -1256,7 +1257,7 @@ class Model(object):
         outfile (str):
             The name/path of the outfile to write. Default is "./test.phy"
         """       
-        writer = Writer(self.seqs, self.alpha_ordered_names)
+        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
         nexstring = writer.write_concat_to_nexus(
             outdir, name, idxs, diploid, diploid_map, seed)
         if name is None:
@@ -1422,3 +1423,64 @@ class Model(object):
             raise ipcoalError("You must first run .sim_snps() or .sim_loci")
 
         return calculate_pairwise_dist(self, model)
+
+
+
+    def apply_missing_mask(self, coverage=1.0, cut1=0, cut2=0, distance=0.0, seed=None):
+        """
+        Mask data by marking it as missing based on a number of possible 
+        models for dropout. 
+
+        Parameters:
+        -----------
+        coverage (float):
+            This emulates sequencing coverage. A value of 1.0 means that all
+            loci have a 100% probabilty of being sampled. A value of 0.5 
+            would lead to 50% of (haploid) samples to be missing at every 
+            locus due to sequencing coverage. The resulting pattern of missing
+            data is stochastic.
+
+        cut1 (int):
+            This emulates allele dropout by restriction digestion (e.g., a 
+            process that could occur in RAD-seq datasets). This is the 
+            length of the cutsite at the 5' end. When the value is 0 no
+            dropout will occur. If it is 10 then the haplotype will be 
+            dropped if any mutations occurred within the first 10 bases of 
+            this allele relative to the known ancestral sequence. 
+
+        cut2 (int):
+            The same as cut 1 but applies to the 3' end to allow emulating 
+            double-digest methods.
+
+        distance (float):
+            Not Yet Implemented. 
+            This emulates sequence divergence as would apply to RNA bait 
+            capture approaches where capture decreases with disimilarity from
+            the bait sequence.
+        """
+        # do not allow user to double-apply
+        if 9 in self.seqs:
+            raise ipcoalError(
+                "Missing data can only be applied to a dataset once.")
+
+        # fix a seed generator
+        if seed:
+            np.random.seed(seed)
+
+        # iterate over each locus converting missing to 9
+        for loc in range(self.seqs.shape[0]):
+            arr = self.seqs[loc]
+
+            # apply coverage mask
+            mask = np.random.binomial(1, 1.0 - coverage, arr.shape[0]).astype(bool)
+            arr[mask, :] = 9
+
+            # apply dropout cut1
+            if cut1:
+                mask = np.any(arr[:, :cut1] != self.ancestral_seq[loc, :cut1], axis=1)
+                arr[mask, :] = 9
+
+            # apply dropout cut2
+            if cut2:
+                mask = np.any(arr[:, -cut2:] != self.ancestral_seq[loc, -cut2:], axis=1)
+                arr[mask, :] = 9
