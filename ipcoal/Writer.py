@@ -348,10 +348,11 @@ class Writer:
         txf = Transformer(self.seqs, self.names, diploid)
         tarr = np.concatenate(txf.seqs, axis=1)
 
-        # get indices of variable sites while allowing missing data
+        # get indices of variable sites (while allowing missing data)
         arr = np.concatenate(self.seqs, axis=1)
         marr = np.ma.array(data=arr, mask=(arr == 9))
-        varsites = np.where(np.any(marr != marr[0], axis=0))[0]
+        common = marr.mean(axis=0).round().astype(int)
+        varsites = np.where(np.any(marr != common, axis=0).data)[0]
         nsites = varsites.size
 
         # get genos as string array [0|0, 0|1, 1|1, ...]
@@ -366,10 +367,13 @@ class Writer:
         gidx = 0
         for loc in range(self.seqs.shape[0]):
 
-            # mask array
+            # mask array to select only variable sites (while allow missing)
             larr = np.ma.array(self.seqs[loc], mask=(self.seqs[loc] == 9))
-            lvar = np.where(np.any(larr != larr[0], axis=0))[0]
+            lcom = larr.mean(axis=0).round().astype(int)
+            lvar = np.where(np.any(larr != lcom, axis=0).data)[0]
             lidx = 0
+
+            # enter variants to snpmap
             for snpidx in lvar:
                 smap[gidx] = loc + 1, lidx, snpidx, 0, gidx + 1
                 lidx += 1
@@ -411,16 +415,7 @@ class Writer:
             print("wrote {} SNPs to {}".format(nsites, h5file))
 
 
-    def write_vcf(
-        self, 
-        name=None, 
-        outdir=None, 
-        diploid=None, 
-        diploid_map=None,
-        seed=None,
-        bgzip=False,
-        quiet=False,
-        ):
+    def write_vcf(self, name=None, outdir=None, diploid=None, bgzip=False, quiet=False):
         """
         ...
         """
@@ -436,9 +431,8 @@ class Writer:
             self.seqs, 
             self.names, 
             diploid, 
-            diploid_map, 
             self.ancestral_seq,
-            seed)
+        )
         vcfdf = vcf.build_vcf()
 
         # return dataframe if no filename
@@ -561,8 +555,23 @@ class Genos:
             aseq = aseq[self.snpidxs]
             tseq = tseq[:, self.snpidxs]
 
-        # get genotype calls
+        # get genotype calls (derived or ancestral)
         genos = np.invert(tseq == aseq).astype(int)
+
+        # derived (1) or another derived (2); compare to the low allele in data
+        # this does not worry about which is the more common allele, since we
+        # expect any downstream method that will use 'geno' calls will simply
+        # use the presence of multiple genos as a filtering mechanism. 
+        # Thus, the x/0 in genos still just means derived/ancestral.
+
+        # get derived alleles at every site
+        marr = np.ma.array(data=tseq, mask=genos == 0)
+
+        # if any derived alleles are not the max allele at that site
+        maxa = marr.max(axis=0)
+        alts = marr != maxa
+        alts[marr.mask] = False
+        genos[alts] = 2
 
         # shape into char array 
         gmat = np.zeros((tseq.shape[1], len(self.dindex_map), 2), dtype=np.uint8)
@@ -588,7 +597,14 @@ class Genos:
 
         # get genotype calls (inverts data but not mask)
         tseqm = np.ma.array(tseq, mask=(tseq == 9))
-        genos = np.invert(tseqm == aseq)  # .astype(int)
+        genos = np.invert(tseqm == aseq).astype(int)
+
+        # if any derived alleles are not the max allele at that site
+        marr = np.ma.array(data=tseq, mask=(genos == 0) | (tseq == 9))
+        maxa = marr.max(axis=0)
+        alts = marr != maxa
+        alts[marr.mask] = False
+        genos[alts] = 2
 
         # shape into char array 
         gmat = np.zeros((tseq.shape[1], len(self.dindex_map), 2), dtype=np.uint8)
@@ -695,6 +711,11 @@ class Transformer:
             # arrange into an IMAP dictionary: {r0: [r0-0, r0-1, r0-2, ...]}
             imap = {i[0]: list(i[1]) for i in groups}
 
+            # if all nsamples are 2 then we will not add name suffix
+            suffix = True
+            if all([len(imap[i]) == 2 for i in imap]):
+                suffix = False
+
             # iterate over tips and increment diploids and haploid pair idxs
             didx = 0
             for sppname in imap:
@@ -720,7 +741,10 @@ class Transformer:
                     pidx1 = self.names.index(p1)
 
                     # fill dicts
-                    newname = "{}-{}-{}".format(sppname, pidx, pidx + 1)
+                    if suffix:
+                        newname = "{}-{}".format(sppname, int(pidx / 2))
+                    else:
+                        newname = sppname
                     self.diploid_map[newname] = (p0, p1)
                     self.dindex_map[didx] = (pidx0, pidx1)
                     didx += 1
