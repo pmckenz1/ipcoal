@@ -1140,8 +1140,6 @@ class Model(object):
         name=None,
         outdir="./",
         diploid=None,
-        # diploid_map=None,
-        # seed=None,
         bgzip=False,
         quiet=False,
         ):
@@ -1163,8 +1161,6 @@ class Model(object):
             name, 
             outdir, 
             diploid, 
-            # diploid_map, 
-            # seed,
             bgzip,
         )
         if name is None:
