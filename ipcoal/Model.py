@@ -1422,7 +1422,7 @@ class Model(object):
 
 
 
-    def apply_missing_mask(self, coverage=1.0, cut1=0, cut2=0, distance=0.0, seed=None):
+    def apply_missing_mask(self, coverage=1.0, cut1=0, cut2=0, distance=0.0, coverage_type='locus', seed=None):
         """
         Mask data by marking it as missing based on a number of possible 
         models for dropout. 
@@ -1453,6 +1453,13 @@ class Model(object):
             This emulates sequence divergence as would apply to RNA bait 
             capture approaches where capture decreases with disimilarity from
             the bait sequence.
+
+        coverage_type (str):
+            By default coverage assumes that reads cover the entire locus,
+            e.g., RAD-seq, but alternatively you may wish for coverage to 
+            apply to every site randomly. This can be toggled by changing
+            the coverage_type='locus' to coverage_type='site'
+
         """
         # do not allow user to double-apply
         if 9 in self.seqs:
@@ -1468,8 +1475,14 @@ class Model(object):
             arr = self.seqs[loc]
 
             # apply coverage mask
-            mask = np.random.binomial(1, 1.0 - coverage, arr.shape[0]).astype(bool)
-            arr[mask, :] = 9
+            if coverage_type == "site":
+                mask = np.random.binomial(1, 1.0 - coverage, arr.shape).astype(bool)
+                arr[mask] = 9
+
+            # implement 'locus' coverage as default
+            else:
+                mask = np.random.binomial(1, 1.0 - coverage, arr.shape[0]).astype(bool)
+                arr[mask, :] = 9
 
             # apply dropout cut1
             if cut1:
