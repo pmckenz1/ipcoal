@@ -11,6 +11,9 @@ from itertools import groupby
 from .utils import ipcoalError
 
 
+"""
+Use Genos in VCF to make it much faster.
+"""
 
 
 class Writer:
@@ -305,7 +308,7 @@ class Writer:
             phymap[:, 1] = range(0, nloci * loclen, loclen)
             phymap[:, 2] = phymap[:, 1] + loclen
             phymap[:, 3] = 0
-            phymap[:, 4] = 0
+            phymap[:, 4] = phymap[:, 1] + loclen
 
             # placeholders for now
             io5.create_dataset("scaffold_lengths", data=np.repeat(loclen, nloci))
@@ -417,7 +420,12 @@ class Writer:
 
     def write_vcf(self, name=None, outdir=None, diploid=None, bgzip=False, quiet=False):
         """
-        ...
+        Passes data to VCF object for conversion and writes resulting table 
+        to CSV. 
+
+        TODO: bgzip option may be overkill, build_vcf could be much faster
+        using methods like Genos.
+
         """
         # reshape SNPs array to be like loci 
         if self.seqs.ndim == 2:
