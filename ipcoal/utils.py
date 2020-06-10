@@ -492,8 +492,8 @@ def draw_seqview(self, idx, start, end, width, height, show_text, **kwargs):
     table.cells.cell[:, 1:].lstyle = {"font-size": "8px"}
 
     # dividers
-    table.body.gaps.columns[...] = 1
-    table.body.gaps.rows[...] = 1
+    table.body.gaps.columns[...] = 1.5
+    table.body.gaps.rows[...] = 1.5
 
     # add taxon labels
     table.cells.cell[:, 0].data = self.alpha_ordered_names
