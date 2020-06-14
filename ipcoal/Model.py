@@ -1175,8 +1175,6 @@ class Model(object):
         name_prefix=None, 
         name_suffix=None,
         diploid=False,
-        diploid_map=None,
-        seed=None,
         quiet=False,
         ):
         """
@@ -1202,8 +1200,6 @@ class Model(object):
             name_prefix, 
             name_suffix,
             diploid,
-            diploid_map,
-            seed,
             quiet,
         )
 
@@ -1228,8 +1224,7 @@ class Model(object):
             The name/path of the outfile to write. Default is "./test.phy"
         """       
         writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
-        phystring = writer.write_concat_to_phylip(
-            outdir, name, idxs, diploid, diploid_map, seed)
+        phystring = writer.write_concat_to_phylip(outdir, name, idxs, diploid)           
         if name is None:
             return phystring
 
@@ -1254,8 +1249,7 @@ class Model(object):
             The name/path of the outfile to write. Default is "./test.phy"
         """       
         writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
-        nexstring = writer.write_concat_to_nexus(
-            outdir, name, idxs, diploid, diploid_map, seed)
+        nexstring = writer.write_concat_to_nexus(outdir, name, idxs, diploid)            
         if name is None:
             return nexstring
 

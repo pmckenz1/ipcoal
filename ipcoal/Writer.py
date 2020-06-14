@@ -119,7 +119,7 @@ class Writer:
         self._subset_loci(idxs)
 
         # self.seqs and self.names are reduced to diploid samples
-        self._transform_seqs(diploid, diploid_map, seed)
+        self._transform_seqs(diploid)
 
         # iterate over loci writing each one individually
         for loc in self.idxs:
@@ -177,7 +177,7 @@ class Writer:
         self._subset_loci(idxs)
 
         # transform data to string type and ploidy
-        self._transform_seqs(diploid, diploid_map, seed)
+        self._transform_seqs(diploid)
 
         # concatenate sequences
         arr = np.concatenate(self.seqs, axis=1)
@@ -235,7 +235,7 @@ class Writer:
         self._subset_loci(idxs)
 
         # transform data to string type and ploidy
-        self._transform_seqs(diploid, diploid_map, seed)
+        self._transform_seqs(diploid)
 
         # concatenate sequences
         arr = np.concatenate(self.seqs, axis=1)
