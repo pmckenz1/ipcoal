@@ -1211,8 +1211,6 @@ class Model(object):
         outdir="./",
         idxs=None,
         diploid=None, 
-        diploid_map=None,
-        seed=None,
         quiet=False,
         ):
         """
@@ -1236,8 +1234,6 @@ class Model(object):
         outdir="./",
         idxs=None,
         diploid=None, 
-        diploid_map=None,
-        seed=None,
         quiet=False
         ):
         """
