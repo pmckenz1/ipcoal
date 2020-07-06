@@ -35,7 +35,9 @@ class Writer:
         self.outdir = None
         self.outfile = None
         self.idxs = None
-        self.ancestral_seq = ancestral_seq.copy()
+        self.ancestral_seq = None
+        if ancestral_seq is not None:
+            self.ancestral_seq = ancestral_seq.copy()
 
 
     def _subset_loci(self, idxs):
