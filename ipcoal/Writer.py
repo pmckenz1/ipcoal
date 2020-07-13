@@ -6,9 +6,14 @@ import datetime
 import numpy as np
 import pandas as pd
 import ipcoal
+
+from itertools import groupby
 from .utils import ipcoalError
 
 
+"""
+Use Genos in VCF to make it much faster.
+"""
 
 
 class Writer:
@@ -30,7 +35,9 @@ class Writer:
         self.outdir = None
         self.outfile = None
         self.idxs = None
-        self.ancestral_seq = ancestral_seq
+        self.ancestral_seq = None
+        if ancestral_seq is not None:
+            self.ancestral_seq = ancestral_seq.copy()
 
 
     def _subset_loci(self, idxs):
@@ -58,13 +65,13 @@ class Writer:
             self.idxs = range(self.seqs.shape[0])
 
 
-    def _transform_seqs(self, diploid, diploid_map, seed):
+    def _transform_seqs(self, diploid):
         """
         Transform seqs from int type to str type. Also optionally combine 
         haploid samples into diploids and use IUPAC ambiguity codes to 
         represent hetero sites.
         """
-        txf = Transformer(self.seqs, self.names, diploid, diploid_map, seed)
+        txf = Transformer(self.seqs, self.names, diploid)
         self.seqs = txf.seqs
         self.names = txf.names
 
@@ -114,7 +121,7 @@ class Writer:
         self._subset_loci(idxs)
 
         # self.seqs and self.names are reduced to diploid samples
-        self._transform_seqs(diploid, diploid_map, seed)
+        self._transform_seqs(diploid)
 
         # iterate over loci writing each one individually
         for loc in self.idxs:
@@ -172,7 +179,7 @@ class Writer:
         self._subset_loci(idxs)
 
         # transform data to string type and ploidy
-        self._transform_seqs(diploid, diploid_map, seed)
+        self._transform_seqs(diploid)
 
         # concatenate sequences
         arr = np.concatenate(self.seqs, axis=1)
@@ -230,7 +237,7 @@ class Writer:
         self._subset_loci(idxs)
 
         # transform data to string type and ploidy
-        self._transform_seqs(diploid, diploid_map, seed)
+        self._transform_seqs(diploid)
 
         # concatenate sequences
         arr = np.concatenate(self.seqs, axis=1)
@@ -259,18 +266,168 @@ class Writer:
                       .format(arr.shape[0], arr.shape[1], outfile))
 
 
-    def write_vcf(
-        self, 
-        name=None, 
-        outdir=None, 
-        diploid=None, 
-        diploid_map=None,
-        seed=None,
-        bgzip=False,
-        quiet=False,
-        ):
+    def write_loci_to_hdf5(self, name, outdir, diploid, quiet):
         """
-        ...
+        Optional writing option to write output to HDF5 database format 
+        used by ipyrad analysis toolkit. This will check that you have 
+        the h5py package installed and raise an exception if it is missing.
+
+        The .snps.hdf5 output file can be used in ipa.tetrad, 
+        ipa.window_extracter, ipa.treeslider, etc.
+        """
+        # if non-dependency h5py is not installed then raise exception.
+        try:
+            import h5py
+        except ImportError:
+            raise ImportError(
+                "Writing to HDF5 format requires the additional dependency "
+                "'h5py' which you can install with the following command:\n "
+                "  conda install h5py -c conda-forge \n"
+                "After installing you will need to restart your notebook."
+            )
+
+        # get seqs as bytes 
+        txf = Transformer(self.seqs, self.names, diploid)
+
+        # open h5py database handle
+        if name is None:
+            name = "test"
+        if outdir is None:
+            outdir = "."
+        outdir = os.path.realpath(os.path.expanduser(outdir))
+        h5file = os.path.join(outdir, name + ".seqs.hdf5")
+        with h5py.File(h5file, 'w') as io5:
+
+            # write the concatenated seqs bytes array to 'seqs'
+            io5.create_dataset("phy", data=np.concatenate(txf.seqs, 1).view(np.uint8))
+
+            # write the phymap array
+            nloci = txf.seqs.shape[0]
+            loclen = txf.seqs.shape[2]
+            phymap = io5.create_dataset(
+                "phymap", shape=(nloci, 5), dtype=np.int64)
+            phymap[:, 0] = range(1, nloci + 1)  # 1-indexed 
+            phymap[:, 1] = range(0, nloci * loclen, loclen)
+            phymap[:, 2] = phymap[:, 1] + loclen
+            phymap[:, 3] = 0
+            phymap[:, 4] = phymap[:, 1] + loclen
+
+            # placeholders for now
+            io5.create_dataset("scaffold_lengths", data=np.repeat(loclen, nloci))
+            io5.create_dataset("scaffold_names", data=(
+                ['loc-{}'.format(i).encode() for i in range(1, nloci + 1)]))
+
+            # meta info stored to phymap
+            phymap.attrs["columns"] = (b'chroms', b'phy0', b'phy1', b'pos0', b'pos1')
+            phymap.attrs["phynames"] = [i.encode() for i in txf.names]
+            phymap.attrs["reference"] = 'ipcoal-simulation'
+
+        # report
+        if not quiet:
+            print("wrote {} loci to {}".format(nloci, h5file))
+
+
+    def write_snps_to_hdf5(self, name, outdir, diploid, quiet):
+        """
+
+        """
+        # if non-dependency h5py is not installed then raise exception.
+        try:
+            import h5py
+        except ImportError:
+            raise ImportError(
+                "Writing to HDF5 format requires the additional dependency "
+                "'h5py' which you can install with the following command:\n "
+                "  conda install h5py -c conda-forge \n"
+                "After installing you will need to restart your notebook."
+            )
+
+        # reshape SNPs to be like loci.
+        if self.seqs.ndim == 2:
+            self.seqs = self.seqs.T.reshape(
+                self.seqs.shape[1], self.seqs.shape[0], 1)
+            self.ancestral_seq = self.ancestral_seq.reshape(
+                self.ancestral_seq.size, 1)
+
+        # get seqs as bytes (with optional diploid collapsing)
+        txf = Transformer(self.seqs, self.names, diploid)
+        tarr = np.concatenate(txf.seqs, axis=1)
+
+        # get indices of variable sites (while allowing missing data)
+        arr = np.concatenate(self.seqs, axis=1)
+        marr = np.ma.array(data=arr, mask=(arr == 9))
+        common = marr.mean(axis=0).round().astype(int)
+        varsites = np.where(np.any(marr != common, axis=0).data)[0]
+        nsites = varsites.size
+
+        # get genos as string array [0|0, 0|1, 1|1, ...]
+        genos = Genos(arr, self.ancestral_seq, varsites, txf.dindex_map)
+        if 9 in arr:
+            gmat = genos.get_genos_matrix_missing()
+        else:
+            gmat = genos.get_genos_matrix()
+
+        # get snpsmap (chrom, locidx, etc.)
+        smap = np.zeros((nsites, 5), dtype=np.uint32)
+        gidx = 0
+        for loc in range(self.seqs.shape[0]):
+
+            # mask array to select only variable sites (while allow missing)
+            larr = np.ma.array(self.seqs[loc], mask=(self.seqs[loc] == 9))
+            lcom = larr.mean(axis=0).round().astype(int)
+            lvar = np.where(np.any(larr != lcom, axis=0).data)[0]
+            lidx = 0
+
+            # enter variants to snpmap
+            for snpidx in lvar:
+                smap[gidx] = loc + 1, lidx, snpidx, 0, gidx + 1
+                lidx += 1
+                gidx += 1
+
+        # open h5py database handle
+        if name is None:
+            name = "test"
+        if outdir is None:
+            outdir = "."
+        outdir = os.path.realpath(os.path.expanduser(outdir))
+        h5file = os.path.join(outdir, name + ".snps.hdf5")
+
+        # write datasets to database
+        with h5py.File(h5file, 'w') as io5:
+
+            # write the concatenated seqs as bytes->uint8 to snps
+            snps = io5.create_dataset(
+                name="snps",
+                data=tarr[:, varsites].view(np.uint8),
+            )
+
+            # write snpsmap [chrom1, locsnpidx0, locsnppos0, 0, snpidx1]
+            snpsmap = io5.create_dataset("snpsmap", data=smap)
+
+            # genotype calls (derived/ancestral) compared to known ancestral
+            io5.create_dataset(name="genos", data=gmat)
+
+            # placeholders for now
+            io5.create_dataset(name="psuedoref", shape=(nsites, 2))
+
+            # meta info stored to phymap
+            snpsmap.attrs["columns"] = (
+                b'locus', b'locidx', b'locpos', b'scaf', b'scafpos')
+            snps.attrs['names'] = [i.encode() for i in txf.names]
+
+        # report
+        if not quiet:
+            print("wrote {} SNPs to {}".format(nsites, h5file))
+
+
+    def write_vcf(self, name=None, outdir=None, diploid=None, bgzip=False, quiet=False):
+        """
+        Passes data to VCF object for conversion and writes resulting table 
+        to CSV. 
+
+        TODO: bgzip option may be overkill, build_vcf could be much faster
+        using methods like Genos.
+
         """
         # reshape SNPs array to be like loci 
         if self.seqs.ndim == 2:
@@ -284,9 +441,8 @@ class Writer:
             self.seqs, 
             self.names, 
             diploid, 
-            diploid_map, 
             self.ancestral_seq,
-            seed)
+        )
         vcfdf = vcf.build_vcf()
 
         # return dataframe if no filename
@@ -384,42 +540,154 @@ class Writer:
     #             file.write(line)
 
 
+class Genos:
+    """
+
+    """
+    def __init__(self, concatseqs, anc, snpidxs, dindex_map):
+
+        self.seqs = concatseqs
+        self.anc = anc
+        self.snpidxs = snpidxs
+        self.dindex_map = dindex_map
+
+
+    def get_genos_matrix(self):
+        """
+        Returns genos matrix as ints array (nsnps, nsamples, 2)
+        """
+        # concatenate seqs to -1 dim
+        aseq = np.concatenate(self.anc)
+        tseq = self.seqs
+
+        # subsample to varible sites if SNPs only
+        if self.snpidxs is not None:
+            aseq = aseq[self.snpidxs]
+            tseq = tseq[:, self.snpidxs]
+
+        # get genotype calls (derived or ancestral)
+        genos = np.invert(tseq == aseq).astype(int)
+
+        # derived (1) or another derived (2); compare to the low allele in data
+        # this does not worry about which is the more common allele, since we
+        # expect any downstream method that will use 'geno' calls will simply
+        # use the presence of multiple genos as a filtering mechanism. 
+        # Thus, the x/0 in genos still just means derived/ancestral.
+
+        # get derived alleles at every site
+        marr = np.ma.array(data=tseq, mask=genos == 0)
+
+        # if any derived alleles are not the max allele at that site
+        maxa = marr.max(axis=0)
+        alts = marr != maxa
+        alts[marr.mask] = False
+        genos[alts] = 2
+
+        # shape into char array 
+        gmat = np.zeros((tseq.shape[1], len(self.dindex_map), 2), dtype=np.uint8)
+        for idx in self.dindex_map:
+            left, right = self.dindex_map[idx]
+            gmat[:, idx, :] = genos[(left, right), :].T
+        return gmat
+
+
+    def get_genos_matrix_missing(self):
+        """
+        Returns genos matrix a bit slower b/c accomodates missing values (9),
+        snpidxs has already been computed on a masked array.
+        """
+        # concatenate seqs to -1 dim
+        aseq = np.concatenate(self.anc)
+        tseq = self.seqs
+
+        # subsample to varible sites if SNPs only
+        if self.snpidxs is not None:
+            aseq = aseq[self.snpidxs]
+            tseq = tseq[:, self.snpidxs]
+
+        # get genotype calls (inverts data but not mask)
+        tseqm = np.ma.array(tseq, mask=(tseq == 9))
+        genos = np.invert(tseqm == aseq).astype(int)
+
+        # if any derived alleles are not the max allele at that site
+        marr = np.ma.array(data=tseq, mask=(genos == 0) | (tseq == 9))
+        maxa = marr.max(axis=0)
+        alts = marr != maxa
+        alts[marr.mask] = False
+        genos[alts] = 2
+
+        # shape into char array 
+        gmat = np.zeros((tseq.shape[1], len(self.dindex_map), 2), dtype=np.uint8)
+        for idx in self.dindex_map:
+
+            # get the haplotypes indices
+            left, right = self.dindex_map[idx]
+
+            # get data arranged to right shape
+            mdata = genos[(left, right), :].T
+
+            # fill masked values to 9
+            idat = mdata.data.astype(int)
+            idat[mdata.mask] = 9
+
+            # copy other allele over 9 if it is not 9
+            idat[idat[:, 0] == 9, 0] = idat[idat[:, 0] == 9, 1]
+            idat[idat[:, 1] == 9, 1] = idat[idat[:, 1] == 9, 0]
+
+            # store the results
+            gmat[:, idx, :] = idat
+        return gmat
+
+
+
+
+
+    def get_genos_string(self):
+        """
+        Return string representation of genotypes, e.g., 0|0, 1|0, ...
+        """
+        # concatenate seqs to -1 dim
+        aseq = np.concatenate(self.anc)
+        seqs = np.concatenate(self.seqs, axis=1)
+
+        # subsample to varible sites if SNPs only
+        if self.snpidxs is not None:
+            aseq = aseq[self.snpidxs]
+            seqs = seqs[:, self.snpidxs]
+
+        # get genotype calls
+        genos = np.invert(seqs == aseq).astype(int)
+
+        # shape into char array 
+        if self.dindex_map is None:
+            gmat = np.char.array(genos) + b"|" + np.char.array(genos)
+        else:
+            gmat = np.chararray(seqs.shape, 3)
+            for idx in self.dindex_map:
+                left, right = self.dindex_map[idx]
+                gmat[idx] = ["{}|{}".format(i, j) for (i, j) in zip(genos)]
+        return gmat
+
+
 
 class Transformer:
+    """
+    seqs: (ndarray)
+    names: (ndarray)
+    diploid: (bool)
+    """    
     def __init__(
         self,
         seqs,
         names,
         diploid=True,
-        diploid_map=False, 
-        seed=None):
-        """
-        writer: (class)
-            A writer class object from ipcoal with .seqs and .names.
-        diploid: (bool)
-            Form diploids by randomly joining 2 samples from a population.
-            If no diploid_map is provided then it is expected that individuals
-            in a population are named [prefix]-[0-n] with a matching prefix.
-        diploid_map: (dict) 
-            If using diploid=True but sample names do not match the naming
-            convention then you can use a dictionary to select haploid
-            individuals that should be combined into diploids.
-            Example: diploid_map={'1': [1A-0, 1A-1], '2': [1B-0, 1B-1], ... }
-        idxs: (list, ndarray)
-            A list of ndarray of the indices of a subset of loci to write.
-            Default is to write all loci in .seqs.
-        seed: (int) 
-            seed random number generator.
-        """
-        # set random seed
-        if seed:
-            np.random.seed(seed)
+        ):
 
         # store input params
         self.seqs = seqs
         self.names = names
         self.diploid = diploid
-        self.diploid_map = diploid_map
+        self.diploid_map = {}
         self.dindex_map = {}
 
         # setup functions
@@ -428,80 +696,69 @@ class Transformer:
 
 
     def get_diploid_map(self):
-        "randomly sample two haploids to make diploids without replacement."
+        """
+        Combine haploid names and indices to map pairs as new diploids.
 
-        if self.diploid:
+        diploid_map = {'A': ['A-0-1', 'A-2-3], 'B': ['B-0-1', 'B-2-3'], ...]}
+        dindex_map = {1: [(0,1), (2,3)], 2: [(4,5), (6,7)], ...}
+        """
 
-            # try to auto-generate a diploid map
-            if not self.diploid_map:
+        # haploid indices simply repeat itself twice. 
+        # TODO: NOT TESTED, OR USED YET, CHECK ORDER OF DINDEX
+        if not self.diploid:
+            pidx = 0
+            for idx, name in enumerate(self.names):
+                self.diploid_map[name] = (name, name)
+                self.dindex_map[idx] = (pidx, pidx)
+                pidx += 1
 
-                # check if names can work for auto mapping
-                name_pre = [i.rsplit("-", 1)[0] for i in self.names]
-                name_suf = [i.rsplit("-", 1)[1] for i in self.names]
-                pcount = [name_pre.count(i) % 2 == 0 for i in set(name_pre)]
-                assert all(pcount), (
-                    "to make diploids nsamples must all be multiples of 2")
-                try:
-                    [int(i) for i in name_suf]
-                except TypeError as inst:
-                    print("sample names are not formatted for diploid=True")
-                    raise inst
+        # diploid indices increase in pairs: (0,1), (2,3), (4,6)...
+        else:
 
-                # get diploids inds lists: {ind1: [], ind2: [], ...}
-                self.diploid_map = {}
-                for name in name_pre:
-                    for dipcount in range(int(name_pre.count(name) / 2)):
-                        newname = "{}-{}".format(name, dipcount)
-                        self.diploid_map[newname] = []
+            # group names by prefix
+            groups = groupby(self.names, key=lambda x: x.split("-")[0])
 
-                # fill the map: {ind1: [sample, sample], ...}
-                names = self.names.copy()
-                keys = sorted(self.diploid_map.keys())
-                for dname in keys:
+            # arrange into an IMAP dictionary: {r0: [r0-0, r0-1, r0-2, ...]}
+            imap = {i[0]: list(i[1]) for i in groups}
 
-                    # get name prefix
-                    dpre, dpost = dname.rsplit("-", 1)
+            # if all nsamples are 2 then we will not add name suffix
+            suffix = True
+            if all([len(imap[i]) == 2 for i in imap]):
+                suffix = False
 
-                    # find all matching name prefixes
-                    npres = [i.rsplit("-", 1)[0] for i in names]
-                    match = [i == dpre for i in npres]
+            # iterate over tips and increment diploids and haploid pair idxs
+            didx = 0
+            for sppname in imap:
 
-                    # randomly sample one matching sample 
-                    midxs = np.where(match)[0]
-                    sidxs = np.random.choice(midxs, size=2, replace=False)
-                    allele_0 = names[sidxs[0]]
-                    allele_1 = names[sidxs[1]]
+                # nsamples matched to this tip
+                samples = imap[sppname]
+                samples = sorted(samples, key=lambda x: int(x.rsplit("-", 1)[-1]))
 
-                    # remove selected from names
-                    names.remove(allele_0)
-                    names.remove(allele_1)
+                # must be x2
+                assert len(samples) % 2 == 0, (
+                    "nsamples args must be multiples of 2 to form diploids" 
+                    "sample {} has {} samples".format(sppname, len(samples)))
 
-                    # store results using informative name about samples
-                    self.diploid_map.pop(dname)
-                    subs = sorted(
-                        [i.rsplit("-", 1)[-1] for i in (allele_0, allele_1)])
-                    newname = "{}-{}.{}".format(dpre, subs[0], subs[1])
+                # iterate 0, 2, 4
+                for pidx in range(0, len(samples), 2):
 
-                    # map names to dname
-                    self.diploid_map[newname] = [allele_0, allele_1]
-                    self.dindex_map[newname] = [
-                        self.names.index(allele_0), self.names.index(allele_1)
-                    ]
+                    # the local idx of these sample names
+                    p0 = samples[pidx]
+                    p1 = samples[pidx + 1]
 
-                # reassign dindex names by sorted now that all dnames exist
-                keys = sorted(self.dindex_map.keys())
-                for kidx, key in enumerate(keys):
-                    self.dindex_map[kidx] = self.dindex_map[key]
-                    self.dindex_map.pop(key)
+                    # the global idx of these sample names
+                    pidx0 = self.names.index(p0)
+                    pidx1 = self.names.index(p1)
 
-                # check that population sizes are multiple of 2
-            else:
-                assert all([len(i) == 2 for i in self.diploid_map.values()]), (
-                    "all populations must have an even number of samples.")
-                assert set(len(self.diploid_map)) != len(self.diploid_map), (
-                    "all keys in diploid map must be unique.")
-                assert set(len(self.diploid_map.values())) != len(self.diploid_map.values()), (
-                    "all values in diploid map must be unique.")
+                    # fill dicts
+                    if suffix:
+                        newname = "{}-{}".format(sppname, int(pidx / 2))
+                    else:
+                        newname = sppname
+                    self.diploid_map[newname] = (p0, p1)
+                    self.dindex_map[didx] = (pidx0, pidx1)
+                    didx += 1
+
 
 
     def transform_seqs(self):
@@ -512,7 +769,7 @@ class Transformer:
         """
         # simply convert to bytes
         if not self.diploid:
-            self.seqs = convert_intarr_to_bytearr(self.seqs.astype(bytes))
+            self.seqs = convert_intarr_to_bytearr(self.seqs)  # .astype(bytes))
 
         # combine alleles to get heterozygotes
         else:
@@ -541,7 +798,7 @@ class Transformer:
 
 
 class VCF:
-    def __init__(self, seqs, names, diploid, diploid_map, ancestral, seed):
+    def __init__(self, seqs, names, diploid, ancestral):
         """
         Write SNPs in VCF format. Note: we use the true ancestral sequence to
         represent the reference such that matching the reference of not 
@@ -552,11 +809,11 @@ class VCF:
         self.names = names
         self.seqs = seqs
         self.diploid = diploid
-        self.diploid_map = diploid_map
-        self.aseqs = convert_intarr_to_bytearr(ancestral.astype(bytes))
+        self.diploid_map = {}
+        self.aseqs = convert_intarr_to_bytearr(ancestral)  # .astype(bytes))
 
         # do not combine for ambiguity codes, but get diploid_map and names.
-        txf = Transformer(self.seqs, self.names, diploid, diploid_map, seed)
+        txf = Transformer(self.seqs, self.names, diploid)
         self.dindex_map = txf.dindex_map
         self.dnames = txf.names
 
@@ -583,6 +840,9 @@ class VCF:
 
 
     def build_vcf(self):
+        """
+        Build a DF of genotypes and metadata.
+        """
 
         # get nrows (snps) in VCF
         arr = np.concatenate(self.seqs, axis=1)
@@ -615,7 +875,7 @@ class VCF:
         for loc in range(self.seqs.shape[0]):
 
             # get locus and SNP indices
-            arr = convert_intarr_to_bytearr(self.seqs[loc].astype(bytes))
+            arr = convert_intarr_to_bytearr(self.seqs[loc])
             slocs = np.where(np.any(arr != arr[0], axis=0))[0]
             nsnps = len(slocs)
 
@@ -660,13 +920,24 @@ class VCF:
 
 
 
-def convert_intarr_to_bytearr(arr):
-    "An array of ints was turned into bytes and this converts to bytestrings"
-    arr[arr == b"0"] = b"A"
-    arr[arr == b"1"] = b"C"
-    arr[arr == b"2"] = b"G"
-    arr[arr == b"3"] = b"T"
-    return arr
+def convert_intarr_to_bytearr(iarr):
+    "An array of ints converted to bytes"
+    barr = np.zeros(iarr.shape, dtype="S1")
+    barr[iarr == 0] = b"A"
+    barr[iarr == 1] = b"C"
+    barr[iarr == 2] = b"G"
+    barr[iarr == 3] = b"T"
+    barr[iarr == 9] = b"N"
+    return barr
+
+
+# def convert_intarr_to_bytearr(arr):
+#     "An array of ints was turned into bytes and this converts to bytestrings"
+#     arr[arr == b"0"] = b"A"
+#     arr[arr == b"1"] = b"C"
+#     arr[arr == b"2"] = b"G"
+#     arr[arr == b"3"] = b"T"
+#     return arr
 
 
 def convert_intarr_to_bytearr_diploid(arr):
@@ -689,7 +960,18 @@ def convert_intarr_to_bytearr_diploid(arr):
     arr[arr == b"13"] = b"R"
     arr[arr == b"31"] = b"R"    
     arr[arr == b"23"] = b"M"
-    arr[arr == b"32"] = b"M"    
+    arr[arr == b"32"] = b"M"
+
+    arr[arr == b"90"] = b"A"
+    arr[arr == b"09"] = b"A"
+    arr[arr == b"91"] = b"C"
+    arr[arr == b"19"] = b"C"
+    arr[arr == b"92"] = b"G"
+    arr[arr == b"29"] = b"G"
+    arr[arr == b"93"] = b"T"
+    arr[arr == b"39"] = b"T"
+    arr[arr == b"99"] = b"N"
+
     return arr
 
 
@@ -710,5 +992,5 @@ VCFHEADER = """\
 ##reference={reference}
 {contig_lines}
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
-#CHROM\tPOS\tID\tREF\tALT QUAL\tFILTER\tINFO\tFORMAT\t\
+#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t\
 """
