@@ -326,7 +326,7 @@ class Model(object):
         canvas, axes, mark = self.tree.draw(
             ts='p', 
             tip_labels=True, 
-            adxmixture_edges=None,
+            admixture_edges=None,
             **kwargs)
         return canvas, axes, mark
 
