@@ -339,10 +339,11 @@ class Model(object):
         Returns a 
         """
         # tree = toytree.tree(self.df.genealogy[idx])
+        admix = [i[:2] for i in self.admixture_edges]
         canvas, axes, mark = self.tree.draw(
             ts='p', 
             tip_labels=True, 
-            admixture_edges=None,
+            admixture_edges=admix,
             **kwargs)
         return canvas, axes, mark
 
