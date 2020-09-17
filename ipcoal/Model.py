@@ -318,15 +318,32 @@ class Model(object):
         return canvas, axes, mark
 
 
+    def draw_genealogies(self, idxs=None, **kwargs):
+        """
+        Returns a (Canvas, Axes) tuple as a drawing of the genealogy.
+
+        Parameters
+        ----------
+        idx: (None or list of ints)
+            The index of the genealogies to draw from the (Model.df) dataframe.
+        """
+        if idxs is None:
+            idxs = range(4)
+        mtre = toytree.mtree(self.df.genealogy[idxs])
+        canvas, axes, mark = mtre.draw(ts='c', tip_labels=True, **kwargs)
+        return canvas, axes, mark
+
+
     def draw_sptree(self, **kwargs):
         """
         Returns a 
         """
         # tree = toytree.tree(self.df.genealogy[idx])
+        admix = [i[:2] for i in self.admixture_edges]
         canvas, axes, mark = self.tree.draw(
             ts='p', 
             tip_labels=True, 
-            adxmixture_edges=None,
+            admixture_edges=admix,
             **kwargs)
         return canvas, axes, mark
 
