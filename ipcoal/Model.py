@@ -147,13 +147,13 @@ class Model(object):
         # hidden argument to turn on debugging
         self._debug = debug
 
-        # parse the input tree (and store original)
+        # parse input tree, store orig, resolv poly is needed and returns copy.
         if isinstance(tree, toytree.Toytree.ToyTree):
             self.treeorig = tree
-            self.tree = self.treeorig.copy()
+            self.tree = self.treeorig.resolve_polytomy(dist=0.00001)
         elif isinstance(tree, str):
             self.treeorig = toytree.tree(tree)
-            self.tree = self.treeorig.copy()
+            self.tree = self.treeorig.resolve_polytomy(dist=0.00001)
         else:
             raise TypeError("input tree must be newick str or Toytree object")
 
@@ -575,7 +575,7 @@ class Model(object):
             if node.children:
                 dest = min([i._schild for i in node.children])
                 source = max([i._schild for i in node.children])
-                time = int(node.height)
+                time = node.height  # int(node.height)
                 demog.add(ms.MassMigration(time, source, dest))
 
                 # for all nodes set Ne changes
@@ -588,7 +588,7 @@ class Model(object):
             # tips set populations sizes (popconfig seemings does this too,
             # but it didn't actually work for tips until I added this...
             else:
-                time = int(node.height)
+                time = node.height  # int(node.height)
                 demog.add(ms.PopulationParametersChange(
                     time,
                     initial_size=node.Ne,
@@ -600,7 +600,7 @@ class Model(object):
                 print(
                     'div time:  {:>9}, {:>2} {:>2}, {:>2} {:>2}, Ne={}'
                     .format(
-                        int(time), source, dest,
+                        time, source, dest,
                         node.children[0].idx, node.children[1].idx,
                         node.Ne,
                         ),
