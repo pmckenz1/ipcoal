@@ -824,11 +824,6 @@ class Model(object):
                 # parse the newick to toytree
                 gtree = toytree._rawtree(nwk, tree_format=5)
 
-                # align the tips (msprime precision issues)
-                for node in gtree.treenode.traverse():
-                    if node.is_leaf():
-                        node.dist += node.height
-
                 # mutate sequences on this tree; return array alphanum-ordered
                 seed = self.random_mut.randint(1e9)
                 seq = mkseq.feed_tree(gtree, gtlen, self.mut, seed)
