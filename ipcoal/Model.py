@@ -726,7 +726,6 @@ class Model(object):
             print(
                 "pop: Ne:{:.0f}, mut:{:.2E}".format(self.Ne, self.mut),
                 file=sys.stderr)
-
         self.ms_popconfig = population_configurations
 
 
@@ -820,10 +819,15 @@ class Model(object):
             # only simulate data if there is bp 
             if gtlen:
                 # write mstree to newick with original labels mapped on tips
-                nwk = mstree.newick(node_labels=self.tipdict, precision=0)
+                nwk = mstree.newick(node_labels=self.tipdict, precision=14)
 
                 # parse the newick to toytree
                 gtree = toytree._rawtree(nwk, tree_format=5)
+
+                # align the tips (msprime precision issues)
+                for node in gtree.treenode.traverse():
+                    if node.is_leaf():
+                        node.dist += node.height
 
                 # mutate sequences on this tree; return array alphanum-ordered
                 seed = self.random_mut.randint(1e9)
@@ -998,7 +1002,7 @@ class Model(object):
                 # only simulate data if there is bp 
                 if gtlen:
                     # convert nwk to original names
-                    nwk = mstree.newick(node_labels=self.tipdict, precision=0)
+                    nwk = mstree.newick(node_labels=self.tipdict, precision=14)
                     df.loc[idx, "genealogy"] = nwk
                     df.loc[idx, "tidx"] = mstree.index
 
