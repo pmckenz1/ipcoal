@@ -416,14 +416,14 @@ class Model(object):
             ))
 
         # the alpha and gamma ...
-        if self.gamma:
-            if self.gamma_categories:
-                gtype = "({} discrete categories)"
+        if seqmodel.gamma:
+            if seqmodel.gamma_categories:
+                gtype = "({} discrete categories)".format(seqmodel.gamma_categories)
             else:
                 gtype = "(continuous)"
             print(
-                "gamma rate variation {} alpha: {}"
-                .format(gtype, self.gamma)
+                "\ngamma rate var. {} alpha: {}"
+                .format(gtype, seqmodel.gamma)
             )
 
 
