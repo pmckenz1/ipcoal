@@ -416,7 +416,15 @@ class Model(object):
             ))
 
         # the alpha and gamma ...
-
+        if self.gamma:
+            if self.gamma_categories:
+                gtype = "({} discrete categories)"
+            else:
+                gtype = "(continuous)"
+            print(
+                "gamma rate variation {} alpha: {}"
+                .format(gtype, self.gamma)
+            )
 
 
     def _check_substitution_kwargs(self):
@@ -431,7 +439,8 @@ class Model(object):
         for key, val in self.substitution_model.items():
 
             # do not allow typos or unsupported params
-            if key not in ["state_frequencies", "kappa"]:
+            supp = ["state_frequencies", "kappa", "gamma", "gamma_categories"]
+            if key not in supp:
                 raise TypeError(
                     "substitution_model param {} not currently supported."
                     .format(key))
