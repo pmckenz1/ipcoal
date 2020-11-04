@@ -31,15 +31,20 @@ class SeqModel():
     kappa: (float)
         The transition/traversio ratio entered as a decimal value >0. 
         Implemented in HKY or F84. 
-    alpha: (int)
-        Shape for the gamma rate heterogeneity. Default is no site-specific
-        rate heterogeneity. (Not Yet Implemented)
     gamma: (float)
-        Discrete number of rate categories for gamma rate heterogeneity.
-        (Not Yet Implemented)
-    invariable: (float)
+        Coefficient of rate variation for continuous gamma dist. rates. 
+        The mean of the amma distribution is a*b, and the variance is ab**2, 
+        making the coefficient of variation, in rate, among sites a**−1/2.
+        The distribution is scaled such that the mean rate for all the sites 
+        is 1 but the gamma parameter describes its shape. A shape for the 
+        gamma rate heterogeneity of 1 is very little, while a value less than
+        1 is greater variation. Default is 0 or None = no rate variation.
+    gamma_categories: (int)
+        Number of discrete gamma rate categories to bin sites into. This option
+        greatly speeds up the application of gamma rate variation. Default
+        is None, which assigns every site its own rate.
+    invariant_sites: (float)
         Proportion of invariable sites (Not Yet Implemented)
-
     """
     def __init__(
         self,
@@ -47,11 +52,14 @@ class SeqModel():
         kappa=None,
         alpha=None,
         gamma=None,
+        gamma_categories=None,
         seed=None,
-        Ne=None,
+        # Ne=None,
         ):
 
-        # save the tree object if one is provided with init
+        # save model parameters
+        self.gamma = (gamma if gamma else 0)
+        self.gamma_categories = (int(gamma_categories) if gamma_categories else None)
         self.kappa = (kappa if kappa else 1.)
         self.state_frequencies = (
             state_frequencies if np.any(state_frequencies) else RATES
@@ -76,6 +84,7 @@ class SeqModel():
         self.ancestral_seq = None
 
         # set the threading layer before any parallel target compilation
+        # NOT CURRENTLY IMPLEMENTED
         if ipcoal.__forksafe__:
             config.THREADING_LAYER = 'forksafe'
 
@@ -120,17 +129,46 @@ class SeqModel():
         seqs[-1] = np.random.choice(range(4), nsites, p=self.state_frequencies)
         self.ancestral_seq = seqs[-1]
 
+        # model site rate variation
+        if self.gamma:
+            a = (1 / self.gamma) ** 2
+            b = 1
+            self.gamma_rates = np.random.gamma(shape=1 / (a*b**2), scale=a*b**2, size=nsites)
+
+            if not self.gamma_categories:
+                for node in tree.treenode.traverse():
+                    if not node.is_root():
+                        rates = [node.dist * mut * i * self.Q for i in self.gamma_rates]
+                        probmats = np.array([jevolve_branch_probs(i) for i in rates])
+                        seqs[node.idx] = jsubstitute_rates(seqs[node.up.idx], probmats)
+            else:
+                mags, bins = np.histogram(self.gamma_rates, bins=self.gamma_categories - 1)
+                self.gamma_cats_assigned = np.digitize(self.gamma_rates, bins[1:])
+                for node in tree.treenode.traverse():
+                    if not node.is_root():                                     
+                        probmats = np.zeros(shape=(nsites, 4, 4), dtype=np.float)
+                        for ibin in range(self.gamma_categories):
+                            mask = self.gamma_cats_assigned == ibin
+                            if mask.sum():
+                                rates = self.gamma_rates[mask]
+                                mrate = rates.mean()
+                                rate = node.dist * mut * mrate * self.Q
+                                probmats[mask] = jevolve_branch_probs(rate)
+                        seqs[node.idx] = jsubstitute_rates(seqs[node.up.idx], probmats)
+
         # mutate sequence along edges of the tree
-        for node in tree.treenode.traverse():
-            if not node.is_root():
-                probmat = jevolve_branch_probs(node.dist * mut * self.Q)
-                seqs[node.idx] = jsubstitute(seqs[node.up.idx], probmat)
+        else:
+            for node in tree.treenode.traverse():
+                if not node.is_root():
+                    probmat = jevolve_branch_probs(node.dist * mut * self.Q)
+                    seqs[node.idx] = jsubstitute(seqs[node.up.idx], probmat)
 
         # return seqs in alphanumeric order
         order = np.argsort(tree.treenode.get_leaf_names()[::-1])
         return seqs[:tree.ntips][order]
 
 
+    # DEPRECATED
     def old_feed_tree(self, tree, nsites=1, mut=1e-8, seed=None):
         """
         Simulate markov mutation process on a gene tree and return a 
@@ -210,6 +248,36 @@ def jevolve_branch_probs(brlenQ):
     return probs
 
 
+
+@njit
+def jsubstitute(pseq, probmat):
+    """
+    jitted function to probabilistically transition state
+    """
+    nsites = len(pseq)
+    narr = np.zeros(nsites, dtype=np.int8)
+    for site in range(nsites):
+        nbase = np.argmax(np.random.multinomial(1, probmat[pseq[site]]))
+        narr[site] = nbase
+    return narr
+
+
+@njit
+def jsubstitute_rates(pseq, probmats):
+    """
+    jitted function to probabilistically transition state
+    """
+    nsites = len(pseq)
+    narr = np.zeros(nsites, dtype=np.int8)
+    for site, probmat in zip(range(nsites), probmats):
+        nbase = np.argmax(np.random.multinomial(1, probmat[pseq[site]]))
+        narr[site] = nbase
+    return narr
+
+
+
+
+# DEPRECATED WITH OLD_FEED_TREE (REPLACED BY JEVOLVE_BRANCH_PROBS)
 @njit
 def jevolve(Q, seqs, traversal, brlens, relate, seed):
     """
@@ -234,19 +302,6 @@ def jevolve(Q, seqs, traversal, brlens, relate, seed):
         # apply evolution to parent sequence to get child sequence
         seqs[idx] = jsubstitute(seqs[pidx], probmat)
     return seqs
-
-
-@njit
-def jsubstitute(pseq, probmat):
-    """
-    jitted function to probabilistically transition state
-    """
-    ns = len(pseq)
-    narr = np.zeros(ns, dtype=np.int8)
-    for i in range(ns):
-        nbase = np.argmax(np.random.multinomial(1, probmat[pseq[i]]))
-        narr[i] = nbase
-    return narr
 
 
 

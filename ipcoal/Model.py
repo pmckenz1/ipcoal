@@ -416,7 +416,15 @@ class Model(object):
             ))
 
         # the alpha and gamma ...
-
+        if seqmodel.gamma:
+            if seqmodel.gamma_categories:
+                gtype = "({} discrete categories)".format(seqmodel.gamma_categories)
+            else:
+                gtype = "(continuous)"
+            print(
+                "\ngamma rate var. {} alpha: {}"
+                .format(gtype, seqmodel.gamma)
+            )
 
 
     def _check_substitution_kwargs(self):
@@ -431,7 +439,8 @@ class Model(object):
         for key, val in self.substitution_model.items():
 
             # do not allow typos or unsupported params
-            if key not in ["state_frequencies", "kappa"]:
+            supp = ["state_frequencies", "kappa", "gamma", "gamma_categories"]
+            if key not in supp:
                 raise TypeError(
                     "substitution_model param {} not currently supported."
                     .format(key))
