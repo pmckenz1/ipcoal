@@ -473,7 +473,7 @@ def draw_seqview(self, idx, start, end, width, height, show_text, **kwargs):
 
     # style table cells
     colors = ['red', 'green', 'blue', 'orange', 'grey']
-    bases = ["A", "C", "T", "G", "N"]
+    bases = ["A", "C", "G", "T", "N"]
     for cidx in range(5):
 
         # select bases in 0-3 or 9
@@ -500,6 +500,63 @@ def draw_seqview(self, idx, start, end, width, height, show_text, **kwargs):
     table.cells.cell[:, 0].lstyle = {"text-anchor": "end", "font-size": "11px"}
     table.cells.cell[:, 0].width = 50
     return canvas, table
+
+
+
+
+def convert_intarr_to_bytearr(iarr):
+    "An array of ints converted to bytes"
+    barr = np.zeros(iarr.shape, dtype="S1")
+    barr[iarr == 0] = b"A"
+    barr[iarr == 1] = b"C"
+    barr[iarr == 2] = b"G"
+    barr[iarr == 3] = b"T"
+    barr[iarr == 9] = b"N"
+    return barr
+
+
+# def convert_intarr_to_bytearr(arr):
+#     "An array of ints was turned into bytes and this converts to bytestrings"
+#     arr[arr == b"0"] = b"A"
+#     arr[arr == b"1"] = b"C"
+#     arr[arr == b"2"] = b"G"
+#     arr[arr == b"3"] = b"T"
+#     return arr
+
+
+def convert_intarr_to_bytearr_diploid(arr):
+    """
+    Two arrays of ints were turned into bytes and joined (e.g., b'00') and
+    this converts it to a single bytestring IUPAC code for diploids.
+    """
+    arr[arr == b"00"] = b"A"
+    arr[arr == b"11"] = b"C"
+    arr[arr == b"22"] = b"G"
+    arr[arr == b"33"] = b"T"
+    arr[arr == b"01"] = b"K"
+    arr[arr == b"10"] = b"K"    
+    arr[arr == b"02"] = b"Y"
+    arr[arr == b"20"] = b"Y"    
+    arr[arr == b"03"] = b"W"
+    arr[arr == b"30"] = b"W"    
+    arr[arr == b"12"] = b"S"
+    arr[arr == b"21"] = b"S"    
+    arr[arr == b"13"] = b"R"
+    arr[arr == b"31"] = b"R"    
+    arr[arr == b"23"] = b"M"
+    arr[arr == b"32"] = b"M"
+
+    arr[arr == b"90"] = b"A"
+    arr[arr == b"09"] = b"A"
+    arr[arr == b"91"] = b"C"
+    arr[arr == b"19"] = b"C"
+    arr[arr == b"92"] = b"G"
+    arr[arr == b"29"] = b"G"
+    arr[arr == b"93"] = b"T"
+    arr[arr == b"39"] = b"T"
+    arr[arr == b"99"] = b"N"
+
+    return arr
 
 
 
