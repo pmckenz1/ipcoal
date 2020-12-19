@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
-import ipcoal
+"""
+Markov sequence simulator
+"""
+
 import numpy as np
 from scipy.linalg import expm
-
 from numba import njit, objmode
 from numba import config
-
+import ipcoal
 
 # GLOBALS
 BASES = np.array([0, 1, 2, 3])
