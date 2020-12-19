@@ -33,10 +33,96 @@ class Model(object):
     """
     An ipcoal.Model object for defining demographic models for coalesent 
     simulation in msprime. 
+
+    Takes an input topology with edge lengths in units of generations
+    entered as either a newick string or as a Toytree object, and defines
+    a demographic model based on Ne (or Ne mapped to tree nodes) and 
+    admixture edge arguments. Genealogies and sequence data is then 
+    generated with msprime and seq-gen, respectively.
+
+    Parameters:
+    -----------
+    tree: (str)
+        A newick string or Toytree object of a species tree with edges in
+        coalescent units. Default is an empty string ("") which means no 
+        species tree and thus a single panmictic population coalescent.
+
+    admixture_edges (list, tuple):
+        A list of admixture events in the 'admixture interval' format:
+        (source, dest, (edge_min, edge_max), (rate_min, rate_max)).
+        e.g., (3, 5, 0.5, 0.01)
+        e.g., (3, 5, (0.5, 0.5), (0.05, 0.5))
+        e.g., (1, 3, (0.1, 0.9), 0.05)
+        The source sends migrants to destination **backwards in time.**
+        The edge min, max are *proportions* of the length of the edge that
+        overlaps between source and dest edges over which admixture can
+        occur. If None then default values of 0.25 and 0.75 are used,
+        meaning introgression can occur over the middle 50% of the edge.
+        The rate min, max are migration rates or proportions that will be
+        either a single value or sampled from a range. For 'rate' details
+        see the 'admixture type' parameter.
+
+    admixture_type (str, int):
+        Either "pulsed" (0; default) or "interval" (1).
+        If "pulsed" then admixture occurs at a single time point
+        selected uniformly from the admixture interval (e.g., (0.1, 0.9)
+        can select over 90% of the overlapping edge; (0.5, 0.5) would only
+        allow admixture at the midpoint). The 'rate' parameter is the
+        proportion of one population that will be introgressed into the
+        other.
+        If "interval" then admixture occurs uniformly over the entire
+        admixture interval and 'rate' is a constant migration rate over
+        this time period.
+
+    Ne (float, int): default=10000
+        The effective population size. This value will be set to all edges
+        of the tree. If you want to set different Ne values to different
+        edges then you should add Ne node attributes to your input tree
+        which will override the global value at those nodes. For example, 
+        if you set Ne=5000, and on your tree set Ne values for a few nodes
+        with (tre.set_node_values("Ne", {1:1000, 2:10000})) then all edges
+        will use Ne=5000 except those nodes.
+
+    mut (float): default=1e-8
+        The per-site per-generation mutation rate
+
+    recomb (float): default=1e-9
+        The per-site per-generation recombination rate.
+
+    recomb_map (DataFrame): default=None
+        A recombination map in hapmap format as a pandas dataframe.
+        Columns should be as desired by msprime.
+
+        Example:
+        Chromosome\tPosition\tRate\tMap\n
+        chr1\t0\t0\t0\n
+        chr1\t55550\t2.981822\t0.000000
+
+    seed (int):
+        Random number generator used for msprime (and seqgen unless a 
+        separate seed is set for seed_mutations.
+
+    nsamples (int or list):
+        An integer for the number of samples from each lineage, or a list
+        of the number of samples from each lineage ordered by the tip
+        order of the tree when plotted.
+
+    seed_mutations (int):
+        Random number generator used for seq-gen. If not set then the
+        generic seed is used for both msprime and seq-gen.
+
+    substitution_model (dict):
+        A dictionary of arguments to the markov process mutation model.
+        example:
+        substitution_model = {
+            state_frequencies=[0.25, 0.25, 0.25, 0.25],
+            kappa=3,
+            gamma=4,
+        }
     """
     def __init__(
         self,
-        tree,
+        tree="",
         Ne=10000,   
         admixture_edges=None,
         admixture_type=0,
@@ -50,92 +136,7 @@ class Model(object):
         debug=False,
         **kwargs,
         ):
-        """
-        Takes an input topology with edge lengths in units of generations
-        entered as either a newick string or as a Toytree object, and defines
-        a demographic model based on Ne (or Ne mapped to tree nodes) and 
-        admixture edge arguments. Genealogies and sequence data is then 
-        generated with msprime and seq-gen, respectively.
 
-        Parameters:
-        -----------
-        tree: (str)
-            A newick string or Toytree object of a species tree with edges in
-            coalescent units.
-
-        admixture_edges (list, tuple):
-            A list of admixture events in the 'admixture interval' format:
-            (source, dest, (edge_min, edge_max), (rate_min, rate_max)).
-            e.g., (3, 5, 0.5, 0.01)
-            e.g., (3, 5, (0.5, 0.5), (0.05, 0.5))
-            e.g., (1, 3, (0.1, 0.9), 0.05)
-            The source sends migrants to destination **backwards in time.**
-            The edge min, max are *proportions* of the length of the edge that
-            overlaps between source and dest edges over which admixture can
-            occur. If None then default values of 0.25 and 0.75 are used,
-            meaning introgression can occur over the middle 50% of the edge.
-            The rate min, max are migration rates or proportions that will be
-            either a single value or sampled from a range. For 'rate' details
-            see the 'admixture type' parameter.
-
-        admixture_type (str, int):
-            Either "pulsed" (0; default) or "interval" (1).
-            If "pulsed" then admixture occurs at a single time point
-            selected uniformly from the admixture interval (e.g., (0.1, 0.9)
-            can select over 90% of the overlapping edge; (0.5, 0.5) would only
-            allow admixture at the midpoint). The 'rate' parameter is the
-            proportion of one population that will be introgressed into the
-            other.
-            If "interval" then admixture occurs uniformly over the entire
-            admixture interval and 'rate' is a constant migration rate over
-            this time period.
-
-        Ne (float, int): default=10000
-            The effective population size. This value will be set to all edges
-            of the tree. If you want to set different Ne values to different
-            edges then you should add Ne node attributes to your input tree
-            which will override the global value at those nodes. For example, 
-            if you set Ne=5000, and on your tree set Ne values for a few nodes
-            with (tre.set_node_values("Ne", {1:1000, 2:10000})) then all edges
-            will use Ne=5000 except those nodes.
-
-        mut (float): default=1e-8
-            The per-site per-generation mutation rate
-
-        recomb (float): default=1e-9
-            The per-site per-generation recombination rate.
-
-        recomb_map (DataFrame): default=None
-            A recombination map in hapmap format as a pandas dataframe.
-            Columns should be as desired by msprime.
-
-            Example:
-            Chromosome\tPosition\tRate\tMap\n
-            chr1\t0\t0\t0\n
-            chr1\t55550\t2.981822\t0.000000
-
-        seed (int):
-            Random number generator used for msprime (and seqgen unless a 
-            separate seed is set for seed_mutations.
-
-        nsamples (int or list):
-            An integer for the number of samples from each lineage, or a list
-            of the number of samples from each lineage ordered by the tip
-            order of the tree when plotted.
-
-        seed_mutations (int):
-            Random number generator used for seq-gen. If not set then the
-            generic seed is used for both msprime and seq-gen.
-
-        substitution_model (dict):
-            A dictionary of arguments to the markov process mutation model.
-            example:
-            substitution_model = {
-                state_frequencies=[0.25, 0.25, 0.25, 0.25],
-                kappa=3,
-                gamma=4,
-            }
-        """
         # legacy support warning messages
         self._legacy_support(kwargs)
 
@@ -188,8 +189,8 @@ class Model(object):
         # store tip names for renaming on the ms tree (ntips * nsamples)
         _tlabels = self.tree.get_tip_labels()
         if nsamples == 1:
-            self.tipdict = {i: j for (i, j) in enumerate(_tlabels)}
-            self.sampledict = {i: j for (i, j) in zip(_tlabels, self.nsamples)}
+            self.tipdict = dict(enumerate(_tlabels))
+            self.sampledict = dict(zip(_tlabels, self.nsamples))
         else:
             self.tipdict = {}
             self.sampledict = {}
@@ -1167,6 +1168,7 @@ class Model(object):
         diploid=None,
         bgzip=False,
         quiet=False,
+        fill_missing_alleles=True,
         ):
         """
         Write all seq data for each locus to a separate phylip file in a shared
@@ -1180,16 +1182,29 @@ class Model(object):
         outfile (str):
             Only used if idx is not None. Set the name of the locus file being
             written. This is used internally to write tmpfiles for TreeInfer.
+        diploid (bool): 
+            Combine haploid pairs into diploid genotypes.
+        bgzip (bool):
+            Call bgzip to block compress the output file (create .vcf.gz).
+        quiet (bool):
+            Suppress printed info.
+        fill_missing_alleles (bool):
+            If there is missing data this will fill diploid missing alleles. 
+            e.g., the call (0|.) will be written as (0|0). This is meant to
+            emulate real data where we often do not know the other allele
+            is missing (also, some software tools do not accept basecalls 
+            with one missing allele, such as vcftools).        
         """
         writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
-        df = writer.write_vcf(
+        vdf = writer.write_vcf(
             name, 
             outdir, 
             diploid, 
             bgzip,
+            fill_missing_alleles,
+            quiet,
         )
-        if name is None:
-            return df
+        return vdf
 
 
 
