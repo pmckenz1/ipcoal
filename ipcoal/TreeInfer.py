@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 
 
+"""
+Tree inference wrappers for running raxml, mb or others 
+on loci or sliding windows of sequence data for comparing
+genealogies with inferred gene trees.
+"""
+
+
 import os
 import sys
 import glob
