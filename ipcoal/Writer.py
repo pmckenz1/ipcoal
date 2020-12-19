@@ -1,34 +1,62 @@
 #!/usr/bin/env python
 
+"""
+Classes for writing seqs or snps to popular data formats 
+like VCF, PHY, NEXUS, or HDF5, while also optionally 
+combining haplotypes into diploid base calls.
+"""
 
 import os
 import datetime
+from itertools import groupby
+
 import numpy as np
 import pandas as pd
+
 import ipcoal
+from ipcoal.Genos import Genos
+from ipcoal.utils import ipcoalError
+from ipcoal.utils import convert_intarr_to_bytearr
+from ipcoal.utils import convert_intarr_to_bytearr_diploid
 
-from itertools import groupby
-from .utils import ipcoalError
 
 
+
+NEXHEADER = """#nexus
+begin data;
+  dimensions ntax={} nchar={};
+  format datatype=DNA missing=N gap=- interleave=yes;
+  matrix\n
 """
-Use Genos in VCF to make it much faster.
+
+
+# TODO add an attribution of the ipcoal version and list sim parameters.
+VCFHEADER = """\
+##fileformat=VCFv4.2
+##fileDate={date}
+##source=ipcoal-v.{version}
+##reference={reference}
+{contig_lines}
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t\
 """
+
+
 
 
 class Writer:
-    def __init__(self, seqs, names, ancestral_seq=None):
-        """
-        Writer class object to write ipcoal seqs in a variety of formats.
+    """
+    Writer class object to write ipcoal seqs in a variety of formats.
 
-        Parameters
-        ----------
-        seqs (ndarray)
-            A .seqs array from ipcoal of dimensions (nloci, ntaxa, nsites). 
-            The data for the ntaxa is ordered by their names alphanumerically.
-        names (list)
-            A list of the taxon names ordered alphanumerically.
-        """
+    Parameters
+    ----------
+    seqs (ndarray)
+        A .seqs array from ipcoal of dimensions (nloci, ntaxa, nsites). 
+        The data for the ntaxa is ordered by their names alphanumerically.
+    names (list)
+        A list of the taxon names ordered alphanumerically.
+    """
+    def __init__(self, seqs, names, ancestral_seq=None):
         # both are already ordered alphanumerically
         self.seqs = seqs.copy()
         self.names = names.copy()
@@ -83,8 +111,6 @@ class Writer:
         name_prefix=None, 
         name_suffix=None, 
         diploid=False, 
-        diploid_map=None, 
-        seed=None,
         quiet=False):
         """
         Write all seq data for each locus to a separate phylip file in a shared
@@ -157,8 +183,6 @@ class Writer:
         name=None,
         idxs=None, 
         diploid=False, 
-        diploid_map=None, 
-        seed=None, 
         quiet=False):
         """
         Write all seq data (loci or snps) concated to a single phylip file.
@@ -191,21 +215,20 @@ class Writer:
         if not name:
             return phystring
 
-        else:
-            # create a directory if it doesn't exist
-            outdir = os.path.realpath(os.path.expanduser(outdir))
-            if not os.path.exists(outdir):
-                os.makedirs(outdir)
-            outfile = os.path.join(outdir, name.rstrip(".phy") + ".phy")
+        # create a directory if it doesn't exist
+        outdir = os.path.realpath(os.path.expanduser(outdir))
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+        outfile = os.path.join(outdir, name.rstrip(".phy") + ".phy")
 
-            # write to file
-            with open(outfile, 'w') as out:
-                out.write(phystring)
+        # write to file
+        with open(outfile, 'w') as out:
+            out.write(phystring)
 
-            # report 
-            if not quiet:
-                print("wrote concat locus ({} x {}bp) to {}"
-                      .format(arr.shape[0], arr.shape[1], outfile))
+        # report 
+        if not quiet:
+            print("wrote concat locus ({} x {}bp) to {}"
+                  .format(arr.shape[0], arr.shape[1], outfile))
 
 
     def write_concat_to_nexus(
@@ -214,8 +237,6 @@ class Writer:
         name=None,
         idxs=None, 
         diploid=False, 
-        diploid_map=None, 
-        seed=None, 
         quiet=False):
         """
         Write all seq data (loci or snps) concated to a single phylip file.
@@ -249,21 +270,20 @@ class Writer:
         if not name:
             return nexstring
 
-        else:
-            # create a directory if it doesn't exist
-            outdir = os.path.realpath(os.path.expanduser(outdir))
-            if not os.path.exists(outdir):
-                os.makedirs(outdir)
-            outfile = os.path.join(outdir, name.rstrip(".nex") + ".nex")
+        # create a directory if it doesn't exist
+        outdir = os.path.realpath(os.path.expanduser(outdir))
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+        outfile = os.path.join(outdir, name.rstrip(".nex") + ".nex")
 
-            # write to file
-            with open(outfile, 'w') as out:
-                out.write(nexstring)
+        # write to file
+        with open(outfile, 'w') as out:
+            out.write(nexstring)
 
-            # report 
-            if not quiet:
-                print("wrote concat locus ({} x {}bp) to {}"
-                      .format(arr.shape[0], arr.shape[1], outfile))
+        # report 
+        if not quiet:
+            print("wrote concat locus ({} x {}bp) to {}"
+                  .format(arr.shape[0], arr.shape[1], outfile))
 
 
     def write_loci_to_hdf5(self, name, outdir, diploid, quiet):
@@ -278,13 +298,13 @@ class Writer:
         # if non-dependency h5py is not installed then raise exception.
         try:
             import h5py
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "Writing to HDF5 format requires the additional dependency "
-                "'h5py' which you can install with the following command:\n "
+                "h5py which you can install with the following command:\n "
                 "  conda install h5py -c conda-forge \n"
                 "After installing you will need to restart your notebook."
-            )
+            ) from err
 
         # get seqs as bytes 
         txf = Transformer(self.seqs, self.names, diploid)
@@ -329,18 +349,19 @@ class Writer:
 
     def write_snps_to_hdf5(self, name, outdir, diploid, quiet):
         """
-
+        Writes the snps array data to snps, snpsmap, and genos arrays
+        in HDF5 database format for use in ipa. 
         """
         # if non-dependency h5py is not installed then raise exception.
         try:
             import h5py
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "Writing to HDF5 format requires the additional dependency "
                 "'h5py' which you can install with the following command:\n "
                 "  conda install h5py -c conda-forge \n"
                 "After installing you will need to restart your notebook."
-            )
+            ) from err
 
         # reshape SNPs to be like loci.
         if self.seqs.ndim == 2:
@@ -361,11 +382,14 @@ class Writer:
         nsites = varsites.size
 
         # get genos as string array [0|0, 0|1, 1|1, ...]
-        genos = Genos(arr, self.ancestral_seq, varsites, txf.dindex_map)
-        if 9 in arr:
-            gmat = genos.get_genos_matrix_missing()
-        else:
-            gmat = genos.get_genos_matrix()
+        genos = Genos(
+            arr, 
+            np.concatenate(self.ancestral_seq),
+            varsites, 
+            txf.dindex_map,
+        )
+        _, gmat = genos.get_alts_and_genos_matrix()
+
 
         # get snpsmap (chrom, locidx, etc.)
         smap = np.zeros((nsites, 5), dtype=np.uint32)
@@ -379,8 +403,8 @@ class Writer:
             lidx = 0
 
             # enter variants to snpmap
-            for snpidx in lvar:
-                smap[gidx] = loc + 1, lidx, snpidx, 0, gidx + 1
+            for snppos in lvar:
+                smap[gidx] = loc + 1, lidx, snppos + 1, 0, gidx + 1
                 lidx += 1
                 gidx += 1
 
@@ -420,14 +444,27 @@ class Writer:
             print("wrote {} SNPs to {}".format(nsites, h5file))
 
 
-    def write_vcf(self, name=None, outdir=None, diploid=None, bgzip=False, quiet=False):
+    def write_vcf(self, name=None, outdir=None, diploid=None, bgzip=False, fill_missing_alleles=True, quiet=False):
         """
         Passes data to VCF object for conversion and writes resulting table 
         to CSV. 
 
-        TODO: bgzip option may be overkill, build_vcf could be much faster
-        using methods like Genos.
-
+        Parameters
+        ----------
+        name (str):
+            Prefix name for output file. Will write {name}.vcf.
+        outdir (str):
+            The directory to write the output file to.
+        diploid (bool):
+            Combine haploid samples into diploid genotypes.
+        bgzip (bool):
+            Call bgzip to block compress the file (writes as .vcf.gz).
+        fill_missing_alleles (bool):
+            If there is missing data this will fill diploid missing alleles. 
+            e.g., the call (0|.) will be written as (0|0). This is meant to
+            emulate real data where we often do not know the other allele
+            is missing (also, some software tools do not accept basecalls 
+            with one missing allele, such as vcftools).
         """
         # reshape SNPs array to be like loci 
         if self.seqs.ndim == 2:
@@ -442,44 +479,46 @@ class Writer:
             self.names, 
             diploid, 
             self.ancestral_seq,
+            fill_missing_alleles,
         )
-        vcfdf = vcf.build_vcf()
 
         # return dataframe if no filename
         if name is None:
-            return vcfdf
+            # concatenate all chunks and return as full dataframe
+            fullv = pd.concat(vcf.vcf_chunk_generator(), axis=0)            
+            fullv.reset_index(drop=True, inplace=True)
+            return fullv            
 
         # create a directory if it doesn't exist
-        else:
-            # get filepath
-            outdir = (outdir if outdir else "./")
-            outdir = os.path.realpath(os.path.expanduser(outdir))
-            if not os.path.exists(outdir):
-                os.makedirs(outdir)
-            outfile = os.path.join(outdir, name.rstrip(".vcf") + ".vcf")
+        outdir = (outdir if outdir else "./")
+        outdir = os.path.realpath(os.path.expanduser(outdir))
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
 
-            # write to filepath
-            with open(outfile, 'wt') as vout:
-                vcf.build_header()
-                vout.write(vcf.header)
-                vout.write(vcfdf.to_csv(header=False, index=False, sep="\t"))
+        # get output filepath
+        outfile = os.path.join(outdir, name.rstrip(".vcf") + ".vcf")
 
-            # call bgzip from tabix so that bcftools can be used on VCF.
-            # this will not work with normal gzip compression.
-            if bgzip:
-                import subprocess
-                subprocess.call(["bgzip", outfile])
-                outfile = outfile.rstrip(".gz") + ".gz"
+        # write to filepath and record stats while doing it.
+        nchroms = 0
+        nsnps = 0
+        with open(outfile, 'wt') as vout:           
+            vout.write(vcf.get_header())
+            for vchunk in vcf.vcf_chunk_generator():
+                vout.write(vchunk.to_csv(header=False, index=False, sep="\t"))
+                nsnps += vchunk.shape[0]
+                nchroms += vchunk.CHROM.unique().shape[0]
 
-            # report
-            if not quiet:
-                print(
-                    "wrote {} SNPs across {} linkage blocks to {}"
-                    .format(
-                        vcfdf.shape[0],
-                        vcfdf.CHROM.unique().shape[0], 
-                        outfile)
-                )
+        # call bgzip from tabix so that bcftools can be used on VCF.
+        # this will not work with normal gzip compression.
+        if bgzip:
+            import subprocess
+            subprocess.run(["bgzip", "-f", outfile], check=True)
+            outfile = outfile.rstrip(".gz") + ".gz"
+
+        # report
+        if not quiet:
+            print("wrote {} SNPs across {} linkage blocks to {}"
+                .format(nsnps, nchroms, outfile))
 
 
     def build_phystring_from_loc(self, arr):
@@ -540,138 +579,12 @@ class Writer:
     #             file.write(line)
 
 
-class Genos:
-    """
-
-    """
-    def __init__(self, concatseqs, anc, snpidxs, dindex_map):
-
-        self.seqs = concatseqs
-        self.anc = anc
-        self.snpidxs = snpidxs
-        self.dindex_map = dindex_map
-
-
-    def get_genos_matrix(self):
-        """
-        Returns genos matrix as ints array (nsnps, nsamples, 2)
-        """
-        # concatenate seqs to -1 dim
-        aseq = np.concatenate(self.anc)
-        tseq = self.seqs
-
-        # subsample to varible sites if SNPs only
-        if self.snpidxs is not None:
-            aseq = aseq[self.snpidxs]
-            tseq = tseq[:, self.snpidxs]
-
-        # get genotype calls (derived or ancestral)
-        genos = np.invert(tseq == aseq).astype(int)
-
-        # derived (1) or another derived (2); compare to the low allele in data
-        # this does not worry about which is the more common allele, since we
-        # expect any downstream method that will use 'geno' calls will simply
-        # use the presence of multiple genos as a filtering mechanism. 
-        # Thus, the x/0 in genos still just means derived/ancestral.
-
-        # get derived alleles at every site
-        marr = np.ma.array(data=tseq, mask=genos == 0)
-
-        # if any derived alleles are not the max allele at that site
-        maxa = marr.max(axis=0)
-        alts = marr != maxa
-        alts[marr.mask] = False
-        genos[alts] = 2
-
-        # shape into char array 
-        gmat = np.zeros((tseq.shape[1], len(self.dindex_map), 2), dtype=np.uint8)
-        for idx in self.dindex_map:
-            left, right = self.dindex_map[idx]
-            gmat[:, idx, :] = genos[(left, right), :].T
-        return gmat
-
-
-    def get_genos_matrix_missing(self):
-        """
-        Returns genos matrix a bit slower b/c accomodates missing values (9),
-        snpidxs has already been computed on a masked array.
-        """
-        # concatenate seqs to -1 dim
-        aseq = np.concatenate(self.anc)
-        tseq = self.seqs
-
-        # subsample to varible sites if SNPs only
-        if self.snpidxs is not None:
-            aseq = aseq[self.snpidxs]
-            tseq = tseq[:, self.snpidxs]
-
-        # get genotype calls (inverts data but not mask)
-        tseqm = np.ma.array(tseq, mask=(tseq == 9))
-        genos = np.invert(tseqm == aseq).astype(int)
-
-        # if any derived alleles are not the max allele at that site
-        marr = np.ma.array(data=tseq, mask=(genos == 0) | (tseq == 9))
-        maxa = marr.max(axis=0)
-        alts = marr != maxa
-        alts[marr.mask] = False
-        genos[alts] = 2
-
-        # shape into char array 
-        gmat = np.zeros((tseq.shape[1], len(self.dindex_map), 2), dtype=np.uint8)
-        for idx in self.dindex_map:
-
-            # get the haplotypes indices
-            left, right = self.dindex_map[idx]
-
-            # get data arranged to right shape
-            mdata = genos[(left, right), :].T
-
-            # fill masked values to 9
-            idat = mdata.data.astype(int)
-            idat[mdata.mask] = 9
-
-            # copy other allele over 9 if it is not 9
-            idat[idat[:, 0] == 9, 0] = idat[idat[:, 0] == 9, 1]
-            idat[idat[:, 1] == 9, 1] = idat[idat[:, 1] == 9, 0]
-
-            # store the results
-            gmat[:, idx, :] = idat
-        return gmat
-
-
-
-
-
-    def get_genos_string(self):
-        """
-        Return string representation of genotypes, e.g., 0|0, 1|0, ...
-        """
-        # concatenate seqs to -1 dim
-        aseq = np.concatenate(self.anc)
-        seqs = np.concatenate(self.seqs, axis=1)
-
-        # subsample to varible sites if SNPs only
-        if self.snpidxs is not None:
-            aseq = aseq[self.snpidxs]
-            seqs = seqs[:, self.snpidxs]
-
-        # get genotype calls
-        genos = np.invert(seqs == aseq).astype(int)
-
-        # shape into char array 
-        if self.dindex_map is None:
-            gmat = np.char.array(genos) + b"|" + np.char.array(genos)
-        else:
-            gmat = np.chararray(seqs.shape, 3)
-            for idx in self.dindex_map:
-                left, right = self.dindex_map[idx]
-                gmat[idx] = ["{}|{}".format(i, j) for (i, j) in zip(genos)]
-        return gmat
-
 
 
 class Transformer:
     """
+    Converts seqs from ints to strings including diploid base calls.
+
     seqs: (ndarray)
     names: (ndarray)
     diploid: (bool)
@@ -797,20 +710,30 @@ class Transformer:
 
 
 
+
+
 class VCF:
-    def __init__(self, seqs, names, diploid, ancestral):
-        """
-        Write SNPs in VCF format. Note: we use the true ancestral sequence to
-        represent the reference such that matching the reference of not 
-        is the same as ancestral vs. derived. However, we only include sites
-        that are variable among the samples, i.e., a SNP is not defined if 
-        all samples are derived relative to the reference (ancestral seq).
-        """
+    """
+    Write SNPs in VCF format. Note: we use the true ancestral sequence to
+    represent the reference such that matching the reference of not 
+    is the same as ancestral vs. derived. However, we only include sites
+    that are variable among the samples, i.e., a SNP is not defined if 
+    all samples are derived relative to the reference (ancestral seq).
+
+    Parameters
+    ==========
+    seqs (arr): int array (nloci, nsamples, nsites).
+    names (str): haploid sample names.
+    diploid (bool): make diploid genos.
+    ancestral (arr): the ancestral seq (nloci, nsites)
+    fill_missing_alleles: write diploids with missing alleles (0|.) as (0|0).
+    """
+    def __init__(self, seqs, names, diploid, ancestral, fill_missing_alleles):
         self.names = names
         self.seqs = seqs
-        self.diploid = diploid
-        self.diploid_map = {}
-        self.aseqs = convert_intarr_to_bytearr(ancestral)  # .astype(bytes))
+        self.aseqs_ints = ancestral
+        self.aseqs_bytes = convert_intarr_to_bytearr(self.aseqs_ints)
+        self.fill_missing_alleles = fill_missing_alleles
 
         # do not combine for ambiguity codes, but get diploid_map and names.
         txf = Transformer(self.seqs, self.names, diploid)
@@ -818,7 +741,7 @@ class VCF:
         self.dnames = txf.names
 
 
-    def build_header(self):
+    def get_header(self):
         """
         Called AFTER the .df vcf is built.
         """
@@ -830,167 +753,118 @@ class VCF:
                 contig_lines.append(
                     "##contig=<ID={},length={}>".format(loc, arr.shape[1])) 
 
-        self.header = VCFHEADER.format(**{
+        header = VCFHEADER.format(**{
             "date": datetime.datetime.now(),
             "version": ipcoal.__version__, 
             "reference": "true_simulated_ancestral_sequence",
             "contig_lines": "\n".join(contig_lines)
         })
-        self.header = "{}{}\n".format(self.header, "\t".join(self.dnames))
+        header = "{}{}\n".format(header, "\t".join(self.dnames))
+        return header
 
 
-    def build_vcf(self):
+
+    def vcf_chunk_generator(self):
         """
         Build a DF of genotypes and metadata.
         """
+        # iterate over loci building vcf dataframes
+        for lidx in range(self.seqs.shape[0]):
 
-        # get nrows (snps) in VCF
-        arr = np.concatenate(self.seqs, axis=1)
-        varsites = np.where(np.any(arr != arr[0], axis=0))[0]
-        nsites = varsites.size
+            # get array of sequence data
+            arr = self.seqs[lidx]
 
-        # vcf dataframe
-        df = pd.DataFrame({
-            "CHROM": np.repeat(0, nsites),
-            "POS": np.repeat(1, nsites),
-            "ID": np.repeat(".", nsites),
-            "REF": np.concatenate(self.aseqs)[varsites].astype(str),
-            "ALT": "A,C,G",
-            "QUAL": 99,
-            "FILTER": "PASS",
-            "INFO": ".",
-            "FORMAT": "GT",
-        })
+            # get indices of variable sites while allowing for missing data       
+            marr = np.ma.array(data=arr, mask=(arr == 9))
+            common = marr.mean(axis=0).round().astype(int)
+            varsites = np.where(np.any(marr != common, axis=0).data)[0]
+            nsites = varsites.size
 
-        # haploid samples genotype dataframe
-        samples = pd.DataFrame(
-            np.zeros((nsites, len(self.names)), dtype=int),
-            columns=self.names,
-        )
+            # vcf dataframe
+            vdf = pd.DataFrame({
+                "CHROM": np.repeat(0, nsites),
+                "POS": np.repeat(1, nsites),
+                "ID": np.repeat(".", nsites),
+                "REF": "N", 
+                "ALT": "A,C,G",
+                "QUAL": 99,
+                "FILTER": "PASS",
+                "INFO": ".",
+                "FORMAT": "GT",
+            })
 
-        # count up from first row
-        snpidx = 0
+            # fill in the reference allele using the known ancestral seq
+            vdf.loc[:, "REF"] = self.aseqs_bytes[lidx][varsites].astype(str)
 
-        # iterate over loci to fill dataframe
-        for loc in range(self.seqs.shape[0]):
-
-            # get locus and SNP indices
-            arr = convert_intarr_to_bytearr(self.seqs[loc])
-            slocs = np.where(np.any(arr != arr[0], axis=0))[0]
-            nsnps = len(slocs)
-
-            # if any snps
-            if nsnps:
-
-                # fill the ALT field
-                altstr = []
-                for cidx, col in enumerate(slocs):
-
-                    # get the alt alleles
-                    site = arr[:, col]
-                    alts = sorted(set(site) - set([self.aseqs[loc, col]]))
-                    altstr.append(b",".join(alts).decode())                    
-
-                    # fill sample genos with alt index
-                    for adx, alt in enumerate(alts):
-                        match = site == alt
-                        samples.iloc[snpidx + cidx, match] = adx + 1
-
-                # fill in dataframe (remember .loc includes last row index)
-                df.loc[snpidx:snpidx + nsnps - 1, "CHROM"] = loc
-                df.loc[snpidx:snpidx + nsnps - 1, "POS"] = slocs + 1
-                df.loc[snpidx:snpidx + nsnps - 1, "ALT"] = altstr
-
-                # advance counter
-                snpidx += nsnps
-
-        # convert to diploid genotypes
-        if self.diploid:
-            dsamples = pd.DataFrame(
-                np.zeros((nsites, len(self.dnames)), dtype=str), 
-                columns=self.dnames, 
+            # get genos and alts            
+            genos = Genos(
+                arr, 
+                self.aseqs_ints[lidx],
+                varsites, 
+                self.dindex_map,
+                self.fill_missing_alleles,
             )
-            for didx, sidxs in self.dindex_map.items():
-                sidxs = sorted(sidxs)
-                col0 = samples.iloc[:, sidxs[0]].astype(str)
-                col1 = samples.iloc[:, sidxs[1]].astype(str)
-                dsamples.iloc[:, didx] = col0 + "|" + col1
-            return pd.concat([df, dsamples], axis=1)
-        return pd.concat([df, samples], axis=1)
+            alts, garrdf = genos.get_alts_and_genos_string_matrix()
+            garrdf.columns = self.dnames
+
+            # fill vcf chunk dataframe
+            vdf.loc[:, "CHROM"] = lidx + 1
+            vdf.loc[:, "POS"] = varsites + 1
+            vdf.loc[:, "ALT"] = alts.astype(str)
+            vdf = pd.concat([vdf, garrdf], axis=1)
+
+            # yield result to act as a generator of chunks
+            yield vdf
 
 
 
-def convert_intarr_to_bytearr(iarr):
-    "An array of ints converted to bytes"
-    barr = np.zeros(iarr.shape, dtype="S1")
-    barr[iarr == 0] = b"A"
-    barr[iarr == 1] = b"C"
-    barr[iarr == 2] = b"G"
-    barr[iarr == 3] = b"T"
-    barr[iarr == 9] = b"N"
-    return barr
 
 
-# def convert_intarr_to_bytearr(arr):
-#     "An array of ints was turned into bytes and this converts to bytestrings"
-#     arr[arr == b"0"] = b"A"
-#     arr[arr == b"1"] = b"C"
-#     arr[arr == b"2"] = b"G"
-#     arr[arr == b"3"] = b"T"
-#     return arr
+if __name__ == "__main__":
+
+    import h5py
+    import ipcoal
+    import toytree
+
+    TREE = toytree.rtree.unittree(6, 1e6)
+    MOD = ipcoal.Model(TREE, Ne=1e6, nsamples=2)
+    MOD.sim_loci(10, 100)
+    MOD.apply_missing_mask(coverage=0.5)
+
+    # test vcf writing to file, and to diploid and haploid dataframes
+    WRITER = Writer(MOD.seqs, MOD.alpha_ordered_names, MOD.ancestral_seq)
+    df = WRITER.write_vcf(
+        name='test', 
+        outdir='/tmp/', 
+        diploid=True, 
+        bgzip=True, 
+        quiet=False,
+    )
+    df = WRITER.write_vcf(diploid=True)
+    print(df.head())
+    df = WRITER.write_vcf(diploid=False)
+    print(df.head())
+
+    # test writing loci to hdf5 and show snpsmap
+    WRITER.write_loci_to_hdf5(
+        name="test",
+        outdir="/tmp",
+        diploid=True,
+        quiet=False,
+    )
+    with h5py.File("/tmp/test.seqs.hdf5", 'r') as io5:
+        print(io5["phymap"][:5])
 
 
-def convert_intarr_to_bytearr_diploid(arr):
-    """
-    Two arrays of ints were turned into bytes and joined (e.g., b'00') and
-    this converts it to a single bytestring IUPAC code for diploids.
-    """
-    arr[arr == b"00"] = b"A"
-    arr[arr == b"11"] = b"C"
-    arr[arr == b"22"] = b"G"
-    arr[arr == b"33"] = b"T"
-    arr[arr == b"01"] = b"K"
-    arr[arr == b"10"] = b"K"    
-    arr[arr == b"02"] = b"Y"
-    arr[arr == b"20"] = b"Y"    
-    arr[arr == b"03"] = b"W"
-    arr[arr == b"30"] = b"W"    
-    arr[arr == b"12"] = b"S"
-    arr[arr == b"21"] = b"S"    
-    arr[arr == b"13"] = b"R"
-    arr[arr == b"31"] = b"R"    
-    arr[arr == b"23"] = b"M"
-    arr[arr == b"32"] = b"M"
-
-    arr[arr == b"90"] = b"A"
-    arr[arr == b"09"] = b"A"
-    arr[arr == b"91"] = b"C"
-    arr[arr == b"19"] = b"C"
-    arr[arr == b"92"] = b"G"
-    arr[arr == b"29"] = b"G"
-    arr[arr == b"93"] = b"T"
-    arr[arr == b"39"] = b"T"
-    arr[arr == b"99"] = b"N"
-
-    return arr
+    WRITER.write_snps_to_hdf5(
+        name="test",
+        outdir="/tmp",
+        diploid=True,
+        quiet=False,
+    )
+    with h5py.File("/tmp/test.snps.hdf5", 'r') as io5:
+        print(io5["snps"].shape)
+        print(io5["snpsmap"][:20])
 
 
-
-NEXHEADER = """#nexus
-begin data;
-  dimensions ntax={} nchar={};
-  format datatype=DNA missing=N gap=- interleave=yes;
-  matrix\n
-"""
-
-
-# TODO add an attribution of the ipcoal version and list sim parameters.
-VCFHEADER = """\
-##fileformat=VCFv4.2
-##fileDate={date}
-##source=ipcoal-v.{version}
-##reference={reference}
-{contig_lines}
-##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
-#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t\
-"""
+    
