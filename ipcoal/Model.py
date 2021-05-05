@@ -586,7 +586,7 @@ class Model(object):
                 dest = min([i._schild for i in node.children])
                 source = max([i._schild for i in node.children])
                 time = node.height  # int(node.height)
-                demog.add(ms.MassMigration(time, source, dest))
+                demog.add_mass_migration(time, source, dest, 1.0)
 
                 # for all nodes set Ne changes
                 demog.add(ms.PopulationParametersChange(
@@ -630,8 +630,7 @@ class Model(object):
                 snode = self.tree.treenode.search_nodes(idx=source)[0]
                 dnode = self.tree.treenode.search_nodes(idx=dest)[0]
                 children = (snode._schild, dnode._schild)
-                demog.add(
-                    ms.MassMigration(time, children[0], children[1], rate))
+                demog.add_mass_migration(time, children[0], children[1], rate)
                 if self._debug:
                     print(
                         'mig pulse: {:>9}, {:>2} {:>2}, {:>2} {:>2}, rate={:.2f}'
