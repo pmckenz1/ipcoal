@@ -7,7 +7,7 @@ data to VCF or HDF5 output formats.
 
 import numpy as np
 import pandas as pd
-from ipcoal.utils import convert_intarr_to_bytearr
+from ipcoal.utils.utils import convert_intarr_to_bytearr
 
 
 

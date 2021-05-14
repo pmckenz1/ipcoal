@@ -9,15 +9,16 @@ combining haplotypes into diploid base calls.
 import os
 import datetime
 from itertools import groupby
+from typing import Optional, Iterable
 
 import numpy as np
 import pandas as pd
 
-import ipcoal
-from ipcoal.Genos import Genos
-from ipcoal.utils import ipcoalError
-from ipcoal.utils import convert_intarr_to_bytearr
-from ipcoal.utils import convert_intarr_to_bytearr_diploid
+# import ipcoal
+from ipcoal.io.Genos import Genos
+from ipcoal.utils.utils import ipcoalError
+from ipcoal.utils.utils import convert_intarr_to_bytearr
+from ipcoal.utils.utils import convert_intarr_to_bytearr_diploid
 
 
 
@@ -111,7 +112,8 @@ class Writer:
         name_prefix=None, 
         name_suffix=None, 
         diploid=False, 
-        quiet=False):
+        quiet=False,
+        ):
         """
         Write all seq data for each locus to a separate phylip file in a shared
         directory with each locus named by locus index. If you want to write
@@ -179,11 +181,12 @@ class Writer:
 
     def write_concat_to_phylip(
         self, 
-        outdir="./", 
-        name=None,
-        idxs=None, 
-        diploid=False, 
-        quiet=False):
+        outdir:Optional[str]="./",
+        name:Optional[str]=None,
+        idxs:Optional[Iterable[int]]=None, 
+        diploid:bool=False, 
+        quiet:bool=False,
+        ):
         """
         Write all seq data (loci or snps) concated to a single phylip file.
 

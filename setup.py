@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+"""
+Run `pip install -e .` to install local git version.
+"""
+
 import os
 import re
 from setuptools import setup
@@ -40,8 +44,6 @@ setup(
     license='GPL',
     classifiers=[
         'Programming Language :: Python',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',        

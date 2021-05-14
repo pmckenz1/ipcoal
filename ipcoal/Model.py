@@ -5,24 +5,22 @@ Generate large database of site counts from coalescent simulations
 based on msprime + toytree for using in machine learning algorithms.
 """
 
-# imports for py3 compatibility
-from __future__ import print_function
-from builtins import range
-
-# imports
-import sys
+from typing import List, Tuple, Optional, Dict
+import os
 import numpy as np
 import pandas as pd
 import msprime as ms
 import toytree
-# import warnings
+from loguru import logger
 
-from .utils import get_all_admix_edges, ipcoalError
-from .utils import draw_seqview, calculate_pairwise_dist
-from .TreeInfer import TreeInfer
-from .Writer import Writer
-from .SeqModel import SeqModel
-from .SeqGen import SeqGen
+from ipcoal.markov.SeqModel import SeqModel
+from ipcoal.phylo.TreeInfer import TreeInfer
+from ipcoal.io.Writer import Writer
+from ipcoal.utils.utils import get_all_admix_edges, ipcoalError
+from ipcoal.draw.seqview import draw_seqview
+from ipcoal.utils.utils import calculate_pairwise_dist
+# from .SeqGen import SeqGen
+
 
 # set global display preference to make tree columns look nice
 pd.set_option("max_colwidth", 28)
@@ -122,54 +120,38 @@ class Model(object):
     """
     def __init__(
         self,
-        tree="",
-        Ne=10000,   
-        admixture_edges=None,
-        admixture_type=0,
-        nsamples=1,
-        mut=1e-8,
-        recomb=1e-9,
+        tree: Optional[toytree.ToyTree]=None,
+        Ne: Optional[int]=None,   
+        admixture_edges: Optional[List[Tuple[int,int,float,float]]]=None,
+        admixture_type:int=0,  # FIXME: this could be dropped since we can infer interval if admixture_edge uses a tuple instead of float for the edge min,max
+        nsamples: int=1,
+        mut: float=1e-8,
+        recomb: float=1e-9,
         recomb_map=None,
-        seed=None,
-        seed_mutations=None,
-        substitution_model=None,
-        debug=False,
+        seed: Optional[int]=None,
+        seed_mutations: Optional[int]=None,
+        substitution_model: str=None,
         **kwargs,
         ):
 
         # legacy support warning messages
-        self._legacy_support(kwargs)
+        self._warn_bad_kwargs(kwargs)
 
-        # initialize random seed for msprime and seq-gen
+        # initialize random seed for msprime and SeqModel
         self._init_seed = seed
         self._init_mseed = seed_mutations
-        self._reset_random_seed()
+        self.rng_trees: np.random.Generator = None
+        self.rng_muts: np.random.Generator = None
+        self._reset_random_generators()
 
-        # hidden argument to turn on debugging
-        self._debug = debug
-
-        # parse input tree, store orig, resolv poly is needed and returns copy.
-        if isinstance(tree, toytree.Toytree.ToyTree):
-            self.treeorig = tree
-            self.tree = self.treeorig.resolve_polytomy(dist=0.00001)
-        elif isinstance(tree, str):
-            self.treeorig = toytree.tree(tree)
-            self.tree = self.treeorig.resolve_polytomy(dist=0.00001)
-        else:
-            raise TypeError("input tree must be newick str or Toytree object")
-
+        # parse input tree, store orig, resolv poly if needed to get copy
+        self.treeorig = toytree.tree(tree)
+        self.tree = self.treeorig.resolve_polytomy(dist=0.00001)
+        self.ntips: int = self.tree.ntips
+        self.nsamples: List[int] = None
+        self.nstips: int = None
         # expand nsamples to ordered list, e.g., [2, 1, 1, 2, 10, 10]
-        self.ntips = len(self.tree)
-        if isinstance(nsamples, int):
-            self.nsamples = [int(nsamples) for i in range(self.ntips)]
-            self.nstips = int(nsamples) * self.ntips
-        else:
-            assert isinstance(nsamples, (list, tuple)), (
-                "nsamples should be a list")
-            assert len(nsamples) == self.ntips, (
-                "nsamples list should be same length as ntips in tree.")
-            self.nsamples = nsamples
-            self.nstips = sum(self.nsamples)
+        self._set_samples(nsamples)
 
         # store sim params: fixed mut, Ne, recomb
         self.mut = mut
@@ -183,54 +165,25 @@ class Model(object):
         )
 
         # global Ne will be overwritten by Ne attrs in .tree. This sets node.Ne
-        self.Ne = Ne
-        self._get_Ne()
+        self.neff: int = None
+        self._set_neff(Ne)
 
         # store tip names for renaming on the ms tree (ntips * nsamples)
-        _tlabels = self.tree.get_tip_labels()
-        if nsamples == 1:
-            self.tipdict = dict(enumerate(_tlabels))
-            self.sampledict = dict(zip(_tlabels, self.nsamples))
-        else:
-            self.tipdict = {}
-            self.sampledict = {}
-            idx = 0
-            for tip, ns in zip(_tlabels, self.nsamples):
-                for nidx in range(ns):
-                    self.tipdict[idx] = "{}-{}".format(tip, nidx)
-                    idx += 1
-                self.sampledict[tip] = ns
-
-        # dictionary of tip heights
-        self.tip_to_heights = self.tree.get_feature_dict("name", "height")
-        self.tip_to_heights = {
-            i: j for (i, j) in self.tip_to_heights.items() if i in _tlabels}
-        self._tips_are_ultrametric = (
-            len(set(self.tip_to_heights.values())) == 1)
-
-        # alphanumeric ordered tip names -- order of printing to seq files
-        self.alpha_ordered_names = sorted(self.tipdict.values())
-
-        # for reordering seq array (in 1-indexed tip order) to alpha tipnames
-        self._order = {
-            i: self.alpha_ordered_names.index(j) for (i, j) 
-            in self.tipdict.items()
-        }
+        self.tipdict: dict = None
+        self.sampledict: dict = None
+        self.tip_to_heights: dict = None
+        self._tips_are_ultrametric: bool = None
+        self.alpha_ordered_names: List[str] = None
+        self._order: Dict[str,int] = None
+        self._get_tip_names_for_renaming()
 
         # check formats of admixture args
-        self.admixture_edges = (admixture_edges if admixture_edges else [])
-        self.admixture_type = (1 if admixture_type in (1, "interval") else 0)
-        if self.admixture_edges:
-            if not isinstance(self.admixture_edges[0], (list, tuple)):
-                self.admixture_edges = [self.admixture_edges]
-            for edge in self.admixture_edges:
-                if len(edge) != 4:
-                    raise ValueError(
-                        "admixture edges should each be a tuple with 4 values")
-        self.aedges = (
-            0 if not self.admixture_edges else len(self.admixture_edges))
+        self.admixture_edges: List[Tuple(int,int,float,float)] = None
+        self.admixture_type: int = 1 if admixture_type in (1, "interval") else 0
+        self.aedges: int = None
+        self._get_admixture_edges(admixture_edges)
 
-        # demography info to fill
+        # demography info to fill (UPDATED FOR MSPRIME VERSION X)
         self.ms_migrate = []
         self.ms_migtime = []
         self.ms_demography = set()
@@ -257,25 +210,390 @@ class Model(object):
         self.substitution_model = substitution_model
         self._check_substitution_kwargs()
 
-        # store post-init seed(s). These will be reset after any .sim call
-        # so that if a sim call is repeated on a Model it returns the same
-        # result instead of being advanced to a new random seed.
-        # TODO..
+    @staticmethod
+    def _warn_bad_kwargs(kwargs):
+        """
+        Warn user that args are being skipped
+        """
+        if kwargs:
+            logger.warning(
+                f"Parameters {list(kwargs)} are not supported. See "
+                "documentation, argument names may have changed."
+            )
 
-
-    def _reset_random_seed(self):
+    def _reset_random_generators(self):
         """
         Called after sim_trees(), sim_snps() or sim_loci to return all seeds
         to their state during init so that an init'd mod object that was init'd
         with some random seed will always return the same results even if 
         run multiple times.
         """
-        self.random = np.random.RandomState(self._init_seed)
-        self.random_mut = (
-            np.random.RandomState(self._init_mseed) if self._init_mseed 
-            else self.random
+        self.rng_trees = np.random.default_rng(self._init_seed)
+        self.rng_muts = (
+            self.rng_trees if not self._init_mseed
+            else np.random.default_rng(self._init_mseed)
         )
 
+    def _set_samples(self, nsamples):
+        """
+        Get a list with number of sampled gene copies per tip species.
+        """
+        if isinstance(nsamples, int):
+            self.nsamples = [int(nsamples) for i in range(self.ntips)]
+            self.nstips = int(nsamples) * self.ntips
+        else:
+            assert isinstance(nsamples, (list, tuple)), (
+                "nsamples should be a list")
+            assert len(nsamples) == self.ntips, (
+                "nsamples list should be same length as ntips in tree.")
+            self.nsamples = nsamples
+            self.nstips = sum(self.nsamples)
+
+    def _get_tip_names_for_renaming(self):
+        """
+        Fills tipdict and sampledict for renaming the genealogy tips
+        to match the species tree names if a single sample per tip, 
+        or to match with additional integers (A-0, A-1) if multiple 
+        samples per tip.
+        """
+        _tlabels = self.tree.get_tip_labels()
+        if all([i == 1 for i in self.nsamples]):
+            self.tipdict = dict(enumerate(_tlabels))
+            self.sampledict = dict(zip(_tlabels, self.nsamples))
+        else:
+            self.tipdict = {}
+            self.sampledict = {}
+            idx = 0
+            for tip, nsamp in zip(_tlabels, self.nsamples):
+                for nidx in range(nsamp):
+                    self.tipdict[idx] = "{}-{}".format(tip, nidx)
+                    idx += 1
+                self.sampledict[tip] = nsamp
+
+        # get map of tips to heights for trees with generation time 
+        # differences such that the tree is not ultrametric. Also store
+        # a boolean for whether or not tips are ultrametric.x
+        self.tip_to_heights = self.tree.get_feature_dict("name", "height")
+        self.tip_to_heights = {
+            i: j for (i, j) in self.tip_to_heights.items() if i in _tlabels}
+        self._tips_are_ultrametric: bool = (
+            len(set(self.tip_to_heights.values())) == 1)
+        logger.debug(f"tree is ultrametric: {self._tips_are_ultrametric}")
+
+        # alphanumeric ordered tip names -- order of printing to seq files
+        self.alpha_ordered_names = sorted(self.tipdict.values())
+
+        # for reordering seq array (in 1-indexed tip order) to alpha tipnames
+        self._order = {
+            i: self.alpha_ordered_names.index(j) for (i, j) 
+            in self.tipdict.items()
+        }
+
+    def _get_admixture_edges(self, admixture_edges):
+        """
+        Parse admixture_edges list of tuples to check proper types.
+        """
+        if admixture_edges is None:
+            self.admixture_edges = []
+        else:
+            if not isinstance(admixture_edges[0], (list, tuple)):
+                raise TypeError("admixture_edges should be a list of tuples.")
+            if isinstance(admixture_edges, tuple):
+                admixture_edges = [admixture_edges]
+            for edge in self.admixture_edges:
+                if len(edge) != 4:
+                    raise ValueError(
+                        "admixture edges should each be a tuple with 4 values")
+            self.admixture_edges = admixture_edges
+        # store number of edges
+        self.aedges = (
+            0 if not self.admixture_edges else len(self.admixture_edges))
+
+    def _check_substitution_kwargs(self):
+        """
+        check that user supplied substitution kwargs make sense.
+        """
+        # must be a dictionary
+        if self.substitution_model is None:
+            self.substitution_model = {}
+
+        # check each item
+        for key in self.substitution_model:
+
+            # do not allow typos or unsupported params
+            supp = ["state_frequencies", "kappa", "gamma", "gamma_categories"]
+            if key not in supp:
+                raise TypeError(
+                    "substitution_model param {} not currently supported."
+                    .format(key))
+
+            # check that state_frequencies sum to 1
+            if self.substitution_model.get("state_frequencies"):
+                fsum = sum(self.substitution_model['state_frequencies'])
+                if not fsum == 1:
+                    raise ipcoalError("state_frequencies must sum to 1.0")
+
+            # check that kappa in the range...
+            pass
+
+    def _set_neff(self, Ne):
+        """
+        If an Ne argument was entered then it overrides any setting
+        on the TreeNodes, else check that all nodes in the tree have 
+        an Ne setting, or raise an error.
+        """
+        if Ne is None:
+            node_neffs = self.tree.get_node_values("Ne")
+            if not all(node_neffs):
+                msg = (
+                    "if Ne=None then Ne values must be set to all "
+                    "nodes of the input tree (e.g., using .set_node_values()."
+                )
+                logger.error(msg)
+                raise ipcoalError(msg)
+            self.neff = max(node_neffs)
+
+        else:
+            self.neff = Ne
+            self.tree = self.tree.set_node_values("Ne", default=Ne)
+
+    def _get_migration(self):
+        """
+        Generates mrates, mtimes, and thetas arrays for simulations.
+
+        Migration times are uniformly sampled between start and end points that
+        are constrained by the overlap in edge lengths, which is automatically
+        inferred from 'get_all_admix_edges()'. Migration rates are in [0, 1)
+
+        # rates are proportions, times are in generations
+        # single edge: 
+        self.ms_migrate = [0.05]
+        self.ms_migtime = [12000]
+
+        # two edges:
+        self.ms_migrate = [0.05, 0.05]
+        self.ms_migtime = [12000, 20000]
+        """
+        # sample times and proportions/rates for admixture intervals
+        for iedge in self.admixture_edges:
+
+            # mtimes: if None then sample from uniform.
+            if iedge[2] is None:
+                mi = (0.0, 1.0)
+            # if int or float then sample from one position
+            elif isinstance(iedge[2], (float, int)):
+                mi = (iedge[2], iedge[2])
+            # if an iterable then use min max edge overlaps
+            else:
+                mi = iedge[2]
+            intervals = get_all_admix_edges(self.tree, mi[0], mi[1])
+
+            # mrates: if None then sample from uniform
+            if iedge[3] is None:
+                if self.admixture_type:
+                    mr = (0.0, 0.1)
+                else:
+                    mr = (0.05, 0.5)
+            # if a float then use same for all
+            elif isinstance(iedge[3], (float, int)):
+                mr = (iedge[3], iedge[3])
+            # if an iterable then sample from range
+            else:
+                mr = iedge[3]
+            # migrate uniformly drawn from range
+            mrate = self.rng_trees.uniform(mr[0], mr[1])
+
+            # intervals are overlapping edges where admixture can occur.
+            # lower and upper restrict the range along intervals for each
+            snode = self.tree.treenode.search_nodes(idx=iedge[0])[0]
+            dnode = self.tree.treenode.search_nodes(idx=iedge[1])[0]
+            ival = intervals.get((snode.idx, dnode.idx))
+            dist_ival = ival[1] - ival[0]
+
+            # intervals mode
+            if self.admixture_type:
+                ui = self.rng_trees.uniform(
+                    ival[0] + mi[0] * dist_ival,
+                    ival[0] + mi[1] * dist_ival, 2,
+                )
+                ui = ui.reshape((1, 2))
+                mtime = np.sort(ui, axis=1).astype(int)
+
+            # pulsed mode
+            else:
+                ui = self.rng_trees.uniform(
+                    ival[0] + mi[0] * dist_ival,
+                    ival[0] + mi[1] * dist_ival)
+                mtime = int(ui)
+
+            # store values only if migration is high enough to be detectable
+            self.ms_migrate.append(mrate)
+            self.ms_migtime.append(mtime)
+
+    def _get_demography(self):
+        """
+        Returns demography scenario based on an input tree and admixture
+        edge list with events in the format (source, dest, start, end, rate).
+        Time on the tree is defined in units of generations.
+        """
+        # Define demographic events for msprime
+        demog = set()
+
+        # tag min index child for each node, since at the time the node is
+        # called it may already be renamed by its child index b/c of
+        # divergence events.
+        for node in self.tree.treenode.traverse():
+            if node.children:
+                node._schild = min([i.idx for i in node.get_descendants()])
+            else:
+                node._schild = node.idx
+
+        # traverse tree from root to tips
+        for node in self.tree.treenode.traverse():
+
+            # if children add div events
+            if node.children:
+                dest = min([i._schild for i in node.children])
+                source = max([i._schild for i in node.children])
+                time = node.height
+                demog.add(ms.MassMigration(time, source, dest))
+
+                # for all nodes set Ne changes
+                demog.add(ms.PopulationParametersChange(
+                    time,
+                    initial_size=node.Ne,
+                    population=dest),
+                )
+
+            # tips set populations sizes (popconfig seemings does this too,
+            # but it didn't actually work for tips until I added this...
+            else:
+                time = max(0, node.height) # rounding error, cannot be <0
+                demog.add(ms.PopulationParametersChange(
+                    time,
+                    initial_size=node.Ne,
+                    population=node.idx,
+                ))
+
+            # debugging helper
+            if node.children:
+                logger.debug((
+                    f"div time: {time:>8.0f}, ({source:>2} {dest:>2}), "
+                    f"({node.children[0].idx:>2} {node.children[1].idx:>2}), "
+                    f"Ne={node.Ne:.0f}, "
+                    f"θ={4*node.Ne*self.mut:.5f}, τ={node.dist / (2 * node.Ne):.2f}"
+                ))
+
+        # Add migration pulses
+        if not self.admixture_type:
+            for evt in range(self.aedges):
+
+                # rate is prop. of population, time is prop. of edge
+                rate = self.ms_migrate[evt]
+                time = self.ms_migtime[evt]
+                source, dest = self.admixture_edges[evt][:2]
+
+                # rename nodes at time of admix in case diverge renamed them
+                snode = self.tree.idx_dict[source]
+                dnode = self.tree.idx_dict[dest]
+                children = (snode._schild, dnode._schild)
+                demog.add(ms.MassMigration(time, children[0], children[1], rate))
+                logger.debug(
+                    f"mig pulse: {time:>9}, {'':>2} {'':>2}, "
+                    f"{snode.name:>2} {dnode.name:>2}, rate={rate:.2f}"
+                )
+
+        # Add migration intervals
+        # else:
+        #     for evt in range(self.aedges):
+        #         rate = self.ms_migration[evt]['mrates']
+        #         time = (self.ms_migration[evt]['mtimes']).astype(int)
+        #         source, dest = self.admixture_edges[evt][:2]
+
+        #         # rename nodes at time of admix in case diverg renamed them
+        #         snode = self.tree.treenode.search_nodes(idx=source)[0]
+        #         dnode = self.tree.treenode.search_nodes(idx=dest)[0]
+        #         children = (snode._schild, dnode._schild)
+        #         demog.add(ms.MigrationRateChange(time[0], rate, children))
+        #         demog.add(ms.MigrationRateChange(time[1], 0, children))
+        #         if self._debug:
+        #             print("mig interv: {}, {}, {}, {}, {:.3f}".format(
+        #                 time[0], time[1], children[0], children[1], rate),
+        #                 file=sys.stderr)
+
+        # sort events by type (so that mass migrations come before pop size
+        # changes) and time
+        demog = sorted(list(demog), key=lambda x: x.type)
+        demog = sorted(demog, key=lambda x: x.time)
+        self.ms_demography = demog
+
+    def _get_nsamples(self):
+        """
+        If tips are not ultrametric then individuals must be entered to 
+        sim using the samples=[ms.Sample(popname, time), ...] format. If 
+        tips are ultrametric then this should be empty (None).
+        """
+        # set to None and return
+        if self._tips_are_ultrametric:
+            self._samples = None
+            return
+
+        # create a list of sample tuples: [(popname, time), ...]
+        self._samples = []
+
+        # iterate over all sampled tips
+        for otip, tip in enumerate(self.tree.get_tip_labels()):
+
+            # get height of this tip
+            height = int(self.tip_to_heights[tip])
+            nsamples = self.sampledict[tip]
+
+            # add for each nsamples
+            for _ in range(nsamples):
+                self._samples.append(ms.Sample(otip, height))
+
+    def _get_popconfig(self):
+        """
+        Sets self.ms_popconfig as a list of msprime objects.
+
+        In the strange case that tips are not ultrametric
+        then we need to return a list of empty Popconfig objects.
+        """
+        # set to list of empty pops and return
+        if not self._tips_are_ultrametric:
+            self.ms_popconfig = [
+                ms.PopulationConfiguration() for i in range(self.ntips)
+            ]
+            return 
+
+        # pull Ne values from the toytree nodes attrs.
+        if self.neff is None:
+            # get Ne values from tips of the tree
+            nes = self.tree.get_node_values("Ne")
+            nes = nes[-self.tree.ntips:][::-1]
+
+            # list of popconfig objects for each tip
+            population_configurations = [
+                ms.PopulationConfiguration(
+                    sample_size=self.nsamples[i], initial_size=nes[i])
+                for i in range(self.ntips)
+            ]
+
+        # set user-provided Ne value to all edges of the tree
+        else:
+            population_configurations = [
+                ms.PopulationConfiguration(
+                    sample_size=self.nsamples[i], initial_size=self.neff)
+                for i in range(self.ntips)]
+
+        # debug printer
+        logger.debug(f"pop: Ne:{self.neff:.0f}, mut:{self.mut:.2E}")         
+        self.ms_popconfig = population_configurations
+
+
+    # ----------------------------------------------------------------
+    # end init methods
+    # ----------------------------------------------------------------
 
     def draw_seqview(self, idx=None, start=None, end=None, width=None, height=None, show_text=False, **kwargs):
         """
@@ -374,19 +692,11 @@ class Model(object):
         return ctre.canvas, ctre.axes
 
 
-
-    def _legacy_support(self, kwargs):
-        for i in kwargs:
-            print("The parameter name '{}' is not supported.\nPlease check "
-                  "the documentation, argument names may have changed."
-                  .format(i))
-
-
-
     def get_substitution_model_summary(self):
         """
         Returns a summary of the demographic model and sequence substitution
         model that will used in simulations.
+        TODO: make this a method of SeqModel.
         """
         # init a seqmodel to get calculated matrices
         seqmodel = SeqModel(**self.substitution_model)
@@ -428,315 +738,9 @@ class Model(object):
             )
 
 
-    def _check_substitution_kwargs(self):
-        """
-        check that user supplied substitution kwargs make sense.
-        """
-        # must be a dictionary
-        if self.substitution_model is None:
-            self.substitution_model = {}
-
-        # check each item
-        for key, val in self.substitution_model.items():
-
-            # do not allow typos or unsupported params
-            supp = ["state_frequencies", "kappa", "gamma", "gamma_categories"]
-            if key not in supp:
-                raise TypeError(
-                    "substitution_model param {} not currently supported."
-                    .format(key))
-
-            # check that state_frequencies sum to 1
-            if self.substitution_model.get("state_frequencies"):
-                fsum = sum(self.substitution_model['state_frequencies'])
-                if not fsum == 1:
-                    raise ipcoalError("state_frequencies must sum to 1.0")
-
-            # check that kappa in the range...
-            pass
-
-
-
-    def _get_Ne(self):
-        """
-        If Ne node attrs are present in the input tree these override the 
-        global Ne argument which is set to all other nodes. Every node should
-        have an Ne value at the end of this. Sets node.Ne attrs and sets max
-        value to self.Ne.
-        """
-        # get map of {nidx: node}
-        ndict = self.tree.get_feature_dict("idx", None)
-
-        # set user entered arg (self.Ne) to any node without a Ne attr
-        for nidx, node in ndict.items():
-            if not hasattr(node, "Ne"):
-                setattr(node, "Ne", int(self.Ne))
-            else:
-                setattr(node, "Ne", int(node.Ne))
-
-        # check that all nodes have .Ne
-        nes = self.tree.get_node_values("Ne", True, True)
-        if not all(nes):
-            raise ipcoalError(
-                "Ne must be provided as an argument or tree node attribute.")
-
-        # set global to the max value        
-        self.Ne = max(nes)
-
-
-
-    def _get_migration(self):
-        """
-        Generates mrates, mtimes, and thetas arrays for simulations.
-
-        Migration times are uniformly sampled between start and end points that
-        are constrained by the overlap in edge lengths, which is automatically
-        inferred from 'get_all_admix_edges()'. Migration rates are in [0, 1)
-
-        # rates are proportions, times are in generations
-        # single edge: 
-        self.ms_migrate = [0.05]
-        self.ms_migtime = [12000]
-
-        # two edges:
-        self.ms_migrate = [0.05, 0.05]
-        self.ms_migtime = [12000, 20000]
-        """
-        # sample times and proportions/rates for admixture intervals
-        for iedge in self.admixture_edges:
-
-            # mtimes: if None then sample from uniform.
-            if iedge[2] is None:
-                mi = (0.0, 1.0)
-            # if int or float then sample from one position
-            elif isinstance(iedge[2], (float, int)):
-                mi = (iedge[2], iedge[2])
-            # if an iterable then use min max edge overlaps
-            else:
-                mi = iedge[2]
-            intervals = get_all_admix_edges(self.tree, mi[0], mi[1])
-
-            # mrates: if None then sample from uniform
-            if iedge[3] is None:
-                if self.admixture_type:
-                    mr = (0.0, 0.1)
-                else:
-                    mr = (0.05, 0.5)
-            # if a float then use same for all
-            elif isinstance(iedge[3], (float, int)):
-                mr = (iedge[3], iedge[3])
-            # if an iterable then sample from range
-            else:
-                mr = iedge[3]
-            # migrate uniformly drawn from range
-            mrate = self.random.uniform(mr[0], mr[1])
-
-            # intervals are overlapping edges where admixture can occur.
-            # lower and upper restrict the range along intervals for each
-            snode = self.tree.treenode.search_nodes(idx=iedge[0])[0]
-            dnode = self.tree.treenode.search_nodes(idx=iedge[1])[0]
-            ival = intervals.get((snode.idx, dnode.idx))
-            dist_ival = ival[1] - ival[0]
-
-            # intervals mode
-            if self.admixture_type:
-                ui = self.random.uniform(
-                    ival[0] + mi[0] * dist_ival,
-                    ival[0] + mi[1] * dist_ival, 2,
-                )
-                ui = ui.reshape((1, 2))
-                mtime = np.sort(ui, axis=1).astype(int)
-
-            # pulsed mode
-            else:
-                ui = self.random.uniform(
-                    ival[0] + mi[0] * dist_ival,
-                    ival[0] + mi[1] * dist_ival)
-                mtime = int(ui)
-
-            # store values only if migration is high enough to be detectable
-            self.ms_migrate.append(mrate)
-            self.ms_migtime.append(mtime)
-
-
-
-    def _get_demography(self):
-        """
-        Returns demography scenario based on an input tree and admixture
-        edge list with events in the format (source, dest, start, end, rate).
-        Time on the tree is defined in units of generations.
-        """
-        # Define demographic events for msprime
-        demog = set()
-
-        # tag min index child for each node, since at the time the node is
-        # called it may already be renamed by its child index b/c of
-        # divergence events.
-        for node in self.tree.treenode.traverse():
-            if node.children:
-                node._schild = min([i.idx for i in node.get_descendants()])
-            else:
-                node._schild = node.idx
-
-        # traverse tree from root to tips
-        for node in self.tree.treenode.traverse():
-
-            # if children add div events
-            if node.children:
-                dest = min([i._schild for i in node.children])
-                source = max([i._schild for i in node.children])
-                time = node.height  # int(node.height)
-                demog.add_mass_migration(time, source, dest, 1.0)
-
-                # for all nodes set Ne changes
-                demog.add(ms.PopulationParametersChange(
-                    time,
-                    initial_size=node.Ne,
-                    population=dest),
-                )
-
-            # tips set populations sizes (popconfig seemings does this too,
-            # but it didn't actually work for tips until I added this...
-            else:
-                time = node.height  # int(node.height)
-                demog.add(ms.PopulationParametersChange(
-                    time,
-                    initial_size=node.Ne,
-                    population=node.idx,
-                ))
-
-            # debugging helper
-            if self._debug:
-                print(
-                    'div time:  {:>9}, {:>2} {:>2}, {:>2} {:>2}, Ne={}'
-                    .format(
-                        time, source, dest,
-                        node.children[0].idx, node.children[1].idx,
-                        node.Ne,
-                        ),
-                    file=sys.stderr,
-                )
-
-        # Add migration pulses
-        if not self.admixture_type:
-            for evt in range(self.aedges):
-
-                # rate is prop. of population, time is prop. of edge
-                rate = self.ms_migrate[evt]
-                time = self.ms_migtime[evt]
-                source, dest = self.admixture_edges[evt][:2]
-
-                # rename nodes at time of admix in case diverge renamed them
-                snode = self.tree.treenode.search_nodes(idx=source)[0]
-                dnode = self.tree.treenode.search_nodes(idx=dest)[0]
-                children = (snode._schild, dnode._schild)
-                demog.add_mass_migration(time, children[0], children[1], rate)
-                if self._debug:
-                    print(
-                        'mig pulse: {:>9}, {:>2} {:>2}, {:>2} {:>2}, rate={:.2f}'
-                        .format(
-                            time, 
-                            "", "",  # node.children[0].idx, node.children[1].idx, 
-                            snode.name, dnode.name, 
-                            rate),
-                        file=sys.stderr,
-                    )
-
-        # Add migration intervals
-        else:
-            for evt in range(self.aedges):
-                rate = self.ms_migration[evt]['mrates']
-                time = (self.ms_migration[evt]['mtimes']).astype(int)
-                source, dest = self.admixture_edges[evt][:2]
-
-                # rename nodes at time of admix in case diverg renamed them
-                snode = self.tree.treenode.search_nodes(idx=source)[0]
-                dnode = self.tree.treenode.search_nodes(idx=dest)[0]
-                children = (snode._schild, dnode._schild)
-                demog.add(ms.MigrationRateChange(time[0], rate, children))
-                demog.add(ms.MigrationRateChange(time[1], 0, children))
-                if self._debug:
-                    print("mig interv: {}, {}, {}, {}, {:.3f}".format(
-                        time[0], time[1], children[0], children[1], rate),
-                        file=sys.stderr)
-
-        # sort events by type (so that mass migrations come before pop size
-        # changes) and time
-        demog = sorted(list(demog), key=lambda x: x.type)
-        demog = sorted(demog, key=lambda x: x.time)
-        self.ms_demography = demog
-
-
-
-    def _get_nsamples(self):
-        """
-        If tips are not ultrametric then individuals must be entered to 
-        sim using the samples=[ms.Sample(popname, time), ...] format. If 
-        tips are ultrametric then this should be empty (None).
-        """
-        # set to None and return
-        if self._tips_are_ultrametric:
-            self._samples = None
-            return
-
-        # create a list of sample tuples: [(popname, time), ...]
-        self._samples = []
-
-        # iterate over all sampled tips
-        for otip, tip in enumerate(self.tree.get_tip_labels()):
-
-            # get height of this tip
-            height = int(self.tip_to_heights[tip])
-            nsamples = self.sampledict[tip]
-
-            # add for each nsamples
-            for _ in range(nsamples):
-                self._samples.append(ms.Sample(otip, height))
-
-
-
-    def _get_popconfig(self):
-        """
-        Returns population_configurations for N tips of a tree. This is a list
-        of msprime objects. In the strange case that tips are not ultrametric
-        then we need to return a list of empty Popconfig objects.
-        """
-        # set to list of empty pops and return
-        if not self._tips_are_ultrametric:
-            self.ms_popconfig = [
-                ms.PopulationConfiguration() for i in range(self.ntips)
-            ]
-            return 
-
-        # pull Ne values from the toytree nodes attrs.
-        if not self.Ne:
-            # get Ne values from tips of the tree
-            nes = self.tree.get_node_values("Ne", show_tips=True)
-            nes = nes[-self.tree.ntips:][::-1]
-
-            # list of popconfig objects for each tip
-            population_configurations = [
-                ms.PopulationConfiguration(
-                    sample_size=self.nsamples[i], initial_size=nes[i])
-                for i in range(self.ntips)]
-
-            # set the max Ne value as the global Ne
-            self.Ne = max(nes)
-
-        # set user-provided Ne value to all edges of the tree
-        else:
-            population_configurations = [
-                ms.PopulationConfiguration(
-                    sample_size=self.nsamples[i], initial_size=self.Ne)
-                for i in range(self.ntips)]
-
-        # debug printer
-        if self._debug:
-            print(
-                "pop: Ne:{:.0f}, mut:{:.2E}".format(self.Ne, self.mut),
-                file=sys.stderr)
-        self.ms_popconfig = population_configurations
-
+    # ----------------------------------------------------------------
+    # MSPRIME simulation methods
+    # ----------------------------------------------------------------
 
 
     def _get_tree_sequence_generator(self, nsites=1, snp=False):
@@ -765,7 +769,7 @@ class Model(object):
         # msprime simulation to make tree_sequence generator
         sim = ms.simulate(
             length=(None if self.recomb_map else nsites),
-            random_seed=self.random.randint(1e9),
+            random_seed=self.rng_trees.integers(1e9),
             recombination_rate=(None if snp or self.recomb_map else self.recomb),
             migration_matrix=migmat,
             num_replicates=(int(1e20) if snp else 1),        # ensures SNPs
@@ -831,10 +835,10 @@ class Model(object):
                 nwk = mstree.newick(node_labels=self.tipdict, precision=14)
 
                 # parse the newick to toytree
-                gtree = toytree._rawtree(nwk, tree_format=5)
+                gtree = toytree.rawtree(nwk, tree_format=5)
 
                 # mutate sequences on this tree; return array alphanum-ordered
-                seed = self.random_mut.randint(1e9)
+                seed = self.rng_muts.integers(1e9)
                 seq = mkseq.feed_tree(gtree, gtlen, self.mut, seed)
 
                 # store the seqs to locus array
@@ -933,7 +937,7 @@ class Model(object):
         self.ancestral_seq = aseqarr
 
         # reset random seeds
-        self._reset_random_seed()
+        self._reset_random_generators()
 
 
 
@@ -1085,17 +1089,17 @@ class Model(object):
             nwk = mstree.newick(node_labels=self.tipdict, precision=14)
 
             # parse the newick to toytree
-            gtree = toytree._rawtree(nwk, tree_format=5)
+            gtree = toytree.rawtree(nwk, tree_format=5)
 
             # simulate evolution of 1 base
-            seed = self.random_mut.randint(1e9)    
+            seed = self.rng_muts.integers(1e9)    
             seq = mkseq.feed_tree(gtree, 1, self.mut, seed)
 
             # if repeat_on_trees then keep sim'n til we get a SNP
             if repeat_on_trees:
                 # if not variable
                 while np.all(seq == seq[0]):
-                    seed = self.random_mut.randint(1e9)    
+                    seed = self.rng_muts.integers(1e9)    
                     seq = mkseq.feed_tree(gtree, 1, self.mut, seed)
 
             # otherwise just move on to the next generated tree
@@ -1134,11 +1138,14 @@ class Model(object):
         self.ancestral_seq = ancarr
 
         # reset random seeds
-        self._reset_random_seed()
+        # self._reset_random_generators()
 
 
+    # ---------------------------------------------------------------
+    # i/o methods.
+    # ---------------------------------------------------------------
 
-    def write_loci_to_hdf5(self, name=None, outdir=None, diploid=False, quiet=False):
+    def write_loci_to_hdf5(self, name=None, outdir=None, diploid=False):
         """
         Writes a database file in .seqs.hdf5 format which is compatible with
         the ipyrad-analysis toolkit. This requires the additional dependency
@@ -1147,9 +1154,7 @@ class Model(object):
         writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
         writer.write_loci_to_hdf5(name, outdir, diploid, quiet=False)
 
-
-
-    def write_snps_to_hdf5(self, name=None, outdir=None, diploid=False, quiet=False):
+    def write_snps_to_hdf5(self, name=None, outdir=None, diploid=False):
         """
         Writes a database file in .snps.hdf5 format which is compatible with
         the ipyrad-analysis toolkit. This requires the additional dependency
@@ -1158,16 +1163,14 @@ class Model(object):
         writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
         writer.write_snps_to_hdf5(name, outdir, diploid, quiet=False)
 
-
-
     def write_vcf(
         self, 
-        name=None,
-        outdir="./",
-        diploid=None,
-        bgzip=False,
-        quiet=False,
-        fill_missing_alleles=True,
+        name:str=None,
+        outdir:str="./",
+        diploid:bool=False,
+        bgzip:bool=False,
+        quiet:bool=False,
+        fill_missing_alleles:bool=True,
         ):
         """
         Write all seq data for each locus to a separate phylip file in a shared
@@ -1205,8 +1208,6 @@ class Model(object):
         )
         return vdf
 
-
-
     def write_loci_to_phylip(
         self, 
         outdir="./",
@@ -1242,15 +1243,12 @@ class Model(object):
             quiet,
         )
 
-
-
     def write_concat_to_phylip(
         self, 
         name=None, 
         outdir="./",
         idxs=None,
         diploid=None, 
-        quiet=False,
         ):
         """
         Write all seq data (loci or snps) concated to a single phylip file.
@@ -1264,8 +1262,7 @@ class Model(object):
         phystring = writer.write_concat_to_phylip(outdir, name, idxs, diploid)           
         if name is None:
             return phystring
-
-
+        return None
 
     def write_concat_to_nexus(
         self, 
@@ -1273,7 +1270,6 @@ class Model(object):
         outdir="./",
         idxs=None,
         diploid=None, 
-        quiet=False
         ):
         """
         Write all seq data (loci or snps) concated to a single phylip file.
@@ -1287,18 +1283,48 @@ class Model(object):
         nexstring = writer.write_concat_to_nexus(outdir, name, idxs, diploid)            
         if name is None:
             return nexstring
+        return None
 
+    def write_popfile(self, name:str, outdir:str="./", diploid:bool=False):
+        """
+        Writes popfile mapping sample names to species tree tip names
+        to a file.
 
+        Parameters:
+        -----------
+        name: str
+            The name prefix of the file: {name}.popfile.tsv
+        outdir: str
+            The directory name (filepath prefix) to write the file to.
+        diploid: bool
+            If diploid=True was used when writing the data files then
+            it should also be used when writing the popfile.
+        """
+        name = name.rstrip(".tsv").rstrip(".popfile")
+        popdata = []
+        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        writer._transform_seqs(diploid=diploid)
+        for tip in writer.names:
+            popdata.append(f"{tip.rsplit('-')[0]}\t{tip}")
+        outname = os.path.join(outdir, name + ".popfile.tsv")
+        with open(outname, 'w') as out:
+            out.write("\n".join(popdata))
+        print(f"wrote popfile to {outname}")
+
+    # ---------------------------------------------------------------
+    # post-sim methods
+    # ---------------------------------------------------------------    
 
     def infer_gene_tree_windows(
         self, 
-        window_size=None, 
-        inference_method='raxml', 
-        inference_args={},
+        window_size:Optional[int]=None, 
+        inference_method:str='raxml', 
+        inference_args:Dict=None,
         ):
         """
         Infer gene trees at every locus using the sequence in the locus 
-        interval. 
+        interval. If no window_size is entered then a single full
+        concatenation tree is inferred.
 
         Parameters
         ----------
@@ -1350,7 +1376,7 @@ class Model(object):
             resdf.loc[idx, "nsnps"] = (np.any(loc != loc[0], axis=0).sum())
 
         # init the TreeInference object (similar to ipyrad inference code)
-        ti = TreeInfer(
+        tool = TreeInfer(
             newseqs,
             self.alpha_ordered_names,
             inference_method=inference_method,
@@ -1359,12 +1385,14 @@ class Model(object):
 
         # iterate over nloci. This part could be easily parallelized...
         for idx in resdf.index:
-            resdf.loc[idx, "inferred_tree"] = ti.run(idx)
+            resdf.loc[idx, "inferred_tree"] = tool.run(idx)
         return resdf
 
-
-
-    def infer_gene_trees(self, inference_method='raxml', inference_args={}):
+    def infer_gene_trees(
+        self, 
+        inference_method:str='raxml', 
+        inference_args:Optional[Dict[str,str]]=None,
+        ):
         """
         Infer gene trees at every locus using the sequence in the locus 
         interval. 
@@ -1384,6 +1412,7 @@ class Model(object):
                 "w": tempfile.gettempdir()
             }
         """
+        inference_args = inference_args if inference_args is not None else {}
 
         # bail out if the data is only unlinked SNPs
         if self.df.nbps.max() == 1:
@@ -1396,7 +1425,7 @@ class Model(object):
         self.df["inferred_tree"] = np.nan
 
         # init the TreeInference object (similar to ipyrad inference code)
-        ti = TreeInfer(
+        tool = TreeInfer(
             self.seqs, 
             self.alpha_ordered_names,
             inference_method=inference_method, 
@@ -1420,7 +1449,7 @@ class Model(object):
             if self.df.nsnps[self.df.locus == lidx].sum():
                 # let low data fails return NaN
                 try:
-                    tree = ti.run(lidx)
+                    tree = tool.run(lidx)
                     # enter result
                     self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
 
@@ -1428,8 +1457,6 @@ class Model(object):
                 except ipcoalError as err:
                     print(err)
                     raise err
-
-
 
     def get_pairwise_distances(self, model=None):
         """
@@ -1446,15 +1473,12 @@ class Model(object):
         # requires data
         if self.seqs is None:
             raise ipcoalError("You must first run .sim_snps() or .sim_loci")
-
         return calculate_pairwise_dist(self, model)
 
-
-
-    def apply_missing_mask(self, coverage=1.0, cut1=0, cut2=0, distance=0.0, coverage_type='locus', seed=None):
+    def apply_missing_mask(self, coverage=1.0, cut1=0, cut2=0, distance=0.0, coverage_type='locus'):
         """
         Mask data by marking it as missing based on a number of possible 
-        models for dropout. 
+        models for dropout. Uses the random tree seed.
 
         Parameters:
         -----------
@@ -1496,8 +1520,8 @@ class Model(object):
                 "Missing data can only be applied to a dataset once.")
 
         # fix a seed generator
-        if seed:
-            np.random.seed(seed)
+        # if seed:
+            # np.random.seed(seed)
 
         # iterate over each locus converting missing to 9
         for loc in range(self.seqs.shape[0]):
@@ -1505,12 +1529,12 @@ class Model(object):
 
             # apply coverage mask
             if coverage_type == "site":
-                mask = np.random.binomial(1, 1.0 - coverage, arr.shape).astype(bool)
+                mask = self.rng_trees.binomial(1, 1.0 - coverage, arr.shape).astype(bool)
                 arr[mask] = 9
 
             # implement 'locus' coverage as default
             else:
-                mask = np.random.binomial(1, 1.0 - coverage, arr.shape[0]).astype(bool)
+                mask = self.rng_trees.binomial(1, 1.0 - coverage, arr.shape[0]).astype(bool)
                 arr[mask, :] = 9
 
             # apply dropout cut1
@@ -1522,3 +1546,23 @@ class Model(object):
             if cut2:
                 mask = np.any(arr[:, -cut2:] != self.ancestral_seq[loc, -cut2:], axis=1)
                 arr[mask, :] = 9
+
+
+if __name__ == "__main__":
+    
+    import ipcoal
+    ipcoal.set_loglevel("DEBUG")
+
+    TREE = toytree.rtree.imbtree(ntips=10, treeheight=1e6)
+    print(TREE.get_feature_dict("idx", "height"))
+    MODEL = ipcoal.Model(TREE, Ne=10000)
+    # MODEL.sim_trees(5)
+    MODEL.sim_loci(1, 10)
+    print(MODEL.df)
+    print(MODEL.seqs)
+    MODEL.sim_snps(10)
+    print(MODEL.df)
+    print(MODEL.seqs)
+    print(MODEL.write_vcf())
+    # MODEL.sim_loci(1, 10)
+    # MODEL.write_loci_to_phylip()

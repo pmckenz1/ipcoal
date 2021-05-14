@@ -8,7 +8,6 @@ import numpy as np
 from scipy.linalg import expm
 from numba import njit, objmode
 from numba import config
-import ipcoal
 
 # GLOBALS
 BASES = np.array([0, 1, 2, 3])
@@ -87,8 +86,8 @@ class SeqModel():
 
         # set the threading layer before any parallel target compilation
         # NOT CURRENTLY IMPLEMENTED
-        if ipcoal.__forksafe__:
-            config.THREADING_LAYER = 'forksafe'
+        # if ipcoal.__forksafe__:
+        #     config.THREADING_LAYER = 'forksafe'
 
 
 
