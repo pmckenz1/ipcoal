@@ -662,7 +662,10 @@ class Model(object):
 
         # sort events by type (so that mass migrations come before pop size
         # changes) and time
-        demog = sorted(demog, key=lambda x: x._type_str)
+        if ms.__version__ < "1":
+            demog = sorted(demog, key=lambda x: x.type)
+        else:
+            demog = sorted(demog, key=lambda x: x._type_str)
         demog = sorted(demog, key=lambda x: x.time)
         self.ms_demography = demog
 
