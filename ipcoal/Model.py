@@ -566,7 +566,7 @@ class Model(object):
         Time on the tree is defined in units of generations.
         """
         # Define demographic events for msprime
-        demog = set()
+        demog = list()
 
         # tag min index child for each node, since at the time the node is
         # called it may already be renamed by its child index b/c of
@@ -585,10 +585,10 @@ class Model(object):
                 dest = min([i._schild for i in node.children])
                 source = max([i._schild for i in node.children])
                 time = node.height  # int(node.height)
-                demog.add(ms.MassMigration(time, source, dest))
+                demog.append(ms.MassMigration(time, source, dest))
 
                 # for all nodes set Ne changes
-                demog.add(ms.PopulationParametersChange(
+                demog.append(ms.PopulationParametersChange(
                     time,
                     initial_size=node.Ne,
                     population=dest),
@@ -598,7 +598,7 @@ class Model(object):
             # but it didn't actually work for tips until I added this...
             else:
                 time = node.height  # int(node.height)
-                demog.add(ms.PopulationParametersChange(
+                demog.append(ms.PopulationParametersChange(
                     time,
                     initial_size=node.Ne,
                     population=node.idx,
@@ -629,7 +629,7 @@ class Model(object):
                 snode = self.tree.treenode.search_nodes(idx=source)[0]
                 dnode = self.tree.treenode.search_nodes(idx=dest)[0]
                 children = (snode._schild, dnode._schild)
-                demog.add(
+                demog.append(
                     ms.MassMigration(time, children[0], children[1], rate))
                 if self._debug:
                     print(
@@ -653,8 +653,8 @@ class Model(object):
                 snode = self.tree.treenode.search_nodes(idx=source)[0]
                 dnode = self.tree.treenode.search_nodes(idx=dest)[0]
                 children = (snode._schild, dnode._schild)
-                demog.add(ms.MigrationRateChange(time[0], rate, children))
-                demog.add(ms.MigrationRateChange(time[1], 0, children))
+                demog.append(ms.MigrationRateChange(time[0], rate, children))
+                demog.append(ms.MigrationRateChange(time[1], 0, children))
                 if self._debug:
                     print("mig interv: {}, {}, {}, {}, {:.3f}".format(
                         time[0], time[1], children[0], children[1], rate),
@@ -662,7 +662,7 @@ class Model(object):
 
         # sort events by type (so that mass migrations come before pop size
         # changes) and time
-        demog = sorted(list(demog), key=lambda x: x.type)
+        demog = sorted(demog, key=lambda x: x._type_str)
         demog = sorted(demog, key=lambda x: x.time)
         self.ms_demography = demog
 
