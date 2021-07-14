@@ -436,7 +436,7 @@ class Model:
         Time on the tree is defined in units of generations.
         """
         # Define demographic events for msprime
-        demog = set()
+        demog = list()
 
         # tag min index child for each node, since at the time the node is
         # called it may already be renamed by its child index b/c of
@@ -454,11 +454,11 @@ class Model:
             if node.children:
                 dest = min([i._schild for i in node.children])
                 source = max([i._schild for i in node.children])
-                time = node.height
-                demog.add(ms.MassMigration(time, source, dest))
+                time = node.height  # int(node.height)
+                demog.append(ms.MassMigration(time, source, dest))
 
                 # for all nodes set Ne changes
-                demog.add(ms.PopulationParametersChange(
+                demog.append(ms.PopulationParametersChange(
                     time,
                     initial_size=node.Ne,
                     population=dest),
@@ -467,8 +467,8 @@ class Model:
             # tips set populations sizes (popconfig seemings does this too,
             # but it didn't actually work for tips until I added this...
             else:
-                time = max(0, node.height) # rounding error, cannot be <0
-                demog.add(ms.PopulationParametersChange(
+                time = node.height  # int(node.height)
+                demog.append(ms.PopulationParametersChange(
                     time,
                     initial_size=node.Ne,
                     population=node.idx,
@@ -496,33 +496,42 @@ class Model:
                 snode = self.tree.idx_dict[source]
                 dnode = self.tree.idx_dict[dest]
                 children = (snode._schild, dnode._schild)
-                demog.add(ms.MassMigration(time, children[0], children[1], rate))
+
+                demog.append(
+                    ms.MassMigration(time, children[0], children[1], rate))
+
                 logger.debug(
                     f"mig pulse: {time:>9}, {'':>2} {'':>2}, "
                     f"{snode.name:>2} {dnode.name:>2}, rate={rate:.2f}"
                 )
 
         # Add migration intervals
-        # else:
-        #     for evt in range(self.aedges):
-        #         rate = self.ms_migration[evt]['mrates']
-        #         time = (self.ms_migration[evt]['mtimes']).astype(int)
-        #         source, dest = self.admixture_edges[evt][:2]
+        else:
+            raise NotImplementedError("interval migration currently deprecated...")
+            for evt in range(self.aedges):
+                rate = self.ms_migration[evt]['mrates']
+                time = (self.ms_migration[evt]['mtimes']).astype(int)
+                source, dest = self.admixture_edges[evt][:2]
 
-        #         # rename nodes at time of admix in case diverg renamed them
-        #         snode = self.tree.treenode.search_nodes(idx=source)[0]
-        #         dnode = self.tree.treenode.search_nodes(idx=dest)[0]
-        #         children = (snode._schild, dnode._schild)
-        #         demog.add(ms.MigrationRateChange(time[0], rate, children))
-        #         demog.add(ms.MigrationRateChange(time[1], 0, children))
-        #         if self._debug:
-        #             print("mig interv: {}, {}, {}, {}, {:.3f}".format(
-        #                 time[0], time[1], children[0], children[1], rate),
-        #                 file=sys.stderr)
+                # rename nodes at time of admix in case diverg renamed them
+                snode = self.tree.treenode.search_nodes(idx=source)[0]
+                dnode = self.tree.treenode.search_nodes(idx=dest)[0]
+                children = (snode._schild, dnode._schild)
+                demog.append(ms.MigrationRateChange(time[0], rate, children))
+                demog.append(ms.MigrationRateChange(time[1], 0, children))
+
+                logger.debug(
+                    f"mig interv: {time[0]:>9}, {time[1]:>9} "
+                    f"{children[0]:>2} {children[1]:>2} {rate:.2f}"
+                    f"{snode.name:>2} {dnode.name:>2}, rate={rate:.2f}"
+                )
 
         # sort events by type (so that mass migrations come before pop size
         # changes) and time
-        demog = sorted(list(demog), key=lambda x: x.type)
+        if ms.__version__ < "1":
+            demog = sorted(demog, key=lambda x: x.type)
+        else:
+            demog = sorted(demog, key=lambda x: x._type_str)
         demog = sorted(demog, key=lambda x: x.time)
         self.ms_demography = demog
 
@@ -594,9 +603,19 @@ class Model:
     # end init methods
     # ----------------------------------------------------------------
 
-    def draw_seqview(self, idx=None, start=None, end=None, width=None, height=None, show_text=False, **kwargs):
+    def draw_seqview(
+        self, 
+        idx: Optional[int]=None, 
+        start: Optional[int]=None, 
+        end: Optional[int]=None, 
+        width: Optional[int]=None, 
+        height: Optional[int]=None, 
+        show_text: bool=False, 
+        **kwargs,
+        ) -> ('toyplot.Canvas', 'toyplot.Table'):
         """
-        Returns a (Canvas, Table) tuple as a drawing of the sequence array.
+        Returns a (Canvas, Table) tuple as a drawing of the sequence 
+        array.
 
         Parameters
         ----------
@@ -623,7 +642,7 @@ class Model:
         return canvas, table
 
 
-    def draw_genealogy(self, idx=None, **kwargs):
+    def draw_genealogy(self, idx: Optional[int]=None, **kwargs):
         """
         Returns a (Canvas, Axes) tuple as a drawing of the genealogy.
 
@@ -637,7 +656,7 @@ class Model:
         return canvas, axes, mark
 
 
-    def draw_genealogies(self, idxs=None, **kwargs):
+    def draw_genealogies(self, idxs: Optional[List[int]]=None, **kwargs):
         """
         Returns a (Canvas, Axes) tuple as a drawing of the genealogy.
 
