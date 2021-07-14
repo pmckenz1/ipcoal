@@ -16,9 +16,9 @@ import subprocess as sps
 import numpy as np
 import toytree
 
-from ipcoal.io.Writer import Writer
+from ipcoal.io.writer import Writer
 # from .mrbayes import MrBayes as mrbayes
-from ipcoal.utils.utils import ipcoalError
+from ipcoal.utils.utils import IpcoalError
 
 
 
