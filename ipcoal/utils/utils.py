@@ -343,8 +343,10 @@ class Params(object):
 def calculate_pairwise_dist(mod, model=None, locus=None):
     """
     Return a pandas dataframe with pairwise distances between taxa.
-    The model object should have already run sim.snps or sim.loci to generate
-    sequence data in .seqs.
+    The model object should have already run sim.snps or sim.loci to 
+    generate sequence data in .seqs. The returned distance is approx
+    2X the distance from each tip to their common ancestor, so you can
+    divide by 2 to get dist to mrca.
     """
     # a dataframe to fill with distances
     data = pd.DataFrame(
@@ -387,7 +389,7 @@ def jukes_cantor_distance(seq0, seq1):
 @njit
 def hamming_distance(seq0, seq1):
     "calculate hamming distance"
-    return sum(seq0 != seq1) / seq0.size
+    return np.sum(seq0 != seq1) / seq0.size
 
 
 
