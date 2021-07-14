@@ -15,8 +15,8 @@ from loguru import logger
 
 from ipcoal.markov.SeqModel import SeqModel
 from ipcoal.phylo.TreeInfer import TreeInfer
-from ipcoal.io.Writer import Writer
-from ipcoal.utils.utils import get_all_admix_edges, ipcoalError
+from ipcoal.io.writer import Writer
+from ipcoal.utils.utils import get_all_admix_edges, IpcoalError
 from ipcoal.draw.seqview import draw_seqview
 from ipcoal.utils.utils import calculate_pairwise_dist
 # from .SeqGen import SeqGen
@@ -26,8 +26,7 @@ from ipcoal.utils.utils import calculate_pairwise_dist
 pd.set_option("max_colwidth", 28)
 
 
-
-class Model(object):
+class Model:
     """
     An ipcoal.Model object for defining demographic models for coalesent 
     simulation in msprime. 
@@ -331,7 +330,7 @@ class Model(object):
             if self.substitution_model.get("state_frequencies"):
                 fsum = sum(self.substitution_model['state_frequencies'])
                 if not fsum == 1:
-                    raise ipcoalError("state_frequencies must sum to 1.0")
+                    raise IpcoalError("state_frequencies must sum to 1.0")
 
             # check that kappa in the range...
             pass
@@ -350,7 +349,7 @@ class Model(object):
                     "nodes of the input tree (e.g., using .set_node_values()."
                 )
                 logger.error(msg)
-                raise ipcoalError(msg)
+                raise IpcoalError(msg)
             self.neff = max(node_neffs)
 
         else:
@@ -602,9 +601,10 @@ class Model(object):
         Parameters
         ----------
         idx: (int)
-            The locus index of a locus to draw. If None and multiple loci are
-            present then it draws the first locus. If SNPs were simulated
-            then all SNPs are concatenated into a single 'locus'.
+            The locus index of a locus to draw. If None and multiple 
+            loci are present then it draws the first locus. If SNPs 
+            were simulated then all SNPs are concatenated into a 
+            single 'locus'.
         start: (int)
             Slice start position of sequence array to draw. Default=0.
         end: (int)
@@ -644,7 +644,8 @@ class Model(object):
         Parameters
         ----------
         idx: (None or list of ints)
-            The index of the genealogies to draw from the (Model.df) dataframe.
+            The index of the genealogies to draw from the (Model.df)
+            dataframe.
         """
         if idxs is None:
             idxs = range(4)
@@ -760,7 +761,7 @@ class Model(object):
         """
         # snp flag to ensure a single genealogy is returned
         if snp and nsites != 1:
-            raise ipcoalError(
+            raise IpcoalError(
                 "The flag snp=True should only be used with nsites=1")
 
         # migration scenarios from admixture_edges, used in demography
@@ -887,7 +888,7 @@ class Model(object):
         # check conflicting args
         if self.recomb_map is not None:
             if nsites:
-                raise ipcoalError(
+                raise IpcoalError(
                     "Both nsites and recomb_map cannot be used together since"
                     "the recomb_map also specifies nsites. To use a recomb_map"
                     "specify nsites=None.")
@@ -955,7 +956,7 @@ class Model(object):
         # check conflicting args
         if self.recomb_map is not None:
             if nsites:
-                raise ipcoalError(
+                raise IpcoalError(
                     "Both nsites and recomb_map cannot be used together since"
                     "the recomb_map also specifies nsites. To use a recomb_map"
                     "specify nsites=None.")
@@ -1343,13 +1344,13 @@ class Model(object):
         """
         # bail out if the data is only unlinked SNPs
         if self.df.nbps.max() == 1:
-            raise ipcoalError(
+            raise IpcoalError(
                 "gene tree inference cannot be performed on individual SNPs\n"
                 "perhaps you meant to run .sim_loci() instead of .sim_snps()."
                 )
         # complain if no seq data exists
         if self.seqs is None:
-            raise ipcoalError(
+            raise IpcoalError(
                 "Cannot infer trees because no seq data exists. "
                 "You likely called sim_trees() instead of sim_loci()."
             )
@@ -1416,7 +1417,7 @@ class Model(object):
 
         # bail out if the data is only unlinked SNPs
         if self.df.nbps.max() == 1:
-            raise ipcoalError(
+            raise IpcoalError(
                 "gene tree inference cannot be performed on individual SNPs\n"
                 "perhaps you meant to run .sim_loci() instead of .sim_snps()."
                 )
@@ -1434,7 +1435,7 @@ class Model(object):
 
         # complain if no seq data exists
         if self.seqs is None:
-            raise ipcoalError(
+            raise IpcoalError(
                 "Cannot infer trees because no seq data exists. "
                 "You likely called sim_trees() instead of sim_loci()."
             )
@@ -1454,7 +1455,7 @@ class Model(object):
                     self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
 
                 # caught raxml exception (prob. low data)
-                except ipcoalError as err:
+                except IpcoalError as err:
                     print(err)
                     raise err
 
@@ -1472,7 +1473,7 @@ class Model(object):
         """
         # requires data
         if self.seqs is None:
-            raise ipcoalError("You must first run .sim_snps() or .sim_loci")
+            raise IpcoalError("You must first run .sim_snps() or .sim_loci")
         return calculate_pairwise_dist(self, model)
 
     def apply_missing_mask(self, coverage=1.0, cut1=0, cut2=0, distance=0.0, coverage_type='locus'):
@@ -1516,7 +1517,7 @@ class Model(object):
         """
         # do not allow user to double-apply
         if 9 in self.seqs:
-            raise ipcoalError(
+            raise IpcoalError(
                 "Missing data can only be applied to a dataset once.")
 
         # fix a seed generator
