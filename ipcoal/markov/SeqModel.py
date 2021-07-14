@@ -7,7 +7,6 @@ Markov sequence simulator
 import numpy as np
 from scipy.linalg import expm
 from numba import njit, objmode
-from numba import config
 
 # GLOBALS
 BASES = np.array([0, 1, 2, 3])
@@ -15,7 +14,7 @@ RATES = np.array([0.25, 0.25, 0.25, 0.25])
 
 
 
-class SeqModel():
+class SeqModel:
     """
     Simulate seq-gen like non-infinite sites mutational process.
 
