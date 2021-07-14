@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 
+"""
+Miscellaneous functions
+"""
+
 import time
 import datetime
 import itertools
 
 import toytree
-import toyplot
 import numpy as np
 import pandas as pd
+from numba import njit
 from .jitted import count_matrix_int
 
 try:
@@ -34,13 +38,16 @@ FIXED_IDX = [
 
 
 
-class ipcoalError(Exception):
+class IpcoalError(Exception):
     def __init__(self, *args, **kwargs):
         Exception.__init__(self, *args, **kwargs)
 
 
 
-class Progress(object):
+class Progress:
+    """
+    Interactive progress bar for jupyter notebooks.
+    """
     def __init__(self, njobs, message, children):
 
         # data
@@ -49,7 +56,7 @@ class Progress(object):
         self.start = time.time()
 
         # the progress bar 
-        self.bar = IntProgress(
+        self.prog = IntProgress(
             value=0, min=0, max=self.njobs, 
             layout={
                 "width": "350px",
@@ -68,10 +75,10 @@ class Progress(object):
         # the box widget container
         heights = [
             int(i.layout.height[:-2]) for i in 
-            children + [self.label, self.bar]
+            children + [self.label, self.prog]
         ]
         self.widget = Box(
-            children=children + [self.label, self.bar], 
+            children=children + [self.label, self.prog],
             layout={
                 "display": "flex",
                 "flex_flow": "column",
@@ -81,27 +88,32 @@ class Progress(object):
 
     @property
     def printstr(self):
+        """
+        message as html
+        """
         elapsed = datetime.timedelta(seconds=int(time.time() - self.start))
-        s1 = "<span style='font-size:14px; font-family:monospace'>"
-        s2 = "</span>"
+        str1 = "<span style='font-size:14px; font-family:monospace'>"
+        str2 = "</span>"
         inner = "{} | {:>3}% | {}".format(
             self.message, 
-            int(100 * (self.bar.value / self.njobs)),
+            int(100 * (self.prog.value / self.njobs)),
             elapsed,
         )
-
-        return s1 + inner + s2
+        return str1 + inner + str2
 
     def display(self):
+        """Show html"""
         display(self.widget)
 
     def increment_all(self, value=1):
-        self.bar.value += value
-        if self.bar.value == self.njobs:
-            self.bar.bar_style = "success"
+        """adds value to prog"""
+        self.prog.value += value
+        if self.prog.value == self.njobs:
+            self.prog.bar_style = "success"
         self.increment_time()
 
     def increment_time(self):
+        """sets label value to printstr"""
         self.label.value = self.printstr
 
 
@@ -165,7 +177,7 @@ def get_snps_count_matrix(tree, seqs):
     of quartets determined by the shape of the tree.
     """
     # get all quartets for this size tree
-    if isinstance(tree, toytree.Toytree.ToyTree):
+    if isinstance(tree, toytree.ToyTree):
         quarts = list(itertools.combinations(range(tree.ntips), 4))
     else:
         # or, can be entered as tuples directly, e.g., [(0, 1, 2, 3)]
@@ -281,7 +293,7 @@ def abba_baba(model, testtuples):
         idx += 1
 
     # convert to dataframe   
-    df = pd.DataFrame({
+    data = pd.DataFrame({
         "ABBA": np.array(abbas, dtype=int),
         "BABA": np.array(babas, dtype=int),
         "D": dstats,
@@ -292,7 +304,7 @@ def abba_baba(model, testtuples):
         }, 
         columns=["ABBA", "BABA", "D", "p1", "p2", "p3", "p4"],
     )
-    return df
+    return data
 
 
 
@@ -335,42 +347,47 @@ def calculate_pairwise_dist(mod, model=None, locus=None):
     sequence data in .seqs.
     """
     # a dataframe to fill with distances
-    df = pd.DataFrame(
-        np.zeros((mod.nstips, mod.nstips)),
+    data = pd.DataFrame(
         index=mod.alpha_ordered_names,
         columns=mod.alpha_ordered_names,
-        )
+        dtype=float,
+    )
+
+    # use either all loci concatenated, or a single locus
     if locus:
-        # grab the locus requested
         arr = mod.seqs[locus]
     else:
-        # concatenate seqs across all loci
         arr = np.concatenate(mod.seqs, axis=1)
 
     # calculate all pairs
-    for i in range(mod.nstips):
-        for j in range(mod.nstips):
+    for pair in itertools.product(range(mod.nstips), range(mod.nstips)):
 
-            # sample taxa
-            seq0 = arr[i]
-            seq1 = arr[j]
+        # sample taxa
+        idx0, idx1 = pair
+        seq0 = arr[idx0]
+        seq1 = arr[idx1]
 
-            # hamming distance (proportion that are not matching)
-            if model == "JC":
-                dist = jukes_cantor_distance(seq0, seq1)
-            else:
-                dist = sum(seq0 != seq1) / seq0.size
-            df.iloc[i, j] = dist
-            df.iloc[j, i] = dist
-    return df
+        # hamming distance (proportion that are not matching)
+        if model == "JC":
+            dist = jukes_cantor_distance(seq0, seq1)
+        else:
+            dist = hamming_distance(seq0, seq1)
+        data.iloc[idx0, idx1] = dist
+        data.iloc[idx1, idx0] = dist
+    return data
 
 
-
+@njit
 def jukes_cantor_distance(seq0, seq1):
     "calculate the jukes cantor distance"
-    dist = sum(seq0 != seq1) / seq0.size
+    dist = np.sum(seq0 != seq1) / seq0.size
     jcdist = (-3. / 4.) * np.log(1. - ((4. / 3.) * dist))
     return jcdist
+
+@njit
+def hamming_distance(seq0, seq1):
+    "calculate hamming distance"
+    return sum(seq0 != seq1) / seq0.size
 
 
 
@@ -437,9 +454,10 @@ def generate_recomb_map(length, num_pos, num_peaks, min_rate, max_rate, even_spa
 
 
 
-
 def convert_intarr_to_bytearr(iarr):
-    "An array of ints converted to bytes"
+    """
+    An array of ints converted to bytes
+    """
     barr = np.zeros(iarr.shape, dtype="S1")
     barr[iarr == 0] = b"A"
     barr[iarr == 1] = b"C"
@@ -491,42 +509,6 @@ def convert_intarr_to_bytearr_diploid(arr):
     arr[arr == b"99"] = b"N"
 
     return arr
-
-
-
-
-
-# def tile_reps(array, nreps):
-#     "used to fill labels in the simcat.Database for replicates"
-#     ts = array.size
-#     nr = nreps
-#     result = np.array(
-#         np.tile(array, nr)
-#         .reshape((nr, ts))
-#         .T.flatten())
-#     return result
-
-
-
-# def progress_bar(njobs, nfinished, start, message=""):
-#     "prints a progress bar"
-#     ## measure progress
-#     if njobs:
-#         progress = 100 * (nfinished / njobs)
-#     else:
-#         progress = 100
-
-#     ## build the bar
-#     hashes = "#" * int(progress / 5.)
-#     nohash = " " * int(20 - len(hashes))
-
-#     ## get time stamp
-#     elapsed = datetime.timedelta(seconds=int(time.time() - start))
-
-#     ## print to stderr
-#     args = [hashes + nohash, int(progress), elapsed, message]
-#     print("\r[{}] {:>3}% | {} | {}".format(*args), end="")
-#     sys.stderr.flush()
 
 
 
