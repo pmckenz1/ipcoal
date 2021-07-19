@@ -46,13 +46,13 @@ class Transformer:
         diploid_map = {'A': ['A-0-1', 'A-2-3], 'B': ['B-0-1', 'B-2-3'], ...]}
         dindex_map = {1: [(0,1), (2,3)], 2: [(4,5), (6,7)], ...}
         """
-
         # haploid indices simply repeat itself twice. 
         # TODO: NOT TESTED, OR USED YET, CHECK ORDER OF DINDEX
         if not self.diploid:
             pidx = 0
             for idx, name in enumerate(self.names):
-                self.diploid_map[name] = (name, name)
+                key = name.rsplit("_", 1)[0]
+                self.diploid_map[key] = (name, name)
                 self.dindex_map[idx] = (pidx, pidx)
                 pidx += 1
 
@@ -60,7 +60,7 @@ class Transformer:
         else:
 
             # group names by prefix
-            groups = groupby(self.names, key=lambda x: x.rsplit("-", 1)[0])
+            groups = groupby(self.names, key=lambda x: x.rsplit("_", 1)[0])
 
             # arrange into an IMAP dictionary: {r0: [r0-0, r0-1, r0-2, ...]}
             imap = {i[0]: list(i[1]) for i in groups}
@@ -76,7 +76,7 @@ class Transformer:
 
                 # nsamples matched to this tip
                 samples = imap[sppname]
-                samples = sorted(samples, key=lambda x: int(x.rsplit("-", 1)[-1]))
+                samples = sorted(samples, key=lambda x: int(x.rsplit("_", 1)[-1]))
 
                 # must be x2
                 assert len(samples) % 2 == 0, (
@@ -87,19 +87,19 @@ class Transformer:
                 for pidx in range(0, len(samples), 2):
 
                     # the local idx of these sample names
-                    p0 = samples[pidx]
-                    p1 = samples[pidx + 1]
+                    ps0 = samples[pidx]
+                    ps1 = samples[pidx + 1]
 
                     # the global idx of these sample names
-                    pidx0 = self.names.index(p0)
-                    pidx1 = self.names.index(p1)
+                    pidx0 = self.names.index(ps0)
+                    pidx1 = self.names.index(ps1)
 
                     # fill dicts
                     if suffix:
-                        newname = "{}-{}".format(sppname, int(pidx / 2))
+                        newname = "{}_{}".format(sppname, int(pidx / 2))
                     else:
                         newname = sppname
-                    self.diploid_map[newname] = (p0, p1)
+                    self.diploid_map[newname] = (ps0, ps1)
                     self.dindex_map[didx] = (pidx0, pidx1)
                     didx += 1
 
@@ -138,6 +138,3 @@ class Transformer:
             self.names = self.dnames
             del self.dseqs
             del self.dnames
-
-
-
