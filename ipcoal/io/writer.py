@@ -98,9 +98,10 @@ class Writer:
         quiet=False,
         ):
         """
-        Write all seq data for each locus to a separate phylip file in a shared
-        directory with each locus named by locus index. If you want to write
-        only a subset of loci to file you can list their index
+        Write all seq data for each locus to a separate phylip file in
+        a shared directory with each locus named by locus index. If 
+        you want to write only a subset of loci to file you can list 
+        their index
 
         Parameters:
         -----------
@@ -506,6 +507,7 @@ class Writer:
         if not quiet:
             print("wrote {} SNPs across {} linkage blocks to {}"
                 .format(nsnps, nchroms, outfile))
+        return None
 
 
     def build_phystring_from_loc(self, arr):
