@@ -109,7 +109,7 @@ class Model:
     """
     def __init__(
         self,
-        tree: Optional[toytree.ToyTree]=None,
+        tree: Optional[str, 'toytree.ToyTree']=None,
         Ne: Optional[int]=None,
         admixture_edges: Optional[List[Tuple[int,int,float,float]]]=None,
         nsamples: Union[int,Dict[Union[str,int],int]]=1,
