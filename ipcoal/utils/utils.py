@@ -4,6 +4,7 @@
 Miscellaneous functions
 """
 
+from typing import Tuple, Optional
 import time
 import datetime
 import itertools
@@ -12,7 +13,7 @@ import toytree
 import numpy as np
 import pandas as pd
 from numba import njit
-from .jitted import count_matrix_int
+from ipcoal.utils.jitted import count_matrix_int
 
 try:
     from IPython.display import display
@@ -118,9 +119,51 @@ class Progress:
 
 
 
+def get_admix_interval_as_gens(
+    tree: 'ToyTree', 
+    idx0:int, 
+    idx1:int, 
+    heights:Optional[Tuple[int, int]]=None,
+    props:Optional[Tuple[float, float]]=None,
+    ):
+    """
+    Returns the branch interval in units of generations that two 
+    edges of a tree are overlapping, with the lower and upper edges
+    optionally trimmed. If user enters admix times as integers then 
+    they are checked only for validation, no trimming.
+    """
+    if tree.idx_dict[idx0].is_root() or tree.idx_dict[idx1].is_root():
+        raise IpcoalError(f"no shared admix interval for idxs: {idx0} {idx1}")
+
+    # get full possible intervals for these two nodes from the tree
+    node0 = tree.idx_dict[idx0]
+    ival0 = (node0.height, node0.up.height)
+    node1 = tree.idx_dict[idx1]
+    ival1 = (node1.height, node1.up.height)
+
+    low_bin = max([ival0[0], ival1[0]])
+    top_bin = min([ival0[1], ival1[1]])
+    if top_bin < low_bin:
+        raise IpcoalError(f"no shared admix interval for idxs: {idx0} {idx1}")
+
+    # if user entered a time in gens then check if it works
+    if heights is not None:
+        if not ((heights[0] >= low_bin) and (heights[1] <= top_bin)):
+            raise IpcoalError(
+                f"admix interval ({heights}) not within no shared "
+                f"admix interval for idxs: {idx0} {idx1}")
+        return heights
+
+    # restrict migration within bin to a smaller interval
+    length = top_bin - low_bin
+    low_limit = low_bin + (length * props[0])
+    top_limit = low_bin + (length * props[1])
+    return low_limit, top_limit
+
+
 def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
     """
-    Find all possible admixture edges on a tree. 
+    Find all possible admixture edges on a tree.
 
     Edges are unidirectional, so the source and dest need to overlap in
     time interval. To retrict migration to occur away from nodes (these 
@@ -370,10 +413,12 @@ def calculate_pairwise_dist(mod, model=None, locus=None):
         seq1 = arr[idx1]
 
         # hamming distance (proportion that are not matching)
-        if model == "JC":
+        if model is None:
+            dist = hamming_distance(seq0, seq1)
+        elif model.upper().startswith("JC"):
             dist = jukes_cantor_distance(seq0, seq1)
         else:
-            dist = hamming_distance(seq0, seq1)
+            raise NotImplementedError("model not supported.")
         data.iloc[idx0, idx1] = dist
         data.iloc[idx1, idx0] = dist
     return data
@@ -487,18 +532,18 @@ def convert_intarr_to_bytearr_diploid(arr):
     arr[arr == b"11"] = b"C"
     arr[arr == b"22"] = b"G"
     arr[arr == b"33"] = b"T"
-    arr[arr == b"01"] = b"K"
-    arr[arr == b"10"] = b"K"    
-    arr[arr == b"02"] = b"Y"
-    arr[arr == b"20"] = b"Y"    
+    arr[arr == b"01"] = b"M"
+    arr[arr == b"10"] = b"M"
+    arr[arr == b"02"] = b"R"
+    arr[arr == b"20"] = b"R"
     arr[arr == b"03"] = b"W"
-    arr[arr == b"30"] = b"W"    
+    arr[arr == b"30"] = b"W"
     arr[arr == b"12"] = b"S"
-    arr[arr == b"21"] = b"S"    
-    arr[arr == b"13"] = b"R"
-    arr[arr == b"31"] = b"R"    
-    arr[arr == b"23"] = b"M"
-    arr[arr == b"32"] = b"M"
+    arr[arr == b"21"] = b"S"
+    arr[arr == b"13"] = b"Y"
+    arr[arr == b"31"] = b"Y"
+    arr[arr == b"23"] = b"K"
+    arr[arr == b"32"] = b"K"
 
     arr[arr == b"90"] = b"A"
     arr[arr == b"09"] = b"A"
@@ -509,7 +554,6 @@ def convert_intarr_to_bytearr_diploid(arr):
     arr[arr == b"93"] = b"T"
     arr[arr == b"39"] = b"T"
     arr[arr == b"99"] = b"N"
-
     return arr
 
 
