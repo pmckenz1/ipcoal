@@ -8,7 +8,7 @@ import numpy as np
 import toyplot
 
 
-def draw_seqview(self, idx, start, end, width, height, show_text, **kwargs):
+def draw_seqview(self, idx, start, end, width, height, show_text, gaps=1.5, **kwargs):
     """
     Draws a sequence array as a colored toyplot table.
     """
@@ -63,8 +63,8 @@ def draw_seqview(self, idx, start, end, width, height, show_text, **kwargs):
     table.cells.cell[:, 1:].lstyle = {"font-size": "8px"}
 
     # dividers
-    table.body.gaps.columns[...] = 1.5
-    table.body.gaps.rows[...] = 1.5
+    table.body.gaps.columns[...] = gaps
+    table.body.gaps.rows[...] = gaps
 
     # add taxon labels
     table.cells.cell[:, 0].data = self.alpha_ordered_names
