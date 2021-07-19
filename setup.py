@@ -29,6 +29,7 @@ else:
         "msprime",
         "numba",
         "scipy",
+        "loguru"
         # seq-gen (optional)
     ]
 
