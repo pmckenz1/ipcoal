@@ -14,13 +14,12 @@ from msprime.mutations import mutation_model_factory
 import toytree
 from loguru import logger
 
-# from ipcoal.markov.SeqModel import SeqModel
 from ipcoal.phylo.TreeInfer import TreeInfer
 from ipcoal.io.writer import Writer
 from ipcoal.utils.utils import get_admix_interval_as_gens, IpcoalError
 from ipcoal.draw.seqview import draw_seqview
 from ipcoal.utils.utils import calculate_pairwise_dist
-# from .SeqGen import SeqGen
+
 
 # set display preference to make tree columns look nice
 pd.set_option("max_colwidth", 28)
@@ -113,7 +112,7 @@ class Model:
         Ne: Optional[int]=None,
         admixture_edges: Optional[List[Tuple[int,int,float,float]]]=None,
         nsamples: Union[int,Dict[Union[str,int],int]]=1,
-        mut: float=1e-8,
+        mut: Union[float, ms.RateMap]=1e-8,
         recomb: Union[None, float, ms.RateMap]=1e-9,
         seed_trees: Optional[int]=None,
         seed_mutations: Optional[int]=None,
@@ -131,8 +130,7 @@ class Model:
         self._reset_random_generators()
 
         # parse input tree, store orig, resolv poly if needed to get copy
-        self.treeorig = toytree.tree(tree)
-        self.tree = self.treeorig.resolve_polytomy(dist=0.00001)
+        self.tree = toytree.tree(tree).resolve_polytomy(dist=0.00001)
 
         # genome params: mut, recomb
         self.mut = mut
@@ -155,9 +153,6 @@ class Model:
         self.alpha_ordered_names: List[str] = None
         self._simidx_to_alphaidx: Dict[str,int] = None
         self._get_tip_names()
-        # self.tip_to_heights: dict = None
-        # self._tips_are_ultrametric: bool = None
-        #`self._get_tip_names_for_renaming()
 
         # check formats of admixture args
         self.admixture_edges: List[Tuple(int,int,float,float)] = None
@@ -223,7 +218,7 @@ class Model:
         # user entered an integer: 2 -> {n0: 2, n1: 2, n2: 2, ...}
         if isinstance(nsamples, int):
             samples = {
-                f"n{idx}": nsamples for idx in self.treeorig.idx_dict
+                f"n{idx}": nsamples for idx in self.tree.idx_dict
                 if self.tree.idx_dict[idx].is_leaf()
             }
 
@@ -291,11 +286,9 @@ class Model:
                     idx += 1
 
         # alphanumeric ordering of tipnames for seqs and outfiles.
+        revdict = {j: i for (i, j) in self.tipdict.items()}
         self.alpha_ordered_names = sorted(self.tipdict.values())
-        self._reorder = [
-            self.alpha_ordered_names.index(self.tipdict[i])
-            for i in self.tipdict
-        ]
+        self._reorder = [revdict[i] for i in self.alpha_ordered_names]
 
     def _check_admixture_edges(self, admixture_edges):
         """
@@ -473,6 +466,22 @@ class Model:
 
                 # set new current name for dest node
                 node_dest.current = newname
+
+            # add migration interval events (start, end)
+            # if event['type'] == 'migration':
+            #     # get nodes info
+            #     src, dest = event['ancestral']
+            #     node_src = dtree.idx_dict[src]
+            #     node_dest = dtree.idx_dict[dest]
+            #     newname = node_dest.current + "a"                
+
+            #     # create new node ancestry
+            #     demography.add_admixture(
+            #         time=event['time'],
+            #         derived=node_dest.current, 
+            #         ancestral=[node_src.current, newname],
+            #         proportions=[rate, 1 - rate],
+            #     )
 
         # store and sort
         self.ms_demography = demography
