@@ -130,6 +130,7 @@ class Model:
         self._reset_random_generators()
 
         # parse input tree, store orig, resolv poly if needed to get copy
+        tree = tree if tree is not None else ""
         self.tree = toytree.tree(tree).resolve_polytomy(dist=0.00001)
 
         # genome params: mut, recomb
@@ -319,11 +320,20 @@ class Model:
         an Ne setting, or raise an error.
         """
         if neff is None:
-            node_neffs = self.tree.get_node_values("Ne")
+            try:
+                node_neffs = self.tree.get_node_values("Ne")
+            except toytree.utils.exceptions.ToytreeError as inst:
+                msg = (
+                    "You must either enter an Ne argument or set Ne "
+                    "values to all nodes of the input tree as a ToyTree "
+                    "object by using, e.g., "
+                    "tree.set_node_values(mapping={...}, default=10000). "
+                )
+                raise IpcoalError(msg) from inst
             if not all(node_neffs):
                 raise IpcoalError(
                     "When Ne=None you must set Ne values to all nodes of "
-                    "the input tree as a ToyTree object by using, e.g., "
+                    "the input tree as a ToyTree object. Example: tree = "
                     "tree.set_node_values(mapping={...}, default=10000). "
                 )
             self.neff = max(node_neffs)
