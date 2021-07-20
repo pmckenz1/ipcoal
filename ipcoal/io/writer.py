@@ -307,7 +307,10 @@ class Writer:
         with h5py.File(h5file, 'w') as io5:
 
             # write the concatenated seqs bytes array to 'seqs'
-            io5.create_dataset("phy", data=np.concatenate(txf.seqs, 1).view(np.uint8))
+            io5.create_dataset(
+                "phy", 
+                data=np.concatenate(txf.seqs, 1).view(np.uint8)
+            )
 
             # write the phymap array
             nloci = txf.seqs.shape[0]
