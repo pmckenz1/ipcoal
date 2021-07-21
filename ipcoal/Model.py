@@ -362,7 +362,7 @@ class Model:
                 props = (time, time)
                 heights = None
             elif isinstance(time, tuple):
-                if isinstance(time, int):
+                if isinstance(time[0], int) and isinstance(time[1], int):
                     props = None
                     heights = (time[0], time[1])
                 else:
@@ -425,10 +425,19 @@ class Model:
             else:
                 events.append({
                     'type': 'migration',
-                    'time': time,
-                    'ancestral': [src, dest],
-                    'derived': dest,                    
-                    'proportions': [rate, 1 - rate],
+                    'time': time[0],
+                    'source': src,
+                    'dest': dest,
+                    'end': False,
+                    'rate': rate,
+                })
+                events.append({
+                    'type': 'migration',
+                    'time': time[1],
+                    'source': src,
+                    'dest': dest,
+                    'end': True,
+                    'rate': 0,
                 })                
 
         # sort events by time then type
@@ -457,45 +466,47 @@ class Model:
                 src, dest = event['ancestral']
                 node_src = dtree.idx_dict[src]
                 node_dest = dtree.idx_dict[dest]
-                newname = node_dest.current + "a"
+                newname = node_src.current + "a"
 
                 # create new node that inherits its Ne from dest
                 demography.add_population(
                     name=newname,
-                    initial_size=node.Ne,
+                    initial_size=node_src.Ne,
                     initially_active=False,
                 )
 
                 # create new node ancestry
                 demography.add_admixture(
                     time=event['time'],
-                    derived=node_dest.current, 
-                    ancestral=[node_src.current, newname],
+                    derived=node_src.current, 
+                    ancestral=[node_dest.current, newname],
                     proportions=[rate, 1 - rate],
                 )
 
                 # set new current name for dest node
-                node_dest.current = newname
+                node_src.current = newname
 
             # add migration interval events (start, end)
-            # if event['type'] == 'migration':
-            #     # get nodes info
-            #     src, dest = event['ancestral']
-            #     node_src = dtree.idx_dict[src]
-            #     node_dest = dtree.idx_dict[dest]
-            #     newname = node_dest.current + "a"                
-
-            #     # create new node ancestry
-            #     demography.add_admixture(
-            #         time=event['time'],
-            #         derived=node_dest.current, 
-            #         ancestral=[node_src.current, newname],
-            #         proportions=[rate, 1 - rate],
-            #     )
+            if event['type'] == 'migration':
+                # set migration rate start event
+                demography.add_migration_rate_change(
+                    time=event['time'],
+                    source=event['source'],
+                    dest=event['dest'],
+                    rate=event['rate'],
+                )
 
         # store and sort
         self.ms_demography = demography
         self.ms_demography.sort_events()
+
+    def debug_demography(self):
+        """
+        Returns the msprime demography debugger summary of the 
+        currently described demographic model. See also the 
+        self.ms_demography attribute for a list of events.
+        """
+        return self.ms_demography.debug()
 
     # ----------------------------------------------------------------
     # end init methods
