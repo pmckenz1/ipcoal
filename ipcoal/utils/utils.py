@@ -125,7 +125,7 @@ def get_admix_interval_as_gens(
     idx1:int, 
     heights:Optional[Tuple[int, int]]=None,
     props:Optional[Tuple[float, float]]=None,
-    ):
+    ) -> Tuple[int, int]:
     """
     Returns the branch interval in units of generations that two 
     edges of a tree are overlapping, with the lower and upper edges
@@ -150,14 +150,14 @@ def get_admix_interval_as_gens(
     if heights is not None:
         if not ((heights[0] >= low_bin) and (heights[1] <= top_bin)):
             raise IpcoalError(
-                f"admix interval ({heights}) not within no shared "
-                f"admix interval for idxs: {idx0} {idx1}")
-        return heights
+                f"admix interval ({heights}) not within a shared "
+                f"edge interval for idxs: {idx0} {idx1}")
+        return max(low_bin + 1e-3, heights[0]), min(top_bin - 1e-3, heights[1])
 
     # restrict migration within bin to a smaller interval
     length = top_bin - low_bin
-    low_limit = low_bin + (length * props[0])
-    top_limit = low_bin + (length * props[1])
+    low_limit = max(low_bin + 1e-3, low_bin + (length * props[0]))
+    top_limit = min(top_bin - 1e-3, low_bin + (length * props[1]))
     return low_limit, top_limit
 
 
