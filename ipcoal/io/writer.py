@@ -40,16 +40,17 @@ class Writer:
     names (list)
         A list of the taxon names ordered alphanumerically.
     """
-    def __init__(self, seqs, names, ancestral_seq=None):
+    def __init__(self, model):
         # both are already ordered alphanumerically
-        self.seqs = seqs.copy()
-        self.names = names.copy()
+        self.seqs = model.seqs.copy()
+        self.names = model.alpha_ordered_names.copy()
+        self.alleles = model.alleles.copy()
         self.outdir = None
         self.outfile = None
         self.idxs = None
         self.ancestral_seq = None
-        if ancestral_seq is not None:
-            self.ancestral_seq = ancestral_seq.copy()
+        if model.ancestral_seq is not None:
+            self.ancestral_seq = model.ancestral_seq.copy()
 
 
     def _subset_loci(self, idxs):
@@ -83,7 +84,13 @@ class Writer:
         haploid samples into diploids and use IUPAC ambiguity codes to 
         represent hetero sites.
         """
-        txf = Transformer(self.seqs, self.names, diploid)
+        txf = Transformer(
+            self.seqs, 
+            self.names, 
+            alleles=self.alleles,
+            diploid=diploid,
+        )
+        txf.transform_seqs()
         self.seqs = txf.seqs
         self.names = txf.names
 
@@ -216,6 +223,7 @@ class Writer:
         if not quiet:
             print("wrote concat locus ({} x {}bp) to {}"
                   .format(arr.shape[0], arr.shape[1], outfile))
+        return None
 
 
     def write_concat_to_nexus(
@@ -272,6 +280,7 @@ class Writer:
         if not quiet:
             print("wrote concat locus ({} x {}bp) to {}"
                   .format(arr.shape[0], arr.shape[1], outfile))
+        return None
 
 
     def write_loci_to_hdf5(self, name, outdir, diploid, quiet):
@@ -295,7 +304,8 @@ class Writer:
             ) from err
 
         # get seqs as bytes 
-        txf = Transformer(self.seqs, self.names, diploid)
+        txf = Transformer(self.seqs, self.names, self.alleles, diploid)
+        txf.transform_seqs()
 
         # open h5py database handle
         if name is None:
@@ -362,7 +372,7 @@ class Writer:
                 self.ancestral_seq.size, 1)
 
         # get seqs as bytes (with optional diploid collapsing)
-        txf = Transformer(self.seqs, self.names, diploid)
+        txf = Transformer(self.seqs, self.names, self.alleles, diploid)
         tarr = np.concatenate(txf.seqs, axis=1)
 
         # get indices of variable sites (while allowing missing data)

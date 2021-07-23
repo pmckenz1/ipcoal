@@ -16,16 +16,13 @@ from loguru import logger
 
 from ipcoal.phylo.TreeInfer import TreeInfer
 from ipcoal.io.writer import Writer
-from ipcoal.utils.utils import get_admix_interval_as_gens, IpcoalError
+from ipcoal.io.transformer import Transformer
 from ipcoal.draw.seqview import draw_seqview
 from ipcoal.utils.utils import calculate_pairwise_dist
-
+from ipcoal.utils.utils import get_admix_interval_as_gens, IpcoalError
 
 # set display preference to make tree columns look nice
 pd.set_option("max_colwidth", 28)
-
-# global
-BASE_INDEX = list("ACGT")
 
 
 class Model:
@@ -71,7 +68,7 @@ class Model:
         of migration at the midpoint of the shared edge. If a floating
         point value (e.g., 0.25) then admixture occurs this proportion
         of time back from the recent end of the shared interval 
-        (e.g., 25%). If an integer value is entered (100000) a pulse of 
+        (e.g., 25%). If an integer value is entered (10000) a pulse of 
         migration occurs at this time point. If the time point is 
         not in the shared interval between source and dest nodes, or 
         they do not share any interval, an error is raised. If a tuple
@@ -85,7 +82,7 @@ class Model:
         scaled to 1/2N. If you are simulating asexual haploids then 
         you should double Ne. Ipcoal does not currently support ploidy
         >2 (see msprime which can). If a value is entered here it will
-        be set for all edges of the tree. To set different Ne values to 
+        be set for all edges of the tree. To set different Ne to 
         different edges you must add Ne node attributes to an input
         ToyTree. For example, tre.set_node_values("Ne", {1:1000, 
         2:10000}, default=5000)) will set all edges to 5000 except 
@@ -97,6 +94,9 @@ class Model:
 
     recomb (float, ms.RateMap): default=1e-9
         The per-site per-generation recombination rate.
+
+    subst_model (str, ms.MutationModel): default="JC69"
+        A finite-site Markov substitution model supported by msprime.
 
     seed_trees (int):
         Random number generator used for msprime (and seqgen unless a 
@@ -114,8 +114,10 @@ class Model:
         nsamples: Union[int,Dict[Union[str,int],int]]=1,
         mut: Union[float, ms.RateMap]=1e-8,
         recomb: Union[None, float, ms.RateMap]=1e-9,
+        subst_model:Union[str, ms.MutationModel]="JC69",
         seed_trees: Optional[int]=None,
         seed_mutations: Optional[int]=None,
+        #alpha: Optional[float]=None, # shape parameter for G site RateMap
         **kwargs,
         ):
 
@@ -132,6 +134,12 @@ class Model:
         # parse input tree, store orig, resolv poly if needed to get copy
         tree = tree if tree is not None else ""
         self.tree = toytree.tree(tree).resolve_polytomy(dist=0.00001)
+
+        # check model and return as a MutationModel instance
+        self.subst_model: ms.MutationModel = None 
+        self._alleles: Tuple[str] = None
+        self.alleles: Dict[str, int]
+        self._get_mutation_model(subst_model)
 
         # genome params: mut, recomb
         self.mut = mut
@@ -195,6 +203,25 @@ class Model:
             self.rng_trees if not self._init_mseed
             else np.random.default_rng(self._init_mseed)
         )
+
+    def _get_mutation_model(self, subst_model):
+        """
+        Checks the MutationModel is compaatible with msprime and 
+        supported by ipcoal, and stores a dict mapping alleles to
+        their integer index.
+        """
+        try:
+            self.subst_model = mutation_model_factory(subst_model)
+        except ValueError as inst:
+            msg = (
+                "Model can be a string for 'JC69', 'binary', 'pam', or blosum62; "
+                "or it must be a msprime.MutationModel instance to describe a "
+                "more complex substitution model."
+            )
+            raise IpcoalError(msg) from inst
+        self._alleles = tuple(self.subst_model.alleles)
+        self.alleles = dict(enumerate(self.subst_model.alleles))
+
 
     def _set_samples(self, nsamples):
         """
@@ -714,7 +741,6 @@ class Model:
         self,
         nloci:int=1,
         nsites:int=1,
-        model:Union[str, ms.MutationModel]="JC69",
         precision:int=14,
         ):
         """
@@ -731,9 +757,6 @@ class Model:
         nsites (int):
             The length of each locus.
 
-        model (str, ms.MutationModel):
-            A mutation model supported by msprime. See docs.
-
         precision (int):
             Floating point precision of blens in newick tree strings.
         """
@@ -749,9 +772,6 @@ class Model:
         # allow scientific notation, e.g., 1e6
         nsites = int(nsites)
         nloci = int(nloci)        
-
-        # check model and return as a MutationModel instance
-        model = mutation_model_factory(model)
 
         # multidimensional array of sequence arrays to fill 
         aseqarr = np.zeros((nloci, nsites), dtype=np.uint8)
@@ -786,7 +806,7 @@ class Model:
             mutated_ts = ms.sim_mutations(
                 tree_sequence=tree_seq, 
                 rate=self.mut,
-                model=model,
+                model=self.subst_model,
                 random_seed=self.rng_muts.integers(1e9),
                 discrete_genome=True,
             )
@@ -797,21 +817,21 @@ class Model:
                 data.loc[mstree.index, "tidx"] = mstree.index
 
             # get genotype array and count nsnps
-            genos = mutated_ts.genotype_matrix(alleles=tuple("ACGT"))
+            genos = mutated_ts.genotype_matrix(alleles=self._alleles)
 
             # get an ancestral array with same root frequencies
             aseqarr[lidx] = self.rng_muts.choice(
-                range(len(model.alleles)),
+                range(len(self.subst_model.alleles)),
                 size=nsites,
                 replace=True,
-                p=model.root_distribution,
+                p=self.subst_model.root_distribution,
             )
             seqarr[lidx, :, :] = aseqarr[lidx].copy()
 
             # impute mutated genos into aseq at variant sites
             for var in mutated_ts.variants():
                 pos = int(var.site.position)
-                aseqarr[lidx, pos] = BASE_INDEX.index(var.site.ancestral_state)
+                aseqarr[lidx, pos] = self._alleles.index(var.site.ancestral_state)
                 seqarr[lidx, :, pos] = genos[var.index]
 
             # store the dataframe
@@ -834,10 +854,9 @@ class Model:
         self, 
         nsnps:int=1, 
         min_alleles:int=2,
-        max_alleles:int=4,
+        max_alleles:Optional[int]=None,
         min_mutations:int=1,
         max_mutations:Optional[int]=None,
-        model:Union[str, ms.MutationModel]="JC69",
         repeat_on_trees:bool=False, 
         precision:int=14,
         ):
@@ -862,38 +881,47 @@ class Model:
         Params
         ------
         nsnps (int):
-            The number of SNPs to produce.
+            The number of unlinked SNPs to produce.
+
+        min_alleles (int): default=2
+            A site is discarded if the number of observed alleles is 
+            less than min_alleles. A setting of 2 ensures SNPs will 
+            be at least bi-allelic, thus preventing a case where 
+            multiple mutations could revert a site to its ancestral 
+            state.
+
+        max_alleles (int): default=None
+            A site is discarded if the number of observed alleles is
+            greater than max_alleles. A setting of 2 ensures that 
+            SNPs will be at most bi-allelic, and would discard 
+            multi-allelic sites produced by multiple mutations. See
+            also max_mutations.
+
+        min_mutations (int): default=1
+            A site is discarded if the number of mutations is less
+            than min_mutations. This ensures that only variant sites
+            will be returned. Multiple mutations can revert a site to
+            its ancestral state under many substitution models, thus
+            it is useful to also use the min_alleles arg.
+
+        max_mutations (int): default=None
+            A site is discarded if the number of mutation is greater
+            than max_mutations. 
 
         repeat_on_trees (bool):
             If True then the mutation process is repeated on each 
-            visited tree until a SNP is observed. If False (default)
-            then genealogies are discarded if a SNP does not occur
-            on the first attempt.
-
-        min_alleles (int):
-            If a mutated site generates more than min_alleles it will
-            be skipped. By default min_alleles=1 meaning that a site
-            is only counted as a SNP if there is variation present in
-            the observed data. To keep site observations where the 
-            state transitions back to its starting state (e.g., 
-            num_mutations=2, num_alleles=1) you would have to set 
-            min_alleles to 1. (see also max_alleles).
-
-        max_alleles (int):
-            If a mutated site generates more than max_alleles it will
-            be skipped. When >1 mutation occurs this can lead to 0, 1,
-            or >=2 observed alleles, depending on the resulting state. 
-            By setting max_alleles=1. If you
-            want to allow sampling multi-allelic SNPs then set this 
-            value to None or a large integer.
+            visited genealogy until a SNP is observed. If False 
+            (default) then genealogies are discarded if a SNP does 
+            not occur on the first attempt.            
         """
         # allow scientific notation, e.g., 1e6
         nsnps = int(nsnps)
 
         # get min and set max_mutations minimum to 1
         max_mutations = (max_mutations if max_mutations else 100000)
+        max_alleles = (max_alleles if max_alleles else 100000)
         assert min_mutations > 0, "min_mutations must be >=1"
-        assert max_alleles > min_alleles, "max_alleles must be > min_allles"                
+        assert max_alleles > min_alleles, "max_alleles must be > min_alleles"                
 
         # get infinite-ish TreeSequence generator
         msgen = self.get_tree_sequence_generator(1, snp=True)
@@ -916,10 +944,10 @@ class Model:
 
             # try to land a mutation
             mutated_ts = ms.sim_mutations(
-                tree_sequence=treeseq, 
+                tree_sequence=treeseq,
                 rate=self.mut,
-                model=model,
-                random_seed=self.rng_muts.integers(1e9),
+                model=self.subst_model,
+                random_seed=self.rng_muts.integers(2**31),
                 discrete_genome=True,
             )
 
@@ -929,35 +957,42 @@ class Model:
                     mutated_ts = ms.sim_mutations(
                         tree_sequence=treeseq, 
                         rate=self.mut,
-                        model="JC69",
-                        random_seed=self.rng_muts.integers(1e9),
+                        model=self.subst_model,
+                        random_seed=self.rng_muts.integers(2**31),
                         discrete_genome=True,
                     )
-                    if mutated_ts.num_mutations >= min_mutations:
-                        genos = mutated_ts.genotype_matrix(alleles=tuple("ACGT"))[0]
-                        nalleles = np.unique(genos).size
-                        if max_alleles >= nalleles >= min_alleles:
-                            break
+                    try:
+                        variant = next(mutated_ts.variants())
+                    except StopIteration:
+                        continue
+                    if len(variant.site.mutations) < min_mutations:
+                        continue
+                    if not max_alleles >= len(variant.alleles) >= min_alleles:
+                        continue
 
             # otherwise simply require >1 mutation and >1 alleles
             else:
-                if mutated_ts.num_mutations < min_mutations:
+                try:
+                    variant = next(mutated_ts.variants())
+                except StopIteration:
                     continue
-                genos = mutated_ts.genotype_matrix(alleles=tuple("ACGT"))[0]
-                nalleles = np.unique(genos).size
-                if not max_alleles >= nalleles >= min_alleles:
+                if len(variant.site.mutations) < min_mutations:
                     continue
-
-            # store the newick string
-            newick = treeseq.first().newick(
-                node_labels=self.tipdict, precision=precision)
+                if not max_alleles >= len(variant.alleles) >= min_alleles:
+                    continue
 
             # Store result and advance counter
-            snparr[:, snpidx] = genos
-            ancarr[snpidx] = (
-                mutated_ts.tables.sites.ancestral_state.astype(np.uint8))
+            snparr[:, snpidx] = mutated_ts.genotype_matrix(alleles=self._alleles)
+            ancarr[snpidx] = variant.alleles.index(variant.site.ancestral_state)
             snpidx += 1
-            newicks.append(newick)
+                
+            # store the newick string
+            newicks.append(
+                treeseq.first().newick(
+                    node_labels=self.tipdict, 
+                    precision=precision,
+                )
+            )
 
         # init dataframe
         self.df = pd.DataFrame({
@@ -993,7 +1028,11 @@ class Model:
         the ipyrad-analysis toolkit. This requires the additional dependency
         h5py and will raise an exception if the library is missing.
         """
-        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        if self.seqs.ndim == 2:
+            raise IpcoalError(
+                "Simulated data are not loci. "
+                "See .write_snps_to_hdf5() for writing a SNP database.")
+        writer = Writer(self)
         writer.write_loci_to_hdf5(name, outdir, diploid, quiet=False)
 
     def write_snps_to_hdf5(self, name=None, outdir=None, diploid=False):
@@ -1002,7 +1041,7 @@ class Model:
         the ipyrad-analysis toolkit. This requires the additional dependency
         h5py and will raise an exception if the library is missing.
         """
-        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        writer = Writer(self)
         writer.write_snps_to_hdf5(name, outdir, diploid, quiet=False)
 
     def write_vcf(
@@ -1039,7 +1078,7 @@ class Model:
             is missing (also, some software tools do not accept basecalls 
             with one missing allele, such as vcftools).        
         """
-        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        writer = Writer(self)
         vdf = writer.write_vcf(
             name, 
             outdir, 
@@ -1075,7 +1114,7 @@ class Model:
             To write a single locus file provide the idx. If None then all loci
             are written to separate files.
         """
-        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        writer = Writer(self)
         writer.write_loci_to_phylip(
             outdir, 
             idxs, 
@@ -1100,7 +1139,7 @@ class Model:
         outfile (str):
             The name/path of the outfile to write. Default is "./test.phy"
         """       
-        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        writer = Writer(self)
         phystring = writer.write_concat_to_phylip(outdir, name, idxs, diploid)           
         if name is None:
             return phystring
@@ -1121,7 +1160,7 @@ class Model:
         outfile (str):
             The name/path of the outfile to write. Default is "./test.phy"
         """       
-        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
+        writer = Writer(self)
         nexstring = writer.write_concat_to_nexus(outdir, name, idxs, diploid)            
         if name is None:
             return nexstring
@@ -1144,9 +1183,13 @@ class Model:
         """
         name = name.rsplit(".tsv")[0].rsplit(".popfile")[0]
         popdata = []
-        writer = Writer(self.seqs, self.alpha_ordered_names, self.ancestral_seq)
-        writer._transform_seqs(diploid=diploid)
-        for tip in writer.names:
+        txf = Transformer(
+            self.seqs, 
+            self.alpha_ordered_names, 
+            alleles=self.alleles,
+            diploid=diploid,
+        )
+        for tip in txf.names:
             popdata.append(f"{tip.rsplit('_')[0]}\t{tip}")
         outname = os.path.join(outdir, name + ".popfile.tsv")
         with open(outname, 'w') as out:

@@ -8,13 +8,14 @@ IUPAC ambiguity codes for heterozygous sites.
 
 from itertools import groupby
 import numpy as np
-from ipcoal.utils.utils import convert_intarr_to_bytearr
+from ipcoal.utils.utils import convert_intarr_to_bytearr, IpcoalError
 from ipcoal.utils.utils import convert_intarr_to_bytearr_diploid
 
 
 class Transformer:
     """
-    Converts seqs from ints to strings including diploid base calls.
+    Converts seqs from ints to strings including diploid base calls
+    for substitution models that support ambiguities.
 
     seqs: (ndarray)
     names: (ndarray)
@@ -24,19 +25,22 @@ class Transformer:
         self,
         seqs,
         names,
+        alleles,
         diploid=True,
         ):
 
         # store input params
         self.seqs = seqs
-        self.names = names
+        self.orig_names = names.copy()
+        self.names = names.copy()
+        self.alleles = alleles
         self.diploid = diploid
         self.diploid_map = {}
         self.dindex_map = {}
 
         # setup functions
         self.get_diploid_map()
-        self.transform_seqs()
+        # self.transform_seqs()
 
 
     def get_diploid_map(self):
@@ -50,7 +54,7 @@ class Transformer:
         # TODO: NOT TESTED, OR USED YET, CHECK ORDER OF DINDEX
         if not self.diploid:
             pidx = 0
-            for idx, name in enumerate(self.names):
+            for idx, name in enumerate(self.orig_names):
                 key = name.rsplit("_", 1)[0]
                 self.diploid_map[key] = (name, name)
                 self.dindex_map[idx] = (pidx, pidx)
@@ -60,7 +64,7 @@ class Transformer:
         else:
 
             # group names by prefix
-            groups = groupby(self.names, key=lambda x: x.rsplit("_", 1)[0])
+            groups = groupby(self.orig_names, key=lambda x: x.rsplit("_", 1)[0])
 
             # arrange into an IMAP dictionary: {r0: [r0-0, r0-1, r0-2, ...]}
             imap = {i[0]: list(i[1]) for i in groups}
@@ -91,8 +95,8 @@ class Transformer:
                     ps1 = samples[pidx + 1]
 
                     # the global idx of these sample names
-                    pidx0 = self.names.index(ps0)
-                    pidx1 = self.names.index(ps1)
+                    pidx0 = self.orig_names.index(ps0)
+                    pidx1 = self.orig_names.index(ps1)
 
                     # fill dicts
                     if suffix:
@@ -102,6 +106,9 @@ class Transformer:
                     self.diploid_map[newname] = (ps0, ps1)
                     self.dindex_map[didx] = (pidx0, pidx1)
                     didx += 1
+
+            # store new diploid-collapsed names
+            self.names = sorted(self.diploid_map)
 
 
 
@@ -113,28 +120,34 @@ class Transformer:
         """
         # simply convert to bytes
         if not self.diploid:
-            self.seqs = convert_intarr_to_bytearr(self.seqs)  # .astype(bytes))
+            self.seqs = convert_intarr_to_bytearr(self.seqs)
 
         # combine alleles to get heterozygotes
         else:
+            # raise an error if allele-type cannot be converted to 
+            # ambiguities, as with, for example 'pam' or 'binary' models.
+            if set(self.alleles.values()) != set("ACGT"):
+                raise IpcoalError(
+                    "Alleles from this substition model cannot be "
+                    "converted to ambiguities to represent diploid "
+                    "genotypes: {}".format(tuple(self.alleles.values()))
+                )
+
             # temporary store diploid copies
-            self.dnames = sorted(self.diploid_map)
-            self.dseqs = np.zeros(
-                (self.seqs.shape[0], int(self.seqs.shape[1] / 2), self.seqs.shape[2]),
-                dtype=bytes,
-            )
+            dnames = sorted(self.diploid_map)
+            nloci = self.seqs.shape[0]
+            nsamples = int(self.seqs.shape[1] / 2)
+            nsites = self.seqs.shape[2]
+            dseqs = np.zeros((nloci, nsamples, nsites), dtype=bytes)
 
             # fill diploid seqs
             for key, val in self.diploid_map.items():
-                didx = self.dnames.index(key)
-                arr0 = self.seqs[:, self.names.index(val[0])]
-                arr1 = self.seqs[:, self.names.index(val[1])]
+                didx = dnames.index(key)
+                arr0 = self.seqs[:, self.orig_names.index(val[0])]
+                arr1 = self.seqs[:, self.orig_names.index(val[1])]
                 carr = np.char.array(arr0) + np.char.array(arr1)
                 carr = convert_intarr_to_bytearr_diploid(carr)
-                self.dseqs[:, didx] = carr
+                dseqs[:, didx] = carr
 
             # store diploid copy over the original
-            self.seqs = self.dseqs
-            self.names = self.dnames
-            del self.dseqs
-            del self.dnames
+            self.seqs = dseqs
