@@ -84,7 +84,7 @@ class Model:
         >2 (see msprime which can). If a value is entered here it will
         be set for all edges of the tree. To set different Ne to 
         different edges you must add Ne node attributes to an input
-        ToyTree. For example, tre.set_node_values("Ne", {1:1000, 
+        ToyTree. For example, tre.set_node_data("Ne", {1:1000, 
         2:10000}, default=5000)) will set all edges to 5000 except 
         those with specific values specified by their node index or
         name.
@@ -348,24 +348,22 @@ class Model:
         """
         if neff is None:
             try:
-                node_neffs = self.tree.get_node_values("Ne")
-            except toytree.utils.exceptions.ToytreeError as inst:
-                msg = (
-                    "You must either enter an Ne argument or set Ne "
-                    "values to all nodes of the input tree as a ToyTree "
-                    "object by using, e.g., "
-                    "tree.set_node_values(mapping={...}, default=10000). "
-                )
-                raise IpcoalError(msg) from inst
-            if not all(node_neffs):
+                node_neffs = self.tree.get_node_data("Ne", missing=np.nan)
+            except ValueError as exc:
                 raise IpcoalError(
-                    "When Ne=None you must set Ne values to all nodes of "
-                    "the input tree as a ToyTree object. Example: tree = "
-                    "tree.set_node_values(mapping={...}, default=10000). "
+                    "You must either enter an Ne argument or set Ne values "
+                    "to all nodes of the input tree using ToyTree, e.g., "
+                    "tree.set_node_data('Ne', mapping={...}, default=1000). "
                 )
+            if node_neffs.isna().any():
+                raise IpcoalError(
+                    "You must either enter an Ne argument or set Ne values "
+                    "to all nodes of the input tree using ToyTree, e.g., "
+                    "tree.set_node_data('Ne', mapping={...}, default=1000). "
+                    f"Your tree has NaN for Ne at some nodes:\n{node_neffs}")
             self.neff = max(node_neffs)
         else:
-            self.tree = self.tree.set_node_values("Ne", default=neff)
+            self.tree = self.tree.set_node_data("Ne", default=neff)
 
     def _get_migration(self):
         """

@@ -498,8 +498,7 @@ def generate_recomb_map(length, num_pos, num_peaks, min_rate, max_rate, even_spa
     })
     return recomb_map
 
-
-
+  
 
 def convert_intarr_to_bytearr(iarr):
     """
