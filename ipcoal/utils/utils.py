@@ -1,14 +1,19 @@
 #!/usr/bin/env python
 
+"""
+Miscellaneous functions
+"""
+
+from typing import Tuple, Optional
 import time
 import datetime
 import itertools
 
 import toytree
-import toyplot
 import numpy as np
 import pandas as pd
-from .jitted import count_matrix_int
+from numba import njit
+from ipcoal.utils.jitted import count_matrix_int
 
 try:
     from IPython.display import display
@@ -34,13 +39,16 @@ FIXED_IDX = [
 
 
 
-class ipcoalError(Exception):
+class IpcoalError(Exception):
     def __init__(self, *args, **kwargs):
         Exception.__init__(self, *args, **kwargs)
 
 
 
-class Progress(object):
+class Progress:
+    """
+    Interactive progress bar for jupyter notebooks.
+    """
     def __init__(self, njobs, message, children):
 
         # data
@@ -49,7 +57,7 @@ class Progress(object):
         self.start = time.time()
 
         # the progress bar 
-        self.bar = IntProgress(
+        self.prog = IntProgress(
             value=0, min=0, max=self.njobs, 
             layout={
                 "width": "350px",
@@ -68,10 +76,10 @@ class Progress(object):
         # the box widget container
         heights = [
             int(i.layout.height[:-2]) for i in 
-            children + [self.label, self.bar]
+            children + [self.label, self.prog]
         ]
         self.widget = Box(
-            children=children + [self.label, self.bar], 
+            children=children + [self.label, self.prog],
             layout={
                 "display": "flex",
                 "flex_flow": "column",
@@ -81,34 +89,81 @@ class Progress(object):
 
     @property
     def printstr(self):
+        """
+        message as html
+        """
         elapsed = datetime.timedelta(seconds=int(time.time() - self.start))
-        s1 = "<span style='font-size:14px; font-family:monospace'>"
-        s2 = "</span>"
+        str1 = "<span style='font-size:14px; font-family:monospace'>"
+        str2 = "</span>"
         inner = "{} | {:>3}% | {}".format(
             self.message, 
-            int(100 * (self.bar.value / self.njobs)),
+            int(100 * (self.prog.value / self.njobs)),
             elapsed,
         )
-
-        return s1 + inner + s2
+        return str1 + inner + str2
 
     def display(self):
+        """Show html"""
         display(self.widget)
 
     def increment_all(self, value=1):
-        self.bar.value += value
-        if self.bar.value == self.njobs:
-            self.bar.bar_style = "success"
+        """adds value to prog"""
+        self.prog.value += value
+        if self.prog.value == self.njobs:
+            self.prog.bar_style = "success"
         self.increment_time()
 
     def increment_time(self):
+        """sets label value to printstr"""
         self.label.value = self.printstr
 
 
 
+def get_admix_interval_as_gens(
+    tree: 'ToyTree', 
+    idx0:int, 
+    idx1:int, 
+    heights:Optional[Tuple[int, int]]=None,
+    props:Optional[Tuple[float, float]]=None,
+    ) -> Tuple[int, int]:
+    """
+    Returns the branch interval in units of generations that two 
+    edges of a tree are overlapping, with the lower and upper edges
+    optionally trimmed. If user enters admix times as integers then 
+    they are checked only for validation, no trimming.
+    """
+    if tree.idx_dict[idx0].is_root() or tree.idx_dict[idx1].is_root():
+        raise IpcoalError(f"no shared admix interval for idxs: {idx0} {idx1}")
+
+    # get full possible intervals for these two nodes from the tree
+    node0 = tree.idx_dict[idx0]
+    ival0 = (node0.height, node0.up.height)
+    node1 = tree.idx_dict[idx1]
+    ival1 = (node1.height, node1.up.height)
+
+    low_bin = max([ival0[0], ival1[0]])
+    top_bin = min([ival0[1], ival1[1]])
+    if top_bin < low_bin:
+        raise IpcoalError(f"no shared admix interval for idxs: {idx0} {idx1}")
+
+    # if user entered a time in gens then check if it works
+    if heights is not None:
+        if not ((heights[0] >= low_bin) and (heights[1] <= top_bin)):
+            raise IpcoalError(
+                f"admix interval ({heights}) not within a shared "
+                f"edge interval for idxs: {idx0} {idx1}")
+        return max(low_bin + 1e-3, heights[0]), min(top_bin - 1e-3, heights[1])
+
+    # restrict migration within bin to a smaller interval
+    length = top_bin - low_bin
+    low_limit = max(low_bin + 1e-3, low_bin + (length * props[0]))
+    top_limit = min(top_bin - 1e-3, low_bin + (length * props[1]))
+    return low_limit, top_limit
+
+
 def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
     """
-    Find all possible admixture edges on a tree. 
+    Find all possible admixture edges on a tree.
 
     Edges are unidirectional, so the source and dest need to overlap in
     time interval. To retrict migration to occur away from nodes (these 
@@ -165,7 +220,7 @@ def get_snps_count_matrix(tree, seqs):
     of quartets determined by the shape of the tree.
     """
     # get all quartets for this size tree
-    if isinstance(tree, toytree.Toytree.ToyTree):
+    if isinstance(tree, toytree.ToyTree):
         quarts = list(itertools.combinations(range(tree.ntips), 4))
     else:
         # or, can be entered as tuples directly, e.g., [(0, 1, 2, 3)]
@@ -281,7 +336,7 @@ def abba_baba(model, testtuples):
         idx += 1
 
     # convert to dataframe   
-    df = pd.DataFrame({
+    data = pd.DataFrame({
         "ABBA": np.array(abbas, dtype=int),
         "BABA": np.array(babas, dtype=int),
         "D": dstats,
@@ -292,7 +347,7 @@ def abba_baba(model, testtuples):
         }, 
         columns=["ABBA", "BABA", "D", "p1", "p2", "p3", "p4"],
     )
-    return df
+    return data
 
 
 
@@ -331,46 +386,55 @@ class Params(object):
 def calculate_pairwise_dist(mod, model=None, locus=None):
     """
     Return a pandas dataframe with pairwise distances between taxa.
-    The model object should have already run sim.snps or sim.loci to generate
-    sequence data in .seqs.
+    The model object should have already run sim.snps or sim.loci to 
+    generate sequence data in .seqs. The returned distance is approx
+    2X the distance from each tip to their common ancestor, so you can
+    divide by 2 to get dist to mrca.
     """
     # a dataframe to fill with distances
-    df = pd.DataFrame(
-        np.zeros((mod.nstips, mod.nstips)),
+    data = pd.DataFrame(
         index=mod.alpha_ordered_names,
         columns=mod.alpha_ordered_names,
-        )
+        dtype=float,
+    )
+
+    # use either all loci concatenated, or a single locus
     if locus:
-        # grab the locus requested
         arr = mod.seqs[locus]
     else:
-        # concatenate seqs across all loci
         arr = np.concatenate(mod.seqs, axis=1)
 
     # calculate all pairs
-    for i in range(mod.nstips):
-        for j in range(mod.nstips):
+    for pair in itertools.product(range(mod.nstips), range(mod.nstips)):
 
-            # sample taxa
-            seq0 = arr[i]
-            seq1 = arr[j]
+        # sample taxa
+        idx0, idx1 = pair
+        seq0 = arr[idx0]
+        seq1 = arr[idx1]
 
-            # hamming distance (proportion that are not matching)
-            if model == "JC":
-                dist = jukes_cantor_distance(seq0, seq1)
-            else:
-                dist = sum(seq0 != seq1) / seq0.size
-            df.iloc[i, j] = dist
-            df.iloc[j, i] = dist
-    return df
+        # hamming distance (proportion that are not matching)
+        if model is None:
+            dist = hamming_distance(seq0, seq1)
+        elif model.upper().startswith("JC"):
+            dist = jukes_cantor_distance(seq0, seq1)
+        else:
+            raise NotImplementedError("model not supported.")
+        data.iloc[idx0, idx1] = dist
+        data.iloc[idx1, idx0] = dist
+    return data
 
 
-
+@njit
 def jukes_cantor_distance(seq0, seq1):
     "calculate the jukes cantor distance"
-    dist = sum(seq0 != seq1) / seq0.size
+    dist = np.sum(seq0 != seq1) / seq0.size
     jcdist = (-3. / 4.) * np.log(1. - ((4. / 3.) * dist))
     return jcdist
+
+@njit
+def hamming_distance(seq0, seq1):
+    "calculate hamming distance"
+    return np.sum(seq0 != seq1) / seq0.size
 
 
 
@@ -434,108 +498,62 @@ def generate_recomb_map(length, num_pos, num_peaks, min_rate, max_rate, even_spa
     })
     return recomb_map
 
+  
 
-
-
-def draw_seqview(self, idx, start, end, width, height, show_text, **kwargs):
+def convert_intarr_to_bytearr(iarr):
     """
-    Draws a sequence array as a colored toyplot table.
+    An array of ints converted to bytes
     """
-    # bail out if no seqs array
-    if self.seqs is None:
-        return
-
-    # if SNPs then concatenate
-    if self.seqs.ndim == 2:
-        arr = self.seqs
-    else:
-        if not idx:
-            arr = self.seqs[0]
-        else:
-            arr = self.seqs[idx]
-    arr = arr[:, start:end]
-
-    # auto set a good looking height and width based on arr dims
-    if not height:
-        height = 16 * arr.shape[0]
-    if not width:
-        width = (16 * arr.shape[1]) + 50
-        width += width * .2
-
-    # build canvas and table
-    canvas = toyplot.Canvas(width, height)
-    table = canvas.table(
-        rows=arr.shape[0],
-        columns=arr.shape[1] + 1, 
-        bounds=("10%", "90%", "10%", "90%"),
-        **kwargs,            
-    )
-
-    # style table cells
-    colors = ['red', 'green', 'blue', 'orange', 'grey']
-    bases = ["A", "C", "T", "G", "N"]
-    for cidx in range(5):
-
-        # select bases in 0-3 or 9
-        if cidx == 4:
-            tdx = np.where(arr[:, :] == 9)
-        else:
-            tdx = np.where(arr[:, :] == cidx)
-
-        # color the cells
-        table.cells.cell[tdx[0], tdx[1] + 1].style = {
-            "fill": colors[cidx], "opacity": 0.5}
-
-        # optionally overlay text
-        if show_text:
-            table.cells.cell[tdx[0], tdx[1] + 1].data = bases[cidx]
-    table.cells.cell[:, 1:].lstyle = {"font-size": "8px"}
-
-    # dividers
-    table.body.gaps.columns[...] = 1.5
-    table.body.gaps.rows[...] = 1.5
-
-    # add taxon labels
-    table.cells.cell[:, 0].data = self.alpha_ordered_names
-    table.cells.cell[:, 0].lstyle = {"text-anchor": "end", "font-size": "11px"}
-    table.cells.cell[:, 0].width = 50
-    return canvas, table
+    barr = np.zeros(iarr.shape, dtype="S1")
+    barr[iarr == 0] = b"A"
+    barr[iarr == 1] = b"C"
+    barr[iarr == 2] = b"G"
+    barr[iarr == 3] = b"T"
+    barr[iarr == 9] = b"N"
+    return barr
 
 
+# def convert_intarr_to_bytearr(arr):
+#     "An array of ints was turned into bytes and this converts to bytestrings"
+#     arr[arr == b"0"] = b"A"
+#     arr[arr == b"1"] = b"C"
+#     arr[arr == b"2"] = b"G"
+#     arr[arr == b"3"] = b"T"
+#     return arr
 
 
+def convert_intarr_to_bytearr_diploid(arr):
+    """
+    Two arrays of ints were turned into bytes and joined (e.g., b'00') and
+    this converts it to a single bytestring IUPAC code for diploids.
+    """
+    arr[arr == b"00"] = b"A"
+    arr[arr == b"11"] = b"C"
+    arr[arr == b"22"] = b"G"
+    arr[arr == b"33"] = b"T"
+    arr[arr == b"01"] = b"M"
+    arr[arr == b"10"] = b"M"
+    arr[arr == b"02"] = b"R"
+    arr[arr == b"20"] = b"R"
+    arr[arr == b"03"] = b"W"
+    arr[arr == b"30"] = b"W"
+    arr[arr == b"12"] = b"S"
+    arr[arr == b"21"] = b"S"
+    arr[arr == b"13"] = b"Y"
+    arr[arr == b"31"] = b"Y"
+    arr[arr == b"23"] = b"K"
+    arr[arr == b"32"] = b"K"
 
-# def tile_reps(array, nreps):
-#     "used to fill labels in the simcat.Database for replicates"
-#     ts = array.size
-#     nr = nreps
-#     result = np.array(
-#         np.tile(array, nr)
-#         .reshape((nr, ts))
-#         .T.flatten())
-#     return result
-
-
-
-# def progress_bar(njobs, nfinished, start, message=""):
-#     "prints a progress bar"
-#     ## measure progress
-#     if njobs:
-#         progress = 100 * (nfinished / njobs)
-#     else:
-#         progress = 100
-
-#     ## build the bar
-#     hashes = "#" * int(progress / 5.)
-#     nohash = " " * int(20 - len(hashes))
-
-#     ## get time stamp
-#     elapsed = datetime.timedelta(seconds=int(time.time() - start))
-
-#     ## print to stderr
-#     args = [hashes + nohash, int(progress), elapsed, message]
-#     print("\r[{}] {:>3}% | {} | {}".format(*args), end="")
-#     sys.stderr.flush()
+    arr[arr == b"90"] = b"A"
+    arr[arr == b"09"] = b"A"
+    arr[arr == b"91"] = b"C"
+    arr[arr == b"19"] = b"C"
+    arr[arr == b"92"] = b"G"
+    arr[arr == b"29"] = b"G"
+    arr[arr == b"93"] = b"T"
+    arr[arr == b"39"] = b"T"
+    arr[arr == b"99"] = b"N"
+    return arr
 
 
 

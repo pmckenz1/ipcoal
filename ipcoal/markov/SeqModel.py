@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 
-import ipcoal
+"""
+Markov sequence simulator
+"""
+
 import numpy as np
 from scipy.linalg import expm
-
 from numba import njit, objmode
-from numba import config
-
 
 # GLOBALS
 BASES = np.array([0, 1, 2, 3])
@@ -14,17 +14,17 @@ RATES = np.array([0.25, 0.25, 0.25, 0.25])
 
 
 
-class SeqModel():
+class SeqModel:
     """
     Simulate seq-gen like non-infinite sites mutational process.
 
     Parameters:
     ------------
     tree: (toytree)
-        A tree topology with edge lengths (node .dist attributes) in units
-        of expected number of substitutions per site. To convert from 
-        units of generations you simply multiply by the per-site mut rate.
-        Example: gens=1e4 * mut=1e-8 yields brlen = 0.0001
+        A tree topology with edge lengths (node .dist attributes) in 
+        units of expected percent sequence divergence. To convert 
+        from units of generations you simply multiply by the per-site 
+        mut rate. Example: gens=1e4 * mut=1e-8 yields brlen = 0.0001
     state_frequencies: (None, list)
         The relative frequencies of bases A,C,G,T respectively, entered
         as a list. The default is [0.25, 0.25, 0.25, 0.25].
@@ -33,16 +33,18 @@ class SeqModel():
         Implemented in HKY or F84. 
     gamma: (float)
         Coefficient of rate variation for continuous gamma dist. rates. 
-        The mean of the amma distribution is a*b, and the variance is ab**2, 
-        making the coefficient of variation, in rate, among sites a**−1/2.
-        The distribution is scaled such that the mean rate for all the sites 
-        is 1 but the gamma parameter describes its shape. A shape for the 
-        gamma rate heterogeneity of 1 is very little, while a value less than
-        1 is greater variation. Default is 0 or None = no rate variation.
+        The mean of the gamma distribution is a*b, and the variance is 
+        ab**2, making the coefficient of variation, in rate, among 
+        sites a**−1/2. The distribution is scaled such that the mean 
+        rate for all the sites is 1 but the gamma parameter describes 
+        its shape. A shape for the gamma rate heterogeneity of 1 is 
+        very little, while a value less than 1 is greater variation. 
+        Default is 0 or None = no rate variation.
     gamma_categories: (int)
-        Number of discrete gamma rate categories to bin sites into. This option
-        greatly speeds up the application of gamma rate variation. Default
-        is None, which assigns every site its own rate.
+        Number of discrete gamma rate categories to bin sites into. 
+        This option greatly speeds up the application of gamma rate 
+        variation. Default is None, which assigns every site its own 
+        rate.
     invariant_sites: (float)
         Proportion of invariable sites (Not Yet Implemented)
     """
@@ -53,7 +55,7 @@ class SeqModel():
         alpha=None,
         gamma=None,
         gamma_categories=None,
-        seed=None,
+        # seed=None,
         # Ne=None,
         ):
 
@@ -67,50 +69,50 @@ class SeqModel():
 
         # this is reported in seqmodel summary but not used in computation
         # since it is redundant with kappa
-        freqR = self.state_frequencies[0] + self.state_frequencies[2]
-        freqY = self.state_frequencies[1] + self.state_frequencies[3]
+        freq_r = self.state_frequencies[0] + self.state_frequencies[2]
+        freq_y = self.state_frequencies[1] + self.state_frequencies[3]
         self.tstv = (
             self.kappa * sum([
                 self.state_frequencies[0] * self.state_frequencies[2],
                 self.state_frequencies[1] * self.state_frequencies[3]
-            ])) / (freqR * freqY)
+            ])) / (freq_r * freq_y)
 
         # get Q matrix from model params
-        self.Q = None
-        self.mu = None
-        self.get_model_Q()
+        self.qmat = None
+        self.mut = None
+        self.get_model_qmat()
 
         # store the ancestral starting sequence
         self.ancestral_seq = None
 
         # set the threading layer before any parallel target compilation
         # NOT CURRENTLY IMPLEMENTED
-        if ipcoal.__forksafe__:
-            config.THREADING_LAYER = 'forksafe'
+        # if ipcoal.__forksafe__:
+        #     config.THREADING_LAYER = 'forksafe'
 
 
 
-    def get_model_Q(self):
+    def get_model_qmat(self):
         """
         Get transition probability matrix.
         """
         # shorthand reference to params
         k = self.kappa
-        sd = self.state_frequencies
+        s = self.state_frequencies
 
         # make non-normalized matrix (not in substitutions / unit of time)
-        nonnormal_Q = np.array([
-            [-(sd[1] + sd[2] * k + sd[3]), sd[1], sd[2] * k, sd[3]],
-            [sd[0], -(sd[0] + sd[2] + k * sd[3]), sd[2], k * sd[3]],
-            [sd[0] * k, sd[1], -(sd[0] * k + sd[1] + sd[3]), sd[3]],
-            [sd[0], sd[1] * k, sd[2], -(sd[0] + sd[1] * k + sd[2])],
+        nonnormal_qmat = np.array([
+            [-(s[1] + s[2] * k + s[3]), s[1], s[2] * k, s[3]],
+            [s[0], -(s[0] + s[2] + k * s[3]), s[2], k * s[3]],
+            [s[0] * k, s[1], -(s[0] * k + s[1] + s[3]), s[3]],
+            [s[0], s[1] * k, s[2], -(s[0] + s[1] * k + s[2])],
         ])
 
         # full matrix scaling factor
-        self.mu = -1 / np.sum(np.array([nonnormal_Q[i][i] for i in range(4)]) * sd)
+        self.mut = -1 / np.sum(np.array([nonnormal_qmat[i][i] for i in range(4)]) * s)
 
         # scale by Q to get adjusted rate matrix
-        self.Q = nonnormal_Q * self.mu
+        self.qmat = nonnormal_qmat * self.mut
 
 
 
@@ -160,7 +162,7 @@ class SeqModel():
         else:
             for node in tree.treenode.traverse():
                 if not node.is_root():
-                    probmat = jevolve_branch_probs(node.dist * mut * self.Q)
+                    probmat = jevolve_branch_probs(node.dist * mut * self.qmat)
                     seqs[node.idx] = jsubstitute(seqs[node.up.idx], probmat)
 
         # return seqs in alphanumeric order
@@ -239,12 +241,12 @@ class SeqModel():
 
 
 @njit
-def jevolve_branch_probs(brlenQ):
+def jevolve_branch_probs(brlen_q):
     """
     jitted wrapper to allow scipy call within numba loop
     """
     with objmode(probs='float64[:,:]'):
-        probs = expm(brlenQ)
+        probs = expm(brlen_q)
     return probs
 
 

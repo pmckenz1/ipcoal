@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 
 
+"""
+Tree inference wrappers for running raxml, mb or others 
+on loci or sliding windows of sequence data for comparing
+genealogies with inferred gene trees.
+"""
+
+
 import os
 import sys
 import glob
@@ -9,9 +16,9 @@ import subprocess as sps
 import numpy as np
 import toytree
 
-from .Writer import Writer
-from .mrbayes import MrBayes as mrbayes
-from .utils import ipcoalError
+from ipcoal.io.writer import Writer
+# from .mrbayes import MrBayes as mrbayes
+from ipcoal.utils.utils import IpcoalError
 
 
 
@@ -31,7 +38,7 @@ class TreeInfer:
         """
         DocString...
         """
-        self.random = np.random.RandomState()
+        self.rng = np.random.default_rng()
         self.seqs = seqs
         self.names = names  # model.alpha_ordered_names
         self.binary = ""
@@ -86,7 +93,6 @@ class TreeInfer:
             )
 
 
-
     def write_tempfile(self, idx):
         """
         Writes a phylip or nexus file for xxx or mrbayes.
@@ -101,6 +107,7 @@ class TreeInfer:
                 outdir=tempfile.gettempdir(),
                 name=str(os.getpid()) + ".phy",
                 idxs=[idx],
+                quiet=True,
             )
             # return filepath to the phy file
             path = os.path.join(
@@ -109,8 +116,8 @@ class TreeInfer:
             )
             return path
 
-
-        if self.method == "mb":
+        # mrbayes is only alternative righ tnow...
+        else:
             writer.write_concat_to_nexus(
                 outdir=tempfile.gettempdir(),
                 name=str(os.getpid()) + ".nex",
@@ -169,7 +176,7 @@ class TreeInfer:
             "-n", os.path.basename(tmp),
             "-w", self.raxml_kwargs["w"],
             "-s", tmp,
-            "-p", str(self.random.randint(0, 1e9)),
+            "-p", str(self.rng.integers(0, 1e9)),
         ]
 
         # additional allowed arguments
@@ -201,7 +208,7 @@ class TreeInfer:
 
 
     def infer_iqtree(self):
-        pass
+        raise NotImplementedError("iqtree not yet supported")
 
 
     def infer_mb(self, tmp):
