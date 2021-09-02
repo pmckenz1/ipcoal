@@ -34,10 +34,10 @@ class Writer:
 
     Parameters
     ----------
-    seqs (ndarray)
+    seqs: ndarray
         A .seqs array from ipcoal of dimensions (nloci, ntaxa, nsites). 
         The data for the ntaxa is ordered by their names alphanumerically.
-    names (list)
+    names: List[str]
         A list of the taxon names ordered alphanumerically.
     """
     def __init__(self, model):
@@ -360,7 +360,7 @@ class Writer:
             raise ImportError(
                 "Writing to HDF5 format requires the additional dependency "
                 "'h5py' which you can install with the following command:\n "
-                "  conda install h5py -c conda-forge \n"
+                ">>> conda install h5py -c conda-forge \n"
                 "After installing you will need to restart your notebook."
             ) from err
 
