@@ -17,9 +17,12 @@ class Transformer:
     Converts seqs from ints to strings including diploid base calls
     for substitution models that support ambiguities.
 
-    seqs: (ndarray)
-    names: (ndarray)
-    diploid: (bool)
+    seqs: ndarray
+        The .seqs array of simulated alleles from a Model object.
+    names: ndarray
+        The .alpha_ordered_names array from a Model object.
+    diploid: bool
+        Randomly join haploid samples to write diploid genotypes.
     """    
     def __init__(
         self,
@@ -41,7 +44,6 @@ class Transformer:
         # setup functions
         self.get_diploid_map()
         # self.transform_seqs()
-
 
     def get_diploid_map(self):
         """
@@ -109,7 +111,6 @@ class Transformer:
 
             # store new diploid-collapsed names
             self.names = sorted(self.diploid_map)
-
 
 
     def transform_seqs(self):
