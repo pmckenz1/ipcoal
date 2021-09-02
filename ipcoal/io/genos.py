@@ -10,21 +10,23 @@ import pandas as pd
 from ipcoal.utils.utils import convert_intarr_to_bytearr
 
 
-
 class Genos:
-    """
-    Get genotype calls by comparing the simulated sequence to the 
+    """Get genotype calls by comparing the simulated sequence to the 
     ancestral sequence. These geno calls are used in VCF and HDF5 
     output files, and often filter out non-biallelic variants.
 
     Parameters
-    ==========
-    concatseqs (array shape=(nsamples, nsites), dtype=uint8)
-    ancestral (array shape=(1, nsites), dtype=uint8)
-    snpidxs (array shape=(nsites,), dtype=np.int)
-    dindex_map (dict): map of diploid index to haploid indices.
-    fill_missing_alleles: write diploids with missing alleles (0|.) 
-    as (0|0).    
+    ----------
+    seqs: array(shape=(nsamples, nsites), dtype=uint8)
+        The .seqs array with simulated alleles from a Model object.
+    ancestral: array( shape=(1, nsites), dtype=uint8)
+        The .ancestral_seq array from a Model object.
+    snpidxs: array(shape=(nsites,), dtype=np.int)
+        An optional list/array of integer indices of loci to write.
+    dindex_map: dict
+        Map of diploid index to haploid indices, e.g., {0: [0, 1], ..}
+    fill_missing_alleles: bool
+        write diploids with missing alleles (0|.) as (0|0).    
     """
     def __init__(self, seqs, ancestral, snpidxs, dindex_map, fill_missing_alleles=False):
         self.seqs = seqs
@@ -33,12 +35,19 @@ class Genos:
         self.dindex_map = dindex_map
         self.fill_missing_alleles = fill_missing_alleles
 
-
-
     def get_alts_and_genos_matrix(self):
-        """
-        Returns genos matrix a bit slower b/c accomodates missing values (9),
-        snpidxs has already been computed on a masked array.
+        """Return a tuple with alt alleles and genos as a numpy array.
+
+        This runs a bit slow b/c it accomodates missing values (9).
+        snpidxs has already been computed on a masked array. 
+
+        The first returned array has the ALT alleles observed. The REF 
+        allele is the one in the ancestral_seq. If more than one ALT
+        allele was observed the site is not bi-allelic. The second
+        array includes the index of allele calls in each sample. If
+        0 it is the REF allele, 1 the first ALT allele, 2 is the 
+        second ALT allele, and 3 the last possible allele, assuming
+        the ACTG alleles.
         """
         # subsample to varible sites if SNPs only
         if self.snpidxs is not None:
@@ -123,8 +132,6 @@ class Genos:
                 garr[garr[:, :, 1] == 9, 1] = garr[garr[:, :, 1] == 9, 0]
 
         return alts, garr
-
-
 
     def get_alts_and_genos_string_matrix(self):
         """
