@@ -6,11 +6,23 @@ Draw a sequence array.
 
 import numpy as np
 import toyplot
+from toytree.utils.utils import ScrollableCanvas
 
 
-def draw_seqview(self, idx, start, end, width, height, show_text, gaps=1.5, **kwargs):
-    """
-    Draws a sequence array as a colored toyplot table.
+def draw_seqview(
+    self,
+    idx,
+    start,
+    end,
+    width,
+    height,
+    show_text,
+    scrollable,
+    max_width,
+    gaps=1.5,
+    **kwargs):
+    """Draws a sequence array as a colored toyplot table.
+
     """
     # bail out if no seqs array
     if self.seqs is None:
@@ -24,22 +36,32 @@ def draw_seqview(self, idx, start, end, width, height, show_text, gaps=1.5, **kw
             arr = self.seqs[0]
         else:
             arr = self.seqs[idx]
+
+    # enforce max_width
+    end = min(end, max_width)
     arr = arr[:, start:end]
 
     # auto set a good looking height and width based on arr dims
     if not height:
         height = 16 * arr.shape[0]
     if not width:
-        width = (16 * arr.shape[1]) + 50
+        width = (16 * arr.shape[1])
         width += width * .2
 
+    # add margin space
+    height += 100
+    width += 100
+
     # build canvas and table
-    canvas = toyplot.Canvas(width, height)
+    if scrollable and (width > 500):
+        canvas = ScrollableCanvas(width, height)
+    else:
+        canvas = toyplot.Canvas(width, height)
     table = canvas.table(
         rows=arr.shape[0],
-        columns=arr.shape[1] + 1, 
-        bounds=("10%", "90%", "10%", "90%"),
-        **kwargs,            
+        columns=arr.shape[1] + 1,
+        bounds=(50, -50, 50, -50), #"10%", "90%"),
+        **kwargs,
     )
 
     # style table cells
@@ -68,6 +90,6 @@ def draw_seqview(self, idx, start, end, width, height, show_text, gaps=1.5, **kw
 
     # add taxon labels
     table.cells.cell[:, 0].data = self.alpha_ordered_names
-    table.cells.cell[:, 0].lstyle = {"text-anchor": "end", "font-size": "11px"}
+    # table.cells.cell[:, 0].lstyle = {"text-anchor": "end", "font-size": "11px"}
     table.cells.cell[:, 0].width = 50
     return canvas, table
