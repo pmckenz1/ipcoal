@@ -35,11 +35,16 @@ class VCF:
 
     Parameters
     ==========
-    seqs (arr): int array (nloci, nsamples, nsites).
-    names (str): haploid sample names.
-    diploid (bool): make diploid genos.
-    ancestral (arr): the ancestral seq (nloci, nsites)
-    fill_missing_alleles: write diploids with missing alleles (0|.) as (0|0).
+    seqs: ndarray
+        int array (nloci, nsamples, nsites).
+    names: ndarray
+        haploid sample names.
+    diploid: bool
+        Make diploid genos.
+    ancestral: ndarray
+        The ancestral seq (nloci, nsites)
+    fill_missing_alleles: bool
+        Write diploids with missing alleles (0|.) as (0|0).
     """
     def __init__(self, seqs, names, diploid, ancestral, fill_missing_alleles):
         self.names = names
