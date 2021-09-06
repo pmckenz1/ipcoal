@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Classes for writing seqs or snps to popular data formats 
-like VCF, PHY, NEXUS, or HDF5, while also optionally 
+Classes for writing seqs or snps to popular data formats
+like VCF, PHY, NEXUS, or HDF5, while also optionally
 combining haplotypes into diploid base calls.
 """
 
@@ -29,13 +29,16 @@ begin data;
 
 
 class Writer:
-    """
-    Writer class object to write ipcoal seqs in a variety of formats.
+    """Writer class to write ipcoal seqs in a variety of formats.
+
+    This class is used by the Model write functions to convert data
+    to output formats and is not intended to be accessed by users
+    directly.
 
     Parameters
     ----------
     seqs: ndarray
-        A .seqs array from ipcoal of dimensions (nloci, ntaxa, nsites). 
+        A .seqs array from ipcoal of dimensions (nloci, ntaxa, nsites).
         The data for the ntaxa is ordered by their names alphanumerically.
     names: List[str]
         A list of the taxon names ordered alphanumerically.
@@ -80,13 +83,13 @@ class Writer:
 
     def _transform_seqs(self, diploid):
         """
-        Transform seqs from int type to str type. Also optionally combine 
-        haploid samples into diploids and use IUPAC ambiguity codes to 
+        Transform seqs from int type to str type. Also optionally combine
+        haploid samples into diploids and use IUPAC ambiguity codes to
         represent hetero sites.
         """
         txf = Transformer(
-            self.seqs, 
-            self.names, 
+            self.seqs,
+            self.names,
             alleles=self.alleles,
             diploid=diploid,
         )
@@ -96,28 +99,28 @@ class Writer:
 
 
     def write_loci_to_phylip(
-        self, 
-        outdir, 
-        idxs=None, 
-        name_prefix=None, 
-        name_suffix=None, 
-        diploid=False, 
+        self,
+        outdir,
+        idxs=None,
+        name_prefix=None,
+        name_suffix=None,
+        diploid=False,
         quiet=False,
         ):
-        """
-        Write all seq data for each locus to a separate phylip file in
-        a shared directory with each locus named by locus index. If 
-        you want to write only a subset of loci to file you can list 
-        their index
+        """Write seq data for each locus to a separate phylip file.
+
+        Files are written to a shared directory with each locus named
+        by locus index. If you want to write only a subset of loci to
+        file you can list their indices.
 
         Parameters:
         -----------
-        outdir (str):
-            A directory in which to write all the phylip files. It will be 
+        outdir: str
+            A directory in which to write all the phylip files. It will be
             created if it does not yet exist. Default is "./ipcoal_loci/".
-        idxs (list):
-            Numeric indices of the rows (loci) to be written to file. 
-            Default=None meaning that all loci will be written to file. 
+        idxs: List[int]
+            Numeric indices of the rows (loci) to be written to file.
+            Default=None meaning that all loci will be written to file.
         ...
         """
         # bail out and complain if sim_snps() or sim_trees().
@@ -150,7 +153,7 @@ class Writer:
 
             # open file handle numbered unless user
             fhandle = os.path.join(
-                self.outdir, 
+                self.outdir,
                 "{}{}{}.phy".format(name_prefix, loc, name_suffix),
             )
 
@@ -171,24 +174,28 @@ class Writer:
 
 
     def write_concat_to_phylip(
-        self, 
-        outdir:Optional[str]="./",
-        name:Optional[str]=None,
-        idxs:Optional[Iterable[int]]=None, 
-        diploid:bool=False, 
-        quiet:bool=False,
+        self,
+        outdir: Optional[str]="./",
+        name: Optional[str]=None,
+        idxs: Optional[Iterable[int]]=None,
+        diploid: bool=False,
+        quiet: bool=False,
         ):
         """
-        Write all seq data (loci or snps) concated to a single phylip file.
+        Write seq data concatenated to a single phylip file.
+
+        If you want to write only a subset of loci to file you can
+        select by their indices.
 
         Parameters:
         -----------
-        outfile (str):
-            The name/path of the outfile to write. 
-        idxs (list):
+        outfile: str
+            The name/path of the outfile to write.
+        idxs: List[int]
             A list of locus indices to subselect which will be concatenated.
+        ...
         """
-        # reshape SNPs array to be like loci 
+        # reshape SNPs array to be like loci
         if self.seqs.ndim == 2:
             self.seqs = self.seqs.T.reshape(
                 self.seqs.shape[1], self.seqs.shape[0], 1)
@@ -219,7 +226,7 @@ class Writer:
         with open(outfile, 'w') as out:
             out.write(phystring)
 
-        # report 
+        # report
         if not quiet:
             print("wrote concat locus ({} x {}bp) to {}"
                   .format(arr.shape[0], arr.shape[1], outfile))
@@ -227,11 +234,11 @@ class Writer:
 
 
     def write_concat_to_nexus(
-        self, 
-        outdir="./", 
+        self,
+        outdir="./",
         name=None,
-        idxs=None, 
-        diploid=False, 
+        idxs=None,
+        diploid=False,
         quiet=False,
         ):
         """
@@ -240,12 +247,12 @@ class Writer:
         Parameters:
         -----------
         outfile (str):
-            The name/path of the outfile to write. 
+            The name/path of the outfile to write.
         idxs (list):
             A list of locus indices to subselect which will be concatenated.
         """
         # create a directory if it doesn't exist
-        # reshape SNPs array to be like loci 
+        # reshape SNPs array to be like loci
         if self.seqs.ndim == 2:
             self.seqs = self.seqs.T.reshape(
                 self.seqs.shape[1], self.seqs.shape[0], 1)
@@ -276,21 +283,36 @@ class Writer:
         with open(outfile, 'w') as out:
             out.write(nexstring)
 
-        # report 
+        # report
         if not quiet:
             print("wrote concat locus ({} x {}bp) to {}"
                   .format(arr.shape[0], arr.shape[1], outfile))
         return None
 
 
-    def write_loci_to_hdf5(self, name, outdir, diploid, quiet):
-        """
-        Optional writing option to write output to HDF5 database format 
-        used by ipyrad analysis toolkit. This will check that you have 
-        the h5py package installed and raise an exception if it is missing.
+    def write_loci_to_hdf5(
+        self,
+        name: str,
+        outdir: str,
+        diploid: bool,
+        quiet: bool,
+        ):
+        """Write data to ipyrad HDF5 database format.
 
-        The .snps.hdf5 output file can be used in ipa.tetrad, 
-        ipa.window_extracter, ipa.treeslider, etc.
+        This format is used by ipyrad-analysis toolkit to efficiently
+        extract, filter, and format data from many loci. It is used
+        in tools like ipa.tetrad, ipa.window_extracter, ipa.tree_slider.
+
+        This writer function requires the dependency h5py. If this
+        package is not installed it will raise an ImportError and
+        give recommended instructions for installing it.
+
+        Parameters
+        ----------
+        name: str
+        outdir: str
+        diploid: bool
+        quiet: bool
         """
         # if non-dependency h5py is not installed then raise exception.
         try:
@@ -303,9 +325,10 @@ class Writer:
                 "After installing you will need to restart your notebook."
             ) from err
 
-        # get seqs as bytes 
-        txf = Transformer(self.seqs, self.names, self.alleles, diploid)
-        txf.transform_seqs()
+        # get seqs as bytes
+        self._transform_seqs(diploid)
+        # txf = Transformer(self.seqs, self.names, self.alleles, diploid)
+        # txf.transform_seqs()
 
         # open h5py database handle
         if name is None:
@@ -317,17 +340,16 @@ class Writer:
         with h5py.File(h5file, 'w') as io5:
 
             # write the concatenated seqs bytes array to 'seqs'
-            io5.create_dataset(
-                "phy", 
-                data=np.concatenate(txf.seqs, 1).view(np.uint8)
+            io5.create_dataset("phy",
+                data=np.concatenate(self.seqs, 1).view(np.uint8)
             )
 
             # write the phymap array
-            nloci = txf.seqs.shape[0]
-            loclen = txf.seqs.shape[2]
+            nloci = self.seqs.shape[0]
+            loclen = self.seqs.shape[2]
             phymap = io5.create_dataset(
                 "phymap", shape=(nloci, 5), dtype=np.int64)
-            phymap[:, 0] = range(1, nloci + 1)  # 1-indexed 
+            phymap[:, 0] = range(1, nloci + 1)  # 1-indexed
             phymap[:, 1] = range(0, nloci * loclen, loclen)
             phymap[:, 2] = phymap[:, 1] + loclen
             phymap[:, 3] = 0
@@ -339,8 +361,8 @@ class Writer:
                 ['loc-{}'.format(i).encode() for i in range(1, nloci + 1)]))
 
             # meta info stored to phymap
-            phymap.attrs["columns"] = (b'chroms', b'phy0', b'phy1', b'pos0', b'pos1')
-            phymap.attrs["phynames"] = [i.encode() for i in txf.names]
+            phymap.attrs["columns"] = ['chroms', 'phy0', 'phy1', 'pos0', 'pos1']
+            phymap.attrs["phynames"] = self.names
             phymap.attrs["reference"] = 'ipcoal-simulation'
 
         # report
@@ -349,9 +371,21 @@ class Writer:
 
 
     def write_snps_to_hdf5(self, name, outdir, diploid, quiet):
-        """
-        Writes the snps array data to snps, snpsmap, and genos arrays
-        in HDF5 database format for use in ipa. 
+        """Writes SNP data to the ipyrad snps HDF5 database format.
+
+        This function can be called whether the data was simulated
+        using sim_snps or sim_loci. In the latter case it also stores
+        information about where on each locus the SNP was located,
+        which can be used by other tools to filter for linkage
+        disequilibrium. This file format is used by the ipyrad-analysis
+        toolkit for PCA, popgen, and other analyses.
+
+        Parameters
+        ----------
+        name: str
+        outdir: str
+        diploid: bool
+        quiet: bool
         """
         # if non-dependency h5py is not installed then raise exception.
         try:
@@ -371,26 +405,27 @@ class Writer:
             self.ancestral_seq = self.ancestral_seq.reshape(
                 self.ancestral_seq.size, 1)
 
-        # get seqs as bytes (with optional diploid collapsing)
+        # get seqs as bytes (with optional diploid collapsing). In this
+        # case we want this not to transform the seqs data in place.
         txf = Transformer(self.seqs, self.names, self.alleles, diploid)
-        tarr = np.concatenate(txf.seqs, axis=1)
+        txf.transform_seqs()
 
-        # get indices of variable sites (while allowing missing data)
+        # get indices of variable sites (while allowing missing data
+        # which might have made some SNP sim sites no longer variable.
         arr = np.concatenate(self.seqs, axis=1)
         marr = np.ma.array(data=arr, mask=(arr == 9))
         common = marr.mean(axis=0).round().astype(int)
         varsites = np.where(np.any(marr != common, axis=0).data)[0]
         nsites = varsites.size
 
-        # get genos as string array [0|0, 0|1, 1|1, ...]
+        # get genos as string array _, ([[[9, 9], [0, 1], [1, 1], ...]], [[9, 0], ...])
         genos = Genos(
-            arr, 
+            arr,
             np.concatenate(self.ancestral_seq),
-            varsites, 
+            varsites,
             txf.dindex_map,
         )
         _, gmat = genos.get_alts_and_genos_matrix()
-
 
         # get snpsmap (chrom, locidx, etc.)
         smap = np.zeros((nsites, 5), dtype=np.uint32)
@@ -418,6 +453,7 @@ class Writer:
         h5file = os.path.join(outdir, name + ".snps.hdf5")
 
         # write datasets to database
+        tarr = np.concatenate(txf.seqs, axis=1)
         with h5py.File(h5file, 'w') as io5:
 
             # write the concatenated seqs as bytes->uint8 to snps
@@ -447,8 +483,8 @@ class Writer:
 
     def write_vcf(self, name=None, outdir=None, diploid=None, bgzip=False, fill_missing_alleles=True, quiet=False):
         """
-        Passes data to VCF object for conversion and writes resulting table 
-        to CSV. 
+        Passes data to VCF object for conversion and writes resulting table
+        to CSV.
 
         Parameters
         ----------
@@ -461,13 +497,13 @@ class Writer:
         bgzip (bool):
             Call bgzip to block compress the file (writes as .vcf.gz).
         fill_missing_alleles (bool):
-            If there is missing data this will fill diploid missing alleles. 
+            If there is missing data this will fill diploid missing alleles.
             e.g., the call (0|.) will be written as (0|0). This is meant to
             emulate real data where we often do not know the other allele
-            is missing (also, some software tools do not accept basecalls 
+            is missing (also, some software tools do not accept basecalls
             with one missing allele, such as vcftools).
         """
-        # reshape SNPs array to be like loci 
+        # reshape SNPs array to be like loci
         if self.seqs.ndim == 2:
             self.seqs = self.seqs.T.reshape(
                 self.seqs.shape[1], self.seqs.shape[0], 1)
@@ -476,9 +512,9 @@ class Writer:
 
         # make into genotype calls relative to reference
         vcf = VCF(
-            self.seqs, 
-            self.names, 
-            diploid, 
+            self.seqs,
+            self.names,
+            diploid,
             self.ancestral_seq,
             fill_missing_alleles,
         )
@@ -486,9 +522,9 @@ class Writer:
         # return dataframe if no filename
         if name is None:
             # concatenate all chunks and return as full dataframe
-            fullv = pd.concat(vcf.vcf_chunk_generator(), axis=0)            
+            fullv = pd.concat(vcf.vcf_chunk_generator(), axis=0)
             fullv.reset_index(drop=True, inplace=True)
-            return fullv            
+            return fullv
 
         # create a directory if it doesn't exist
         outdir = (outdir if outdir else "./")
@@ -502,7 +538,7 @@ class Writer:
         # write to filepath and record stats while doing it.
         nchroms = 0
         nsnps = 0
-        with open(outfile, 'wt') as vout:           
+        with open(outfile, 'wt') as vout:
             vout.write(vcf.get_header())
             for vchunk in vcf.vcf_chunk_generator():
                 vout.write(vchunk.to_csv(header=False, index=False, sep="\t"))
@@ -551,10 +587,10 @@ class Writer:
         )
 
         # grab a big block of data
-        for block in range(0, arr.shape[1], 100):           
+        for block in range(0, arr.shape[1], 100):
             # store interleaved seqs 100 chars with longname+2 before
             stop = min(block + 100, arr.shape[1])
-            for idx, name in enumerate(self.names):  
+            for idx, name in enumerate(self.names):
 
                 # py2/3 compat --> b"TGCGGG..."
                 seqdat = arr[idx, block:stop]
@@ -600,10 +636,10 @@ if __name__ == "__main__":
     # test vcf writing to file, and to diploid and haploid dataframes
     WRITER = Writer(MOD.seqs, MOD.alpha_ordered_names, MOD.ancestral_seq)
     df = WRITER.write_vcf(
-        name='test', 
-        outdir='/tmp/', 
-        diploid=True, 
-        bgzip=True, 
+        name='test',
+        outdir='/tmp/',
+        diploid=True,
+        bgzip=True,
         quiet=False,
     )
     df = WRITER.write_vcf(diploid=True)
@@ -633,4 +669,4 @@ if __name__ == "__main__":
         print(io5["snpsmap"][:20])
 
 
-    
+
