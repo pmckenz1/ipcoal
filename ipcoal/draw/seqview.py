@@ -38,7 +38,7 @@ def draw_seqview(
             arr = self.seqs[idx]
 
     # enforce max_width
-    end = min(end, max_width)
+    end = end if end is not None else min(arr.shape[1], max_width)
     arr = arr[:, start:end]
 
     # auto set a good looking height and width based on arr dims
