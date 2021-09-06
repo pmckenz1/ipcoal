@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-The core ipcoal.Model class object for setting up demographic models, 
-running coalescent simulations, summarizing results, and 
+The core ipcoal.Model class object for setting up demographic models,
+running coalescent simulations, summarizing results, and
 running downstream analyses.
 """
 
@@ -32,9 +32,9 @@ class Model:
 
     Takes an input topology with edge lengths in units of generations
     entered as either a newick string or as a Toytree object, and
-    defines a demographic model with a single Ne (or different Ne 
-    values mapped to tree nodes) and admixture edge arguments. 
-    Genealogies are generated with msprime and mutations are added 
+    defines a demographic model with a single Ne (or different Ne
+    values mapped to tree nodes) and admixture edge arguments.
+    Genealogies are generated with msprime and mutations are added
     under a finite-site Markov substitution model.
 
     Parameters
@@ -139,7 +139,7 @@ class Model:
         seed_mutations: Optional[int]=None,
         **kwargs,
         ):
- 
+
         # legacy support warning messages
         self._warn_bad_kwargs(kwargs)
 
@@ -213,7 +213,7 @@ class Model:
         """Return all RNGs to their starting states.
 
         Called after sim_trees(), sim_snps() or sim_loci to return all
-        RNGs to their state during init so that a Model object that 
+        RNGs to their state during init so that a Model object that
         was init'd with some random seed will always return the same
         results even if run multiple times.
         """
@@ -545,14 +545,14 @@ class Model:
     def debug_demography(self):
         """Returns the msprime demography debugger.
 
-        This represents a summary of the currently described 
-        demographic model. 
+        This represents a summary of the currently described
+        demographic model.
 
         See Also
         --------
         ms_demography: Attribute list of demographic events.
         draw_demography: Function to visualize demographic model.
-        draw_sptree: Function to visualize species tree model.        
+        draw_sptree: Function to visualize species tree model.
         """
         return self.ms_demography.debug()
 
@@ -592,7 +592,7 @@ class Model:
         show_text: bool
             Whether to show base labels on table cells.
         scrollable: bool
-            If plot width exceeds the window width in pixel units a 
+            If plot width exceeds the window width in pixel units a
             scroll bar will allow scrolling on horizontal axis.
         max_width: int
             The maximum number of columns that will be plotted. Much
@@ -606,7 +606,7 @@ class Model:
         table: toyplot.Table, allows further editing on figure.
         """
         canvas, table = draw_seqview(
-            self, idx, start, end, width, height, show_text, 
+            self, idx, start, end, width, height, show_text,
             scrollable, max_width,
             **kwargs)
         return canvas, table
@@ -689,10 +689,10 @@ class Model:
 
         Note
         ----
-        The TreeSequence object's underlying simulations can be 
-        accessed from a Model object after running any of the core 
-        ipcoal simulation methods (sim_trees, sim_loci, sim_snps) 
-        from the .ts_dict attribute of the Model object. In these 
+        The TreeSequence object's underlying simulations can be
+        accessed from a Model object after running any of the core
+        ipcoal simulation methods (sim_trees, sim_loci, sim_snps)
+        from the .ts_dict attribute of the Model object. In these
         methods the ts_dict can be indexed to access TreeSequences
         associated with each simulated locus.
 
@@ -825,6 +825,7 @@ class Model:
         data = pd.concat(datalist)
         data = data.reset_index(drop=True)
         self.df = data
+        self.seqs = np.array([])
 
 
     def sim_loci(
@@ -1135,11 +1136,38 @@ class Model:
     # ---------------------------------------------------------------
 
     def write_loci_to_hdf5(self, name=None, outdir=None, diploid=False):
-        """Write a database file in .seqs.hdf5 format
+        """Write a database file in ipyrad seqs HDF5 format.
 
-        This file format is compatible with the ipyrad-analysis 
-        toolkit and allows for fast lookups in even very large files. 
-        This function requires the additional dependency 'h5py' and 
+        This file format is compatible with the ipyrad-analysis
+        toolkit and allows for fast lookups in even very large files.
+        This function requires the additional dependency 'h5py' and
+        will raise an exception if the library is missing.
+
+        Parameters
+        ----------
+        name: str
+            The prefix name of the output file.
+        outdir: str
+            The name of the directory in which to write the file. It
+            will attempt to be created if it does not yet exist.
+        diploid: bool
+            Randomly join haploid samples to write diploid genotypes.
+        """
+        if self.seqs.ndim < 2:
+            raise IpcoalError("No sequence data. Try Model.sim_loci().")
+        if self.seqs.ndim == 2:
+            raise IpcoalError(
+                "Simulated data are not loci. "
+                "See Model.write_snps_to_hdf5() for writing a SNP database.")
+        writer = Writer(self)
+        writer.write_loci_to_hdf5(name, outdir, diploid, quiet=False)
+
+    def write_snps_to_hdf5(self, name=None, outdir=None, diploid=False):
+        """Write a database file in .snps.hdf5 format
+
+        This file format is compatible with the ipyrad-analysis
+        toolkit and allows for very fast lookups even in very large
+        files. This requires the additional dependency 'h5py' and
         will raise an exception if the library is missing.
 
         Parameters
@@ -1152,31 +1180,8 @@ class Model:
         diploid: bool=False
             Randomly join haploid samples to write diploid genotypes.
         """
-        if self.seqs.ndim == 2:
-            raise IpcoalError(
-                "Simulated data are not loci. "
-                "See .write_snps_to_hdf5() for writing a SNP database.")
-        writer = Writer(self)
-        writer.write_loci_to_hdf5(name, outdir, diploid, quiet=False)
-
-    def write_snps_to_hdf5(self, name=None, outdir=None, diploid=False):
-        """Write a database file in .snps.hdf5 format
-
-        This file format is compatible with the ipyrad-analysis 
-        toolkit and allows for very fast lookups even in very large 
-        files. This requires the additional dependency 'h5py' and 
-        will raise an exception if the library is missing.
-
-        Parameters
-        ----------
-        name: str=None
-            The prefix name of the output file
-        outdir: str=None
-            The name of the directory in which to write the file. It
-            will attempt to be created if it does not yet exist.
-        diploid: bool=False
-            Randomly join haploid samples to write diploid genotypes.        
-        """
+        if self.seqs.ndim < 2:
+            raise IpcoalError("No sequence data. Try Model.sim_snps().")
         writer = Writer(self)
         writer.write_snps_to_hdf5(name, outdir, diploid, quiet=False)
 
@@ -1196,7 +1201,7 @@ class Model:
         name: str
             Name prefix for vcf file.
         outdir: str
-            A directory name where will be written, created if it 
+            A directory name where will be written, created if it
             does not yet exist.
         diploid: bool
             Combine haploid pairs into diploid genotypes.
@@ -1206,12 +1211,14 @@ class Model:
             Suppress printed info.
         fill_missing_alleles: bool
             If there is missing data this will fill diploid missing
-            alleles. e.g., the call (0|.) will be written as (0|0). 
+            alleles. e.g., the call (0|.) will be written as (0|0).
             This is meant to emulate real data where we often do not
-            know the other allele is missing (also, some software 
-            tools do not accept basecalls with one missing allele, 
+            know the other allele is missing (also, some software
+            tools do not accept basecalls with one missing allele,
             such as vcftools).
         """
+        if self.seqs.ndim < 2:
+            raise IpcoalError("No sequence data. Try Model.sim_snps().")
         writer = Writer(self)
         vdf = writer.write_vcf(
             name,
@@ -1240,7 +1247,7 @@ class Model:
             A directory in which to write all the phylip files. It
             will be created if it does not yet exist. Default is ./
         idxs: int
-            To write a single locus file provide the idx. If None 
+            To write a single locus file provide the idx. If None
             then all loci are written to separate files.
         name_prefix: str
             Prefix used in file names before locus index.
@@ -1336,7 +1343,7 @@ class Model:
             The directory name (filepath prefix) to write the file to.
         diploid: bool
             If diploid=True was used when writing the data files then
-            it should also be used when writing the popfile.      
+            it should also be used when writing the popfile.
         """
         name = name.rsplit(".tsv")[0].rsplit(".popfile")[0]
         popdata = []
@@ -1366,8 +1373,8 @@ class Model:
         ) -> pd.DataFrame:
         """Infer gene trees in intervals using a phylogenetic tool.
 
-        The method is applied to windows spanning every locus. 
-        If window_size is None then each locus is treated as an 
+        The method is applied to windows spanning every locus.
+        If window_size is None then each locus is treated as an
         entire concatenated window.
 
         Parameters
@@ -1531,79 +1538,86 @@ class Model:
     def apply_missing_mask(
         self,
         coverage=1.0,
-        cut1=0,
-        cut2=0,
-        distance=0.0,
-        coverage_type='locus',
+        cut_sites: Tuple[int,int]=(0, 0),
+        distance: Optional[Tuple[str,float]]=None,
+        coverage_type: str='locus',
+        seed: Optional[int]=None,
         ):
-        """
-        Mask data by marking it as missing based on a number of possible
-        models for dropout. Uses the random tree seed.
+        """Mask some data by marking it as missing.
 
-        Parameters:
-        -----------
-        coverage (float):
+        Several optional are available for dropping genotypes to
+        appear as missing data. See coverage, cut_sites, and distance
+        arguments.
+
+        Parameters
+        ----------
+        coverage: float
             This emulates sequencing coverage. A value of 1.0 means that all
             loci have a 100% probabilty of being sampled. A value of 0.5
             would lead to 50% of (haploid) samples to be missing at every
             locus due to sequencing coverage. The resulting pattern of missing
             data is stochastic.
-
-        cut1 (int):
+        cut_sites: Tuple[int, int]
             This emulates allele dropout by restriction digestion (e.g., a
             process that could occur in RAD-seq datasets). This is the
             length of the cutsite at the 5' end. When the value is 0 no
             dropout will occur. If it is 10 then the haplotype will be
             dropped if any mutations occurred within the first 10 bases of
             this allele relative to the known ancestral sequence.
-
-        cut2 (int):
-            The same as cut 1 but applies to the 3' end to allow emulating
-            double-digest methods.
-
-        distance (float):
+        distance: Tuple[str, float]:
             Not Yet Implemented.
             This emulates sequence divergence as would apply to RNA bait
             capture approaches where capture decreases with disimilarity from
             the bait sequence.
-
-        coverage_type (str):
-            By default coverage assumes that reads cover the entire locus,
-            e.g., RAD-seq, but alternatively you may wish for coverage to
-            apply to every site randomly. This can be toggled by changing
-            the coverage_type='locus' to coverage_type='site'
-
+        coverage_type: str
+            For loci data it is assumed that reads cover the entire
+            locus, e.g., RAD-seq, but alternatively you may wish for
+            coverage to apply to every site randomly. This can be
+            toggled by changing the coverage_type='locus' to
+            coverage_type='site'. For SNP data coverage always applies
+            to site.
+        seed: Optional[int]
+            Random generator seed.
         """
         # do not allow user to double-apply
         if 9 in self.seqs:
             raise IpcoalError(
                 "Missing data can only be applied to a dataset once.")
 
+        # missing mask cut_sites method can only apply to locus data.
+        if self.seqs.ndim < 2:
+            if any(cut_sites):
+                raise IpcoalError(
+                    "cut_sites method can only apply to data simulated with "
+                    "Model.sim_loci()."
+                )
+
         # fix a seed generator
-        # if seed:
-            # np.random.seed(seed)
+        rng = np.random.default_rng(seed)
 
         # iterate over each locus converting missing to 9
         for loc in range(self.seqs.shape[0]):
             arr = self.seqs[loc]
 
             # apply coverage mask
-            if coverage_type == "site":
-                mask = self.rng_trees.binomial(1, 1.0 - coverage, arr.shape).astype(bool)
+            if (coverage_type == "site") or (self.seqs.ndim == 2):
+                mask = rng.binomial(1, 1.0 - coverage, arr.shape).astype(bool)
                 arr[mask] = 9
 
             # implement 'locus' coverage as default
             else:
-                mask = self.rng_trees.binomial(1, 1.0 - coverage, arr.shape[0]).astype(bool)
+                mask = rng.binomial(1, 1.0 - coverage, arr.shape[0]).astype(bool)
                 arr[mask, :] = 9
 
             # apply dropout cut1
-            if cut1:
+            if cut_sites[0]:
+                cut1 = cut_sites[0]
                 mask = np.any(arr[:, :cut1] != self.ancestral_seq[loc, :cut1], axis=1)
                 arr[mask, :] = 9
 
             # apply dropout cut2
-            if cut2:
+            if cut_sites[1]:
+                cut2 = cut_sites[1]
                 mask = np.any(arr[:, -cut2:] != self.ancestral_seq[loc, -cut2:], axis=1)
                 arr[mask, :] = 9
 
