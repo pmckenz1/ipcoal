@@ -13,8 +13,7 @@ from ipcoal.utils.utils import convert_intarr_to_bytearr_diploid
 
 
 class Transformer:
-    """
-    Converts seqs from ints to strings including diploid base calls
+    """Converts seqs from ints to strings including diploid base calls
     for substitution models that support ambiguities.
 
     seqs: ndarray
@@ -46,14 +45,12 @@ class Transformer:
         # self.transform_seqs()
 
     def get_diploid_map(self):
-        """
-        Combine haploid names and indices to map pairs as new diploids.
+        """Combine haploid names and indices to map pairs as new diploids.
 
         diploid_map = {'A': ['A-0-1', 'A-2-3], 'B': ['B-0-1', 'B-2-3'], ...]}
         dindex_map = {1: [(0,1), (2,3)], 2: [(4,5), (6,7)], ...}
         """
         # haploid indices simply repeat itself twice. 
-        # TODO: NOT TESTED, OR USED YET, CHECK ORDER OF DINDEX
         if not self.diploid:
             pidx = 0
             for idx, name in enumerate(self.orig_names):
@@ -64,7 +61,6 @@ class Transformer:
 
         # diploid indices increase in pairs: (0,1), (2,3), (4,6)...
         else:
-
             # group names by prefix
             groups = groupby(self.orig_names, key=lambda x: x.rsplit("_", 1)[0])
 
