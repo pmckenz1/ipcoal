@@ -1,23 +1,21 @@
 #!/usr/bin/env python
 
-"""
-Classes for writing seqs or snps to popular data formats
-like VCF, PHY, NEXUS, or HDF5, while also optionally
+"""Writer class for converting seqs or snps to popular data formats.
+
+Formats include VCF, PHY, NEXUS, or HDF5, while also optionally
 combining haplotypes into diploid base calls.
 """
 
 import os
-from typing import Optional, Iterable
-
+from typing import Optional, Iterable, List, Dict
 import numpy as np
 import pandas as pd
+from loguru import logger
 
-# import ipcoal
 from ipcoal.io.genos import Genos
 from ipcoal.io.transformer import Transformer
 from ipcoal.io.vcf import VCF
 from ipcoal.utils.utils import IpcoalError
-
 
 
 NEXHEADER = """#nexus
@@ -37,24 +35,26 @@ class Writer:
 
     Parameters
     ----------
-    seqs: ndarray
-        A .seqs array from ipcoal of dimensions (nloci, ntaxa, nsites).
-        The data for the ntaxa is ordered by their names alphanumerically.
-    names: List[str]
-        A list of the taxon names ordered alphanumerically.
+    model: ipcoal.Model
     """
     def __init__(self, model):
         # both are already ordered alphanumerically
         self.seqs = model.seqs.copy()
         self.names = model.alpha_ordered_names.copy()
         self.alleles = model.alleles.copy()
-        self.outdir = None
-        self.outfile = None
-        self.idxs = None
-        self.ancestral_seq = None
-        if model.ancestral_seq is not None:
-            self.ancestral_seq = model.ancestral_seq.copy()
+        self.ancestral_seq = model.ancestral_seq.copy()
+        self.outdir: str = None
+        self.outfile: str = None
+        self.idxs: List[int] = None
+        self.sampling: Dict[str,int] = None
 
+        if self.seqs.ndim < 2:
+            raise IpcoalError(
+                "No sequences present. First run .sim_loci() or sim.snps()")
+
+        # fill sampling
+        sample_sizes = [i.num_samples for i in model.samples]
+        self.sampling = dict(zip(self.names, sample_sizes))
 
     def _subset_loci(self, idxs):
         """
@@ -80,13 +80,27 @@ class Writer:
         else:
             self.idxs = range(self.seqs.shape[0])
 
+    def _transform_seqs(self, diploid: bool, inplace: bool=True):
+        """Transform seqs from int to str and optionally combine into diploids.
 
-    def _transform_seqs(self, diploid):
+        Haploid samples are joined into diploids and use IUPAC 
+        ambiguity codes to represent hetero sites. This can either 
+        convert the data in the Writer object in place by updating 
+        .seqs and .names, or, it simply return the Transformer object.
         """
-        Transform seqs from int type to str type. Also optionally combine
-        haploid samples into diploids and use IUPAC ambiguity codes to
-        represent hetero sites.
-        """
+        if diploid:
+            # only ACGT allele types are supported for diploid.
+            if tuple(self.alleles.values()) != tuple("ACGT"):
+                raise IpcoalError(
+                    "Only DNA models can use diploid=True IUPAC encoding.")
+            # only even sampling numbers
+            if any([i % 2 for i in self.sampling.values()]):
+                raise IpcoalError(
+                "All sampled populations must have an even number of samples "
+                "to use diploid=True IUPAC encoding. Your sampling is:\n"
+                f"{self.sampling}"
+            )
+
         txf = Transformer(
             self.seqs,
             self.names,
@@ -94,9 +108,11 @@ class Writer:
             diploid=diploid,
         )
         txf.transform_seqs()
-        self.seqs = txf.seqs
-        self.names = txf.names
-
+        if inplace:
+            self.seqs = txf.seqs
+            self.names = txf.names
+            return None
+        return txf
 
     def write_loci_to_phylip(
         self,
@@ -172,7 +188,6 @@ class Writer:
                 ),
             )
 
-
     def write_concat_to_phylip(
         self,
         outdir: Optional[str]="./",
@@ -232,7 +247,6 @@ class Writer:
                   .format(arr.shape[0], arr.shape[1], outfile))
         return None
 
-
     def write_concat_to_nexus(
         self,
         outdir="./",
@@ -288,7 +302,6 @@ class Writer:
             print("wrote concat locus ({} x {}bp) to {}"
                   .format(arr.shape[0], arr.shape[1], outfile))
         return None
-
 
     def write_loci_to_hdf5(
         self,
@@ -369,7 +382,6 @@ class Writer:
         if not quiet:
             print("wrote {} loci to {}".format(nloci, h5file))
 
-
     def write_snps_to_hdf5(self, name, outdir, diploid, quiet):
         """Writes SNP data to the ipyrad snps HDF5 database format.
 
@@ -407,8 +419,7 @@ class Writer:
 
         # get seqs as bytes (with optional diploid collapsing). In this
         # case we want this not to transform the seqs data in place.
-        txf = Transformer(self.seqs, self.names, self.alleles, diploid)
-        txf.transform_seqs()
+        txf = self._transform_seqs(diploid=diploid, inplace=False)
 
         # get indices of variable sites (while allowing missing data
         # which might have made some SNP sim sites no longer variable.
@@ -472,14 +483,12 @@ class Writer:
             io5.create_dataset(name="psuedoref", shape=(nsites, 2))
 
             # meta info stored to phymap
-            snpsmap.attrs["columns"] = (
-                b'locus', b'locidx', b'locpos', b'scaf', b'scafpos')
-            snps.attrs['names'] = [i.encode() for i in txf.names]
+            snpsmap.attrs["columns"] = ['locus', 'locidx', 'locpos', 'scaf', 'scafpos']
+            snps.attrs['names'] = txf.names
 
         # report
         if not quiet:
             print("wrote {} SNPs to {}".format(nsites, h5file))
-
 
     def write_vcf(self, name=None, outdir=None, diploid=None, bgzip=False, fill_missing_alleles=True, quiet=False):
         """
@@ -558,7 +567,6 @@ class Writer:
                 .format(nsnps, nchroms, outfile))
         return None
 
-
     def build_phystring_from_loc(self, arr):
         """
         Builds phylip format string with 10-spaced names.
@@ -574,7 +582,6 @@ class Writer:
                 self.names[row], b"".join(arr[row]).decode())
             loclist.append(line)
         return "\n".join(loclist)
-
 
     def build_nexstring_from_loc(self, arr):
         """
