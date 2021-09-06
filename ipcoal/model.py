@@ -906,7 +906,7 @@ class Model:
                 tree_sequence=tree_seq,
                 rate=self.mut,
                 model=self.subst_model,
-                random_seed=self.rng_muts.integers(1e9),
+                random_seed=self.rng_muts.integers(2**31),
                 discrete_genome=True,
             )
             # iterate over the index of the dataframe to store each genealogy
@@ -914,6 +914,7 @@ class Model:
                 nwk = mstree.newick(node_labels=self.tipdict, precision=precision)
                 data.loc[mstree.index, "genealogy"] = nwk
                 data.loc[mstree.index, "tidx"] = mstree.index
+                data.loc[mstree.index, "nsnps"] = sum(1 for i in mstree.sites())
 
             # get genotype array and count nsnps
             genos = mutated_ts.genotype_matrix(alleles=self._alleles)
