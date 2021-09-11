@@ -20,5 +20,5 @@ __author__ = "Patrick McKenzie and Deren Eaton"
 
 from ipcoal.model import Model
 from ipcoal.utils import utils
-from ipcoal.utils.logger_setup import set_loglevel
-set_loglevel("WARNING")
+from ipcoal.utils.logger_setup import set_log_level
+set_log_level("WARNING")

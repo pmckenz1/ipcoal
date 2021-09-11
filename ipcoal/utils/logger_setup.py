@@ -9,20 +9,17 @@ ipcoal.set_loglevel("DEBUG")
 
 import sys
 from loguru import logger
+import ipcoal
 
 
 LOGFORMAT = (
-    "{time:hh:mm} <level>{level: <7}</level> <white>|</white> "
+    "<level>{level: <7}</level> <white>|</white> "
     "<cyan>{file: <12}</cyan> <white>|</white> "
-    # "<cyan>{function: ^25}</cyan> <white>|</white> "
     "<level>{message}</level>"
 )
 
-
 def colorize():
-    """
-    check whether terminal/tty supports color
-    """
+    """check whether terminal/tty supports color."""
     try:
         import IPython
         tty1 = bool(IPython.get_ipython())
@@ -32,20 +29,28 @@ def colorize():
     return tty1 or tty2
 
 
-def set_loglevel(loglevel="DEBUG"):#, logfile=None):
+LOGGERS = [0]
+def set_log_level(log_level="INFO"):
+    """Set the log level for loguru logger.
+
+    This removes default loguru handler, but leaves any others, 
+    and adds a new one that will filter to only print logs from 
+    toytree modules, which should use `logger.bind(name='toytree')`.
     """
-    Config and start the logger
-    """
-    config = {
-        "handlers": [
-            {
-                "sink": sys.stderr, 
-                "format": LOGFORMAT, 
-                "level": loglevel,
-                "enqueue": True,
-                "colorize": colorize(),
-                },
-        ]
-    }
-    logger.configure(**config)
+    for idx in LOGGERS:
+        try:
+            logger.remove(idx)
+        except ValueError:
+            pass
+    idx = logger.add(
+        sink=sys.stderr,
+        level=log_level,
+        colorize=colorize(),
+        format=LOGFORMAT,
+        filter=lambda x: x['extra'].get("name") == "ipcoal",
+    )
+    LOGGERS.append(idx)
     logger.enable("ipcoal")
+    logger.bind(name="ipcoal").debug(
+        f"ipcoal v.{ipcoal.__version__} logging enabled"
+    )
