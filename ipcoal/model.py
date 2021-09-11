@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
-"""
-The core ipcoal.Model class object for setting up demographic models,
-running coalescent simulations, summarizing results, and
-running downstream analyses.
+"""The core ipcoal class for coalescent simulations.
+
+The Model class is used for setting up demographic models, running
+coalescent simulations, summarizing results, and running 
+downstream analyses.
 """
 
 from typing import List, Tuple, Optional, Dict, Union
@@ -22,10 +23,14 @@ from ipcoal.draw.seqview import draw_seqview
 from ipcoal.utils.utils import calculate_pairwise_dist
 from ipcoal.utils.utils import get_admix_interval_as_gens, IpcoalError
 
+# pylint: disable="too-many-public-methods"
+
 # set display preference to make tree columns look nice
 pd.set_option("max_colwidth", 28)
 
-# pylint: disable="too-many-public-methods"
+# register logger to module
+logger = logger.bind(name="ipcoal")
+
 
 class Model:
     """Core ipcoal class for coalescent simulations.
