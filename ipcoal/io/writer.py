@@ -90,7 +90,6 @@ class Writer:
         convert the data in the Writer object in place by updating
         .seqs and .names, or, it simply return the Transformer object.
         """
-        logger.warning(self.sampling)
         if diploid:
             # only ACGT allele types are supported for diploid.
             if tuple(self.alleles.values()) != tuple("ACGT"):
