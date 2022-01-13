@@ -1653,6 +1653,9 @@ class Model:
                     "Model.sim_loci()."
                 )
 
+        if distance is not None:
+            raise NotImplementedError("distance method not yet implemented. TODO.")
+
         # fix a seed generator
         rng = np.random.default_rng(seed)
 
