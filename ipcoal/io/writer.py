@@ -17,6 +17,7 @@ from ipcoal.io.transformer import Transformer
 from ipcoal.io.vcf import VCF
 from ipcoal.utils.utils import IpcoalError
 
+logger = logger.bind(name="ipcoal")
 
 NEXHEADER = """#nexus
 begin data;
@@ -37,12 +38,15 @@ class Writer:
     ----------
     model: ipcoal.Model
     """
-    def __init__(self, model):
+    def __init__(self, model: 'ipcoal.Model', alt_seqs: np.ndarray=None):
         # both are already ordered alphanumerically
+        # creates copies b/c can be modified. TODO: reduce copying where we can.
         self.seqs = model.seqs.copy()
         self.names = model.alpha_ordered_names.copy()
         self.alleles = model.alleles.copy()
         self.ancestral_seq = model.ancestral_seq.copy()
+        self.alt_seqs = alt_seqs
+
         self.outdir: str = None
         self.outfile: str = None
         self.idxs: List[int] = None
@@ -57,9 +61,7 @@ class Writer:
         self.sampling = dict(zip(self.names, sample_sizes))
 
     def _subset_loci(self, idxs):
-        """
-        If datasets is dim=3 then subset loci by idxs argument.
-        """
+        """If datasets is dim=3 then subset loci by idxs argument."""
         # subselect the linkage groups to write (default is to select all)
         if idxs is not None:
             # ensure it is iterable
@@ -83,18 +85,19 @@ class Writer:
     def _transform_seqs(self, diploid: bool, inplace: bool=True):
         """Transform seqs from int to str and optionally combine into diploids.
 
-        Haploid samples are joined into diploids and use IUPAC 
-        ambiguity codes to represent hetero sites. This can either 
-        convert the data in the Writer object in place by updating 
+        Haploid samples are joined into diploids and use IUPAC
+        ambiguity codes to represent hetero sites. This can either
+        convert the data in the Writer object in place by updating
         .seqs and .names, or, it simply return the Transformer object.
         """
+        logger.warning(self.sampling)
         if diploid:
             # only ACGT allele types are supported for diploid.
             if tuple(self.alleles.values()) != tuple("ACGT"):
                 raise IpcoalError(
                     "Only DNA models can use diploid=True IUPAC encoding.")
             # only even sampling numbers
-            if any([i % 2 for i in self.sampling.values()]):
+            if any(i % 2 for i in self.sampling.values()):
                 raise IpcoalError(
                 "All sampled populations must have an even number of samples "
                 "to use diploid=True IUPAC encoding. Your sampling is:\n"
@@ -238,7 +241,7 @@ class Writer:
         outfile = os.path.join(outdir, name.rstrip(".phy") + ".phy")
 
         # write to file
-        with open(outfile, 'w') as out:
+        with open(outfile, 'w', encoding="utf-8") as out:
             out.write(phystring)
 
         # report
@@ -334,12 +337,12 @@ class Writer:
             raise ImportError(
                 "Writing to HDF5 format requires the additional dependency "
                 "h5py which you can install with the following command:\n "
-                "  conda install h5py -c conda-forge \n"
+                ">>> conda install h5py -c conda-forge \n"
                 "After installing you will need to restart your notebook."
             ) from err
 
         # get seqs as bytes
-        self._transform_seqs(diploid)
+        txf = self._transform_seqs(diploid, inplace=False)
         # txf = Transformer(self.seqs, self.names, self.alleles, diploid)
         # txf.transform_seqs()
 
@@ -354,12 +357,12 @@ class Writer:
 
             # write the concatenated seqs bytes array to 'seqs'
             io5.create_dataset("phy",
-                data=np.concatenate(self.seqs, 1).view(np.uint8)
+                data=np.concatenate(txf.seqs, 1).view(np.uint8)
             )
 
             # write the phymap array
-            nloci = self.seqs.shape[0]
-            loclen = self.seqs.shape[2]
+            nloci = txf.seqs.shape[0]
+            loclen = txf.seqs.shape[2]
             phymap = io5.create_dataset(
                 "phymap", shape=(nloci, 5), dtype=np.int64)
             phymap[:, 0] = range(1, nloci + 1)  # 1-indexed
@@ -375,7 +378,7 @@ class Writer:
 
             # meta info stored to phymap
             phymap.attrs["columns"] = ['chroms', 'phy0', 'phy1', 'pos0', 'pos1']
-            phymap.attrs["phynames"] = self.names
+            phymap.attrs["phynames"] = txf.names
             phymap.attrs["reference"] = 'ipcoal-simulation'
 
         # report
@@ -419,6 +422,9 @@ class Writer:
 
         # get seqs as bytes (with optional diploid collapsing). In this
         # case we want this not to transform the seqs data in place.
+        # we will use the txf.dindex_map, txf.names, and txf.seqs as
+        # the concatenated matrix, but still use the original seqs
+        # to get genotype calls below.
         txf = self._transform_seqs(diploid=diploid, inplace=False)
 
         # get indices of variable sites (while allowing missing data
@@ -490,9 +496,16 @@ class Writer:
         if not quiet:
             print("wrote {} SNPs to {}".format(nsites, h5file))
 
-    def write_vcf(self, name=None, outdir=None, diploid=None, bgzip=False, fill_missing_alleles=True, quiet=False):
-        """
-        Passes data to VCF object for conversion and writes resulting table
+    def write_vcf(
+        self,
+        name=None,
+        outdir=None,
+        diploid=None,
+        bgzip=False,
+        fill_missing_alleles=True,
+        quiet=False,
+        ):
+        """Passes data to VCF object for conversion and writes resulting table
         to CSV.
 
         Parameters
@@ -512,7 +525,7 @@ class Writer:
             is missing (also, some software tools do not accept basecalls
             with one missing allele, such as vcftools).
         """
-        # reshape SNPs array to be like loci
+        # reshape SNPs array to be 3-d, like sim_loci
         if self.seqs.ndim == 2:
             self.seqs = self.seqs.T.reshape(
                 self.seqs.shape[1], self.seqs.shape[0], 1)
@@ -521,11 +534,12 @@ class Writer:
 
         # make into genotype calls relative to reference
         vcf = VCF(
-            self.seqs,
-            self.names,
-            diploid,
-            self.ancestral_seq,
-            fill_missing_alleles,
+            seqs=self.seqs,
+            names=self.names,
+            diploid=diploid,
+            ancestral=self.ancestral_seq,
+            fill_missing_alleles=fill_missing_alleles,
+            alleles=self.alleles,
         )
 
         # return dataframe if no filename
@@ -547,7 +561,7 @@ class Writer:
         # write to filepath and record stats while doing it.
         nchroms = 0
         nsnps = 0
-        with open(outfile, 'wt') as vout:
+        with open(outfile, 'w', encoding="utf-8") as vout:
             vout.write(vcf.get_header())
             for vchunk in vcf.vcf_chunk_generator():
                 vout.write(vchunk.to_csv(header=False, index=False, sep="\t"))
@@ -557,9 +571,16 @@ class Writer:
         # call bgzip from tabix so that bcftools can be used on VCF.
         # this will not work with normal gzip compression.
         if bgzip:
-            import subprocess
-            subprocess.run(["bgzip", "-f", outfile], check=True)
-            outfile = outfile.rstrip(".gz") + ".gz"
+            import subprocess, sys
+            bgzip = os.path.join(sys.prefix, "bin", "bgzip")
+            if not os.path.exists(bgzip):
+                logger.error("bgzip not found. Install with `conda install tabix -c conda-forge -c bioconda`.")
+            cmd = [bgzip, "-f", outfile]
+            with subprocess.Popen(args=cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as proc:
+                out = proc.communicate()
+                if proc.returncode:
+                    logger.error(f"error in bgzip: {out}")
+                outfile = outfile.rstrip(".gz") + ".gz"
 
         # report
         if not quiet:
@@ -568,8 +589,7 @@ class Writer:
         return None
 
     def build_phystring_from_loc(self, arr):
-        """
-        Builds phylip format string with 10-spaced names.
+        """Builds phylip format string with 10-spaced names.
 
         3 200
         aaaaaaaaaa ATCTCTACAT...
@@ -584,9 +604,7 @@ class Writer:
         return "\n".join(loclist)
 
     def build_nexstring_from_loc(self, arr):
-        """
-        Builds nexus format string
-        """
+        """Builds nexus format string"""
         # write the header
         lines = []
         lines.append(
@@ -639,20 +657,20 @@ if __name__ == "__main__":
     MOD = ipcoal.Model(TREE, Ne=1e6, nsamples=2)
     MOD.sim_loci(10, 100)
     MOD.apply_missing_mask(coverage=0.5)
+    WRITER = Writer(MOD)
 
-    # test vcf writing to file, and to diploid and haploid dataframes
-    WRITER = Writer(MOD.seqs, MOD.alpha_ordered_names, MOD.ancestral_seq)
-    df = WRITER.write_vcf(
-        name='test',
-        outdir='/tmp/',
-        diploid=True,
-        bgzip=True,
-        quiet=False,
-    )
-    df = WRITER.write_vcf(diploid=True)
-    print(df.head())
-    df = WRITER.write_vcf(diploid=False)
-    print(df.head())
+    # # test vcf writing to file, and to diploid and haploid dataframes
+    # df = WRITER.write_vcf(
+    #     name='test',
+    #     outdir='/tmp/',
+    #     diploid=True,
+    #     bgzip=True,
+    #     quiet=False,
+    # )
+    # df = WRITER.write_vcf(diploid=True)
+    # print(df.head())
+    # df = WRITER.write_vcf(diploid=False)
+    # print(df.head())
 
     # test writing loci to hdf5 and show snpsmap
     WRITER.write_loci_to_hdf5(
@@ -664,16 +682,25 @@ if __name__ == "__main__":
     with h5py.File("/tmp/test.seqs.hdf5", 'r') as io5:
         print(io5["phymap"][:5])
 
-
-    WRITER.write_snps_to_hdf5(
+    WRITER.write_loci_to_hdf5(
         name="test",
         outdir="/tmp",
         diploid=True,
         quiet=False,
     )
-    with h5py.File("/tmp/test.snps.hdf5", 'r') as io5:
-        print(io5["snps"].shape)
-        print(io5["snpsmap"][:20])
+    with h5py.File("/tmp/test.seqs.hdf5", 'r') as io5:
+        print(io5["phymap"][:5])
 
+
+    # raise SystemExit()
+    # WRITER.write_snps_to_hdf5(
+    #     name="test",
+    #     outdir="/tmp",
+    #     diploid=True,
+    #     quiet=False,
+    # )
+    # with h5py.File("/tmp/test.snps.hdf5", 'r') as io5:
+    #     print(io5["snps"].shape)
+    #     print(io5["snpsmap"][:20])
 
 
