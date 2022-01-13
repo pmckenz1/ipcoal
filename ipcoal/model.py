@@ -980,14 +980,14 @@ class Model:
 
     def sim_snps(
         self,
-        nsnps:int=1,
-        min_alleles:int=2,
-        max_alleles:Optional[int]=None,
-        min_mutations:int=1,
-        max_mutations:Optional[int]=None,
-        repeat_on_trees:bool=False,
-        precision:int=14,
-        ):
+        nsnps: int = 1,
+        min_alleles: int = 2,
+        max_alleles: Optional[int] = None,
+        min_mutations: int = 1,
+        max_mutations: Optional[int] = None,
+        repeat_on_trees: bool = False,
+        precision: int = 14,
+        ) -> None:
         """Simulate N *unlinked* variable sites (SNPs).
 
         Parameters
@@ -1020,6 +1020,7 @@ class Model:
             visited genealogy until a SNP is observed. If False
             (default) then genealogies are discarded, and new ones
             drawn, if a SNP does not occur on the first attempt.
+            This is faster but introduces a bias.
 
         Note
         ----
