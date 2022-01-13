@@ -22,7 +22,7 @@ class Transformer:
         The .alpha_ordered_names array from a Model object.
     diploid: bool
         Randomly join haploid samples to write diploid genotypes.
-    """    
+    """
     def __init__(
         self,
         seqs,
@@ -50,7 +50,7 @@ class Transformer:
         diploid_map = {'A': ['A-0-1', 'A-2-3], 'B': ['B-0-1', 'B-2-3'], ...]}
         dindex_map = {1: [(0,1), (2,3)], 2: [(4,5), (6,7)], ...}
         """
-        # haploid indices simply repeat itself twice. 
+        # haploid indices simply repeat itself twice.
         if not self.diploid:
             pidx = 0
             for idx, name in enumerate(self.orig_names):
@@ -69,7 +69,7 @@ class Transformer:
 
             # if all nsamples are 2 then we will not add name suffix
             suffix = True
-            if all([len(imap[i]) == 2 for i in imap]):
+            if all(len(imap[i]) == 2 for i in imap):
                 suffix = False
 
             # iterate over tips and increment diploids and haploid pair idxs
@@ -79,11 +79,6 @@ class Transformer:
                 # nsamples matched to this tip
                 samples = imap[sppname]
                 samples = sorted(samples, key=lambda x: int(x.rsplit("_", 1)[-1]))
-
-                # must be x2
-                assert len(samples) % 2 == 0, (
-                    "nsamples args must be multiples of 2 to form diploids" 
-                    "sample {} has {} samples".format(sppname, len(samples)))
 
                 # iterate 0, 2, 4
                 for pidx in range(0, len(samples), 2):
@@ -108,7 +103,6 @@ class Transformer:
             # store new diploid-collapsed names
             self.names = sorted(self.diploid_map)
 
-
     def transform_seqs(self):
         """
         Transforms seqs from ints to strings. If using diploid map this also
@@ -121,7 +115,7 @@ class Transformer:
 
         # combine alleles to get heterozygotes
         else:
-            # raise an error if allele-type cannot be converted to 
+            # raise an error if allele-type cannot be converted to
             # ambiguities, as with, for example 'pam' or 'binary' models.
             if set(self.alleles.values()) != set("ACGT"):
                 raise IpcoalError(
