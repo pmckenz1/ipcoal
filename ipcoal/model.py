@@ -997,13 +997,13 @@ class Model:
         min_alleles: int=2
             A site is discarded if the number of observed alleles is
             less than min_alleles. A setting of 2 ensures SNPs will
-            be at least bi-allelic, thus preventing a case where
+            be **at least** bi-allelic, thus preventing a case where
             multiple mutations could revert a site to its ancestral
             state.
         max_alleles: int=None
             A site is discarded if the number of observed alleles is
             greater than max_alleles. A setting of 2 ensures that
-            SNPs will be at most bi-allelic, and would discard
+            SNPs will be **at most** bi-allelic, and would discard
             multi-allelic sites produced by multiple mutations. See
             also max_mutations.
         min_mutations: int=1
@@ -1018,8 +1018,8 @@ class Model:
         repeat_on_trees: bool
             If True then the mutation process is repeated on each
             visited genealogy until a SNP is observed. If False
-            (default) then genealogies are discarded if a SNP does
-            not occur on the first attempt.
+            (default) then genealogies are discarded, and new ones
+            drawn, if a SNP does not occur on the first attempt.
 
         Note
         ----
@@ -1050,7 +1050,7 @@ class Model:
         max_mutations = (max_mutations if max_mutations else 100000)
         max_alleles = (max_alleles if max_alleles else 100000)
         assert min_mutations > 0, "min_mutations must be >=1"
-        assert max_alleles > min_alleles, "max_alleles must be > min_alleles"
+        assert max_alleles >= min_alleles, "max_alleles must be >= min_alleles"
 
         # get infinite-ish TreeSequence generator
         msgen = self._get_tree_sequence_generator(1, snp=True)
@@ -1098,6 +1098,7 @@ class Model:
                         continue
                     if not max_alleles >= len(variant.alleles) >= min_alleles:
                         continue
+                    break
 
             # otherwise simply require >1 mutation and >1 alleles
             else:
