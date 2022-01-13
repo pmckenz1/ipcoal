@@ -228,8 +228,8 @@ class Model:
         if isinstance(self.tree, toytree.ToyTree):
             self.tree = self.tree.mod.resolve_polytomies(dist=1e-5)
         else:
-            self.tree = self.tree if self.tree else ";"
-            self.tree = toytree.tree(tree).mod.resolve_polytomies(dist=1e-5)
+            self.tree = self.tree if self.tree else "n0;"
+            self.tree = toytree.tree(self.tree).mod.resolve_polytomies(dist=1e-5)
 
     def _set_mutation_model(self):
         """Set subst_model as ms.MutationModel, and store alleles.
@@ -292,6 +292,13 @@ class Model:
                 for name in self.nsamples:
                     nidx = self.tree.get_nodes(name)[0]
                     samples[f"n{nidx}"] = self.nsamples[name]
+
+            # N keys in samples must match N tips in the species tree.
+            if len(samples) != self.tree.ntips:
+                raise IpcoalError(
+                    "N keys in `nsamples` dict must match number of "
+                    "lineages (N tips in tree).")
+
         else:
             raise TypeError(
                 "The 'nsamples' arg must be either an int or a dict "
@@ -643,7 +650,7 @@ class Model:
             dataframe.
         """
         if idxs is None:
-            idxs = range(4)
+            idxs = list(self.df.index)[:4]
         mtre = toytree.mtree(self.df.genealogy[idxs])
         canvas, axes, mark = mtre.draw(ts='c', tip_labels=True, **kwargs)
         return canvas, axes, mark
@@ -653,7 +660,7 @@ class Model:
 
         The value of Ne is shown by edge widths.
         """
-        # tree = toytree.tree(self.df.genealogy[idx])
+        assert self.tree.ntips > 1, "No species tree. Use `draw_demography`."
         admix = [i[:2] for i in self.admixture_edges]
         canvas, axes, mark = self.tree.draw(
             ts='p',
@@ -663,10 +670,20 @@ class Model:
         return canvas, axes, mark
 
     def draw_demography(self, idx=None, spacer=0.25, ymax=None, **kwargs):
-        """
+        """Return drawing of parameterized demographic model.
+        
+        A genealogy can also be embedded in the demographic model by
+        selecting a genealogy index (idx).
+
+        Parameters
+        ----------
         ...
+
+        Examples
+        --------
+        >>> ...
         """
-        raise NotImplementedError("currently deprecated.")
+        raise NotImplementedError("temporarily deprecated...")
         # bail out if self.admixture_edges
         if self.admixture_edges:
             raise NotImplementedError(
@@ -686,6 +703,10 @@ class Model:
         elif isinstance(ymax, (int, float)):
             ctre.axes.y.domain.max = ymax
         return ctre.canvas, ctre.axes
+
+    def draw_tree_sequence(self, **kwargs):
+        """Return a toytree TreeSequence drawing."""
+        raise NotImplementedError("TODO..")
 
     # ----------------------------------------------------------------
     # MSPRIME simulation methods
@@ -1666,9 +1687,13 @@ if __name__ == "__main__":
     ipcoal.set_log_level("DEBUG")
 
     TREE = toytree.rtree.imbtree(ntips=10, treeheight=1e6)
+    TREE = TREE.set_node_data("Ne", {0: 1000}, default=10000)
     print(TREE.get_feature_dict("idx", "height"))
+
     MODEL = ipcoal.Model(TREE, Ne=10000, nsamples=2)
-    # MODEL.sim_trees(5)
+    MODEL = ipcoal.Model(TREE, nsamples=2)    
+
+    MODEL.sim_trees(5)
     print(MODEL.df)
     print(MODEL.seqs)
     MODEL.sim_snps(10)
