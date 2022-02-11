@@ -77,7 +77,7 @@ def get_embedded_gene_tree_table(
         # get nodes in the appropriate species tree interval
         coal_events = []
         for gidx in nodes_in_time_slice.index:
-            gt_node = gene_tree.idx_dict[gidx]
+            gt_node = gene_tree[gidx]
             tmp_tips = set(gt_node.get_leaf_names())
             if tmp_tips.issubset(gt_tips):
                 coal_events.append(gt_node)
@@ -98,7 +98,7 @@ def get_embedded_gene_tree_table(
 
     # split epochs on coalescent events
     split_data = []
-    for nidx in species_tree.idx_dict:
+    for nidx in range(species_tree.nnodes):
 
         # extract data from dict
         edict = data[nidx]
@@ -129,7 +129,6 @@ def get_embedded_gene_tree_table(
     table['dist'] = table.stop - table.start
     return table
 
-
 def get_species_tree_intervals_on_gene_tree_path(
     species_tree: toytree.ToyTree,
     gene_tree: toytree.ToyTree,
@@ -143,15 +142,14 @@ def get_species_tree_intervals_on_gene_tree_path(
     gtree edge.
     """
     # get the st node containing the gt_node
-    gt_node = gene_tree.idx_dict[idx]
+    gt_node = gene_tree[idx]
     gt_tips = gt_node.get_leaf_names()
     st_tips = set()
     for st_tip in imap:
         for gtip in gt_tips:
             if gtip in imap[st_tip]:
                 st_tips.add(st_tip)
-    st_nidx = species_tree.get_mrca_idx_from_tip_labels(st_tips)
-    st_node = species_tree.idx_dict[st_nidx]
+    st_node = species_tree.get_mrca_node(*st_tips)
 
     # get the st_node path spanned by the gtree edge
     path = []
@@ -172,9 +170,7 @@ def get_species_tree_intervals_on_gene_tree_path(
 
         # advance towards st root
         st_node = st_node.up
-
     return path
-
 
 def get_embedded_path_of_gene_tree_edge(
     table: pd.DataFrame,
@@ -189,13 +185,12 @@ def get_embedded_path_of_gene_tree_edge(
         species_tree, gene_tree, imap, idx)
 
     # select intervals
-    gt_node = gene_tree.idx_dict[idx]
+    gt_node = gene_tree[idx]
     mask0 = table.st_node.isin(sidxs)
     mask1 = table.start >= gt_node.height
     mask2 = table.stop <= gt_node.up.height
     subtable = table[mask0 & mask1 & mask2]
     return subtable
-
 
 def get_prob_gene_tree_is_unchanged_by_recomb_event(
     table: pd.DataFrame,
@@ -242,7 +237,7 @@ def get_prob_gene_tree_is_unchanged_by_recomb_event(
 
     # raise an error if timed event cannot happen on the selected edge
     if not table.size:
-        gt_node = gene_tree.idx_dict[idx]
+        gt_node = gene_tree[idx]
         raise ValueError(
             f"The time ({time}) does not exist on gene tree edge {idx} "
             f"({gt_node.height:.3f} - {gt_node.up.height:.3f})"
@@ -281,7 +276,6 @@ def get_prob_gene_tree_is_unchanged_by_recomb_event(
         )
     return first_term + second_term
 
-
 def get_prob_gene_tree_is_unchanged_by_recomb_on_edge(
     table: pd.DataFrame,
     species_tree: toytree.ToyTree,
@@ -295,6 +289,7 @@ def get_prob_gene_tree_is_unchanged_by_recomb_on_edge(
     # get all coalescent intervals on this gt edge
     table = get_embedded_path_of_gene_tree_edge(
         table, species_tree, gene_tree, imap, idx)
+    logger.debug(f"path of edge {idx}:\n{table}\n")
 
     # iterate over all intervals on the gt edge
     full_branch_sum = 0
@@ -360,8 +355,11 @@ def get_prob_gene_tree_is_unchanged_by_recomb_on_edge(
         full_branch_sum += first_term + expression
 
     # return as branch sum weighted by its total length
-    return full_branch_sum / table.dist.sum()
+    # FIXME: PROBLEM TO FIX HERE.
+    if table.dist.sum() == 0:
+        logger.error(f"{idx}: {gene_tree.get_node_data()}")
 
+    return full_branch_sum / table.dist.sum()
 
 def get_prob_gene_tree_is_unchanged(
     species_tree: toytree.ToyTree,
@@ -379,11 +377,11 @@ def get_prob_gene_tree_is_unchanged(
     table = get_embedded_gene_tree_table(species_tree, gene_tree, imap)
 
     # get sum of all edge length (excluding the root stem) on gtree.
-    sum_edge_lengths = sum(gene_tree.get_node_data("dist").iloc[:-1])
+    sum_edge_lengths = sum(gene_tree.get_node_data("dist")[:-1])
 
     # for each edge add the probability that recomb would change it.
     prob_tree_unchanged = 0
-    for node in gene_tree.treenode.traverse():
+    for node in gene_tree:
         if not node.is_root():
             prob_unchanged = get_prob_gene_tree_is_unchanged_by_recomb_on_edge(
                 table, species_tree, gene_tree, imap, node.idx,
@@ -391,7 +389,6 @@ def get_prob_gene_tree_is_unchanged(
             prob_tree_unchanged += (node.dist / sum_edge_lengths) * prob_unchanged
             # logger.info((node.idx, prob_unchanged))
     return prob_tree_unchanged
-
 
 def get_expected_dist_until_gene_tree_changes(
     species_tree: toytree.ToyTree,
@@ -419,6 +416,9 @@ def get_expected_dist_until_gene_tree_changes(
     lambda_ = recomb_rate * prob_change * gt_edge_lens
     return 1 / lambda_
 
+####################################################################
+## VALIDATION
+####################################################################
 
 def compare_to_ipcoal(
     ipcoal_model: ipcoal.Model,
@@ -446,6 +446,7 @@ def compare_to_ipcoal(
     # collect results and return
     expected_wait = np.array([i.result() for i in rasyncs.values()])
     expected_dist = np.random.exponential(expected_wait)
+    # expected_dist = stats.norm.pdf(expected_wait)
 
     # report results to logger info
     logger.info(
@@ -480,7 +481,6 @@ def compare_to_ipcoal(
     })
     return data
 
-
 def compare_to_ipcoal_plot(data: pd.DataFrame):
     """Return a plot of the dataframe from compare_to_ipcoal func.
 
@@ -509,7 +509,6 @@ def compare_to_ipcoal_plot(data: pd.DataFrame):
     toyplot.browser.show(canvas)
     return canvas, (ax0, ax1, ax2), (mark0, mark1, mark2)
 
-
 def get_distance_likelihood(
     species_tree: toytree.ToyTree,
     gene_tree: toytree.ToyTree,
@@ -537,26 +536,35 @@ def get_distance_likelihood(
 if __name__ == "__main__":
 
     ipcoal.set_log_level("INFO")
+    pd.options.display.max_columns = 20
+    pd.options.display.width = 1000
 
     # setup species tree model
-    SPTREE = toytree.rtree2.unittree(ntips=10, treeheight=2e6, seed=123)
-    SPTREE = SPTREE.set_node_data(
-        "Ne", default=1e6, mapping={i: 5e5 for i in (0, 1, 8, 9)})
+    # SPTREE = toytree.rtree.unittree(ntips=10, treeheight=2e6, seed=123)
+    # SPTREE = SPTREE.set_node_data(
+        # "Ne", default=1e6, mapping={i: 5e5 for i in (0, 1, 8, 9)})
 
-    # simulate genealogies
+    SPTREE = toytree.rtree.unittree(ntips=4, treeheight=2e6, seed=123)
+    SPTREE = SPTREE.set_node_data("Ne", default=1e6)
+
+    # simulate one genealogy
     RECOMB = 1e-9
     MODEL = ipcoal.Model(SPTREE, seed_trees=123, nsamples=2, recomb=RECOMB)
     MODEL.sim_trees(1, 1)
     IMAP = MODEL.get_imap_dict()
     GTREE = toytree.tree(MODEL.df.genealogy[0])
 
-    # print(get_embedded_gene_tree_table(SPTREE, GTREE, IMAP))
+    logger.info("One embedded gene tree table:\n"
+        f"{get_embedded_gene_tree_table(SPTREE, GTREE, IMAP)}")
+    EDIST = get_expected_dist_until_gene_tree_changes(SPTREE, GTREE, IMAP, 1e-8)
+    logger.warning(EDIST)
 
-    # simulate a long chromosome
-    NSITES = 1e5
+    # simulate a long chromosome with many genealogies
+    NSITES = 1e4
     logger.info(f"simulating {NSITES} bp")
     MODEL.sim_loci(nloci=1, nsites=NSITES)
     logger.info(f"simulated {MODEL.df.shape[0]} genealogies")
+    logger.info(f"simulated:\n{MODEL.df}\n")    
 
     # compare sim distances to predicted distances
     logger.info("computing expected waiting distances")
@@ -568,5 +576,5 @@ if __name__ == "__main__":
         "...\n"
         "--------------------------"
     )
-    compare_to_ipcoal_plot(CDATA)
-    logger.info(f"\n{CDATA.describe().T[['mean', 'std', 'min', 'max']]}")
+    # compare_to_ipcoal_plot(CDATA)
+    # logger.info(f"\n{CDATA.describe().T[['mean', 'std', 'min', 'max']]}")
