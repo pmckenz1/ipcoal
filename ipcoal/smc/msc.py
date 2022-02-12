@@ -57,7 +57,8 @@ def get_msc_embedded_gene_tree_table(
     gt_node_heights = gene_tree.get_node_data("height")
 
     # iterate over species tree nodes from tips to root
-    for st_node in species_tree.treenode.traverse("postorder"):
+    for nidx in range(species_tree.ntips)[::-1]: #.treenode.traverse("postorder"):
+        st_node = species_tree[nidx]
 
         # get n nedges into the species tree interval, for tips it is
         # nsamples, for internal intervals get from child intervals.
@@ -81,7 +82,7 @@ def get_msc_embedded_gene_tree_table(
         # get nodes in the appropriate species tree interval
         coal_events = []
         for gidx in nodes_in_time_slice.index:
-            gt_node = gene_tree.idx_dict[gidx]
+            gt_node = gene_tree[gidx]
             tmp_tips = set(gt_node.get_leaf_names())
             if tmp_tips.issubset(gt_tips):
                 coal_events.append(gt_node)
@@ -339,25 +340,25 @@ if __name__ == "__main__":
     )
     MODEL.sim_trees(100, 1)
     IMAP = MODEL.get_imap_dict()
-    GTREES = toytree.mtree(MODEL.df.genealogy)
+    GTREES = toytree.mtree(MODEL.df.genealogy.tolist())
 
     # get embedding table
     DATA = get_msc_embedded_gene_tree_table(SPTREE, GTREES.treelist[0], IMAP)
     print(DATA)
 
 
-    # hello
-    LOGLIK = get_gene_tree_log_prob_msc(DATA)
-    print(LOGLIK)
+    # # hello
+    # LOGLIK = get_gene_tree_log_prob_msc(DATA)
+    # print(LOGLIK)
 
 
-    # single
-    DATA = DATA.iloc[2]
-    LOGLIK = get_censored_interval_log_prob(
-        DATA.neff, 
-        DATA.nedges_in, 
-        DATA.nedges_out, 
-        DATA.dist, 
-        DATA.coals,
-    )
-    print(LOGLIK)
+    # # single
+    # DATA = DATA.iloc[2]
+    # LOGLIK = get_censored_interval_log_prob(
+    #     DATA.neff, 
+    #     DATA.nedges_in, 
+    #     DATA.nedges_out, 
+    #     DATA.dist, 
+    #     DATA.coals,
+    # )
+    # print(LOGLIK)
