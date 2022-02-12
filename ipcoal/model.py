@@ -138,7 +138,7 @@ class Model:
         # legacy support warning messages
         self._warn_bad_kwargs(kwargs)
 
-        # input user args (: type it WILL be stored as)
+        # store user input args
         self.tree = tree
         self.neff = Ne       # upper-case only used in input arg.
         self.nsamples = nsamples
@@ -149,54 +149,54 @@ class Model:
 
         # public attrs to be filled, or storing init args.
         self.samples: List[ms.SampleSet] = None
-        # initialize random seed for msprime and SeqModel
+        """: List of SampleSet objects with ploidy info."""
         self.rng_trees: np.random.Generator = None
-        """Random Generator used for sampling genealogies"""
+        """: Random Generator used for sampling genealogies"""
         self.rng_muts: np.random.Generator = None
-        """Random Generator used for sampling mutations"""
+        """: Random Generator used for sampling mutations"""
         self.alleles: Dict[str, int]
-        """Dict mapping str alleles to int indices in the subst_model"""
+        """: Dict mapping str alleles to int indices in the subst_model"""
         self.nstips: int = None
-        """Number of samples"""
+        """: Number of samples"""
         self.tipdict: Dict[str, List[str]] = {}
-        """Dict mapping species tree tip names to lists of sample tip names"""
+        """: Dict mapping species tree tip names to lists of sample tip names"""
         self.alpha_ordered_names: List[str] = None
-        """List of sample tip names in alphanumeric order"""
+        """: List of sample tip names in alphanumeric order"""
         self.ms_admix: List[Tuple] = []
-        """List of admix tuples as (src, dest, interval, rate)."""
+        """: List of admix tuples as (src, dest, interval, rate)."""
         self.ms_demography: ms.Demography = None
-        """List of ms Demography events..."""
+        """: List of ms Demography events..."""
 
         # private attrs to be filled, or storing init args.
         self._init_tseed: Optional[int] = seed_trees
-        """Init seed for rng_trees"""
+        """: Init seed for rng_trees"""
         self._init_mseed: Optional[int] = seed_mutations
-        """Init seed for rng_muts"""
+        """: Init seed for rng_muts"""
         self._recomb_is_map: bool = isinstance(recomb, ms.RateMap)
-        """Boolean for whether recomb rate is a RateMap"""
+        """: Boolean for whether recomb rate is a RateMap"""
         self._alleles: Tuple[str] = None
-        """Tuple of the alleles in subst_model in index order"""
+        """: Tuple of the alleles in subst_model in index order"""
         self._reorder: List[str]
-        """List or sample names ordered by ..."""
+        """: List or sample names ordered by ..."""
 
         # results
         self.ts_dict: Dict[int, 'tskit.trees.TreeSequence'] = {}
-        """Dict mapping locus int idx labels to TreeSequence objects"""
+        """: Dict mapping locus int idx labels to TreeSequence objects"""
         self.df: pd.DataFrame = None
-        """Pandas DataFrame with summary of simulated data."""
+        """: Pandas DataFrame with summary of simulated data."""
         self.seqs: np.ndarray = None
-        """Numpy array of simulated sequence data: (nloci, ntaxa, nsites)"""
+        """: Numpy array of simulated sequence data: (nloci, ntaxa, nsites)"""
         self.ancestral_seq: np.ndarray = None
-        """Numpy array of simulated ancestral sequence: (nloci, 1, nsites)"""
+        """: Numpy array of simulated ancestral sequence: (nloci, 1, nsites)"""
 
         # functions to check input args and set values to Model attrs
         self._reset_random_generators()    # .rng_trees, .rng_muts
-        self._set_species_tree()          # .tree
+        self._set_species_tree()           # .tree
         self._set_mutation_model()         # .subst_model, .alleles, ._alleles
         self._set_samples()                # .samples, .nstips
         self._set_neff()                   # .tree (sets Node.Ne attrs)
         self._set_tip_names()              # .tipdict, .alpha_ordered_names, ._reorder
-        self._set_admixture_edges()      # .admixture_edges,
+        self._set_admixture_edges()        # .admixture_edges,
         self._set_migration()              # .ms_admix
         self._set_new_demography()         # .ms_demography
 
@@ -987,6 +987,7 @@ class Model:
         max_mutations: Optional[int] = None,
         repeat_on_trees: bool = False,
         precision: int = 14,
+        # exclude_fixed: bool = False,        
         ) -> None:
         """Simulate N *unlinked* variable sites (SNPs).
 
@@ -1095,9 +1096,9 @@ class Model:
                         variant = next(mutated_ts.variants())
                     except StopIteration:
                         continue
-                    if len(variant.site.mutations) < min_mutations:
+                    if not max_mutations >= len(variant.site.mutations) >= min_mutations:                        
                         continue
-                    if not max_alleles >= len(variant.alleles) >= min_alleles:
+                    if not max_alleles >= variant.num_alleles >= min_alleles:
                         continue
                     break
 
@@ -1107,9 +1108,11 @@ class Model:
                     variant = next(mutated_ts.variants())
                 except StopIteration:
                     continue
-                if len(variant.site.mutations) < min_mutations:
+                # number of mutations (0, 1, or >1)
+                if not max_mutations >= len(variant.site.mutations) >= min_mutations:
                     continue
-                if not max_alleles >= len(variant.alleles) >= min_alleles:
+                # number of alleles 
+                if not max_alleles >= variant.num_alleles >= min_alleles:
                     continue
 
             # Store result and advance counter
@@ -1191,6 +1194,11 @@ class Model:
         toolkit and allows for very fast lookups even in very large
         files. This requires the additional dependency 'h5py' and
         will raise an exception if the library is missing.
+
+        All SNPs will be written to file if data were generated using
+        `sim_snps`, whereas if `sim_loci` was called then only the
+        variable sites will be written, and non-variant sites will be
+        excluded.
 
         Parameters
         ----------
