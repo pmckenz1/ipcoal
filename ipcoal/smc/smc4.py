@@ -357,7 +357,7 @@ def get_prob_gene_tree_is_unchanged_by_recomb_on_edge(
     # return as branch sum weighted by its total length
     # FIXME: PROBLEM TO FIX HERE.
     if table.dist.sum() == 0:
-        logger.error(f"{idx}: {gene_tree.get_node_data()}")
+        logger.error(f"error at idx={idx}:\n{gene_tree.get_node_data()}")
 
     return full_branch_sum / table.dist.sum()
 
