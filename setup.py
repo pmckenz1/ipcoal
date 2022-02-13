@@ -6,10 +6,10 @@ Run `pip install -e .` to install local git version.
 
 import os
 import re
-from setuptools import setup
+from setuptools import setup, find_packages
 
 # parse version from init.py
-with open("ipcoal/__init__.py") as init:
+with open("ipcoal/__init__.py", encoding="utf-8") as init:
     CUR_VERSION = re.search(
         r"^__version__ = ['\"]([^'\"]*)['\"]",
         init.read(),
@@ -36,7 +36,7 @@ else:
 # setup installation
 setup(
     name="ipcoal",
-    packages=["ipcoal"],
+    packages=find_packages(),
     version=CUR_VERSION,
     author="Patrick McKenzie and Deren Eaton",
     author_email="p.mckenzie@columbia.edu",
