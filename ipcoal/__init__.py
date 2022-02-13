@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-"""
+"""The ipcoal library: coalescent simulations for phylogenetics.
+
 Summary
 -------
 The primary interface for `ipcoal` is the `ipcoal.Model` class 
@@ -19,5 +20,7 @@ __author__ = "Patrick McKenzie and Deren Eaton"
 
 from ipcoal.model import Model
 from ipcoal.utils import utils
+
+# start the logger at log_level WARNING
 from ipcoal.utils.logger_setup import set_log_level
 set_log_level("WARNING")
