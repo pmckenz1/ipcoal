@@ -535,7 +535,7 @@ def get_distance_likelihood(
 
 if __name__ == "__main__":
 
-    ipcoal.set_log_level("INFO")
+    ipcoal.set_log_level("DEBUG")
     pd.options.display.max_columns = 20
     pd.options.display.width = 1000
 
@@ -557,14 +557,14 @@ if __name__ == "__main__":
     logger.info("One embedded gene tree table:\n"
         f"{get_embedded_gene_tree_table(SPTREE, GTREE, IMAP)}")
     EDIST = get_expected_dist_until_gene_tree_changes(SPTREE, GTREE, IMAP, 1e-8)
-    logger.warning(EDIST)
+    logger.info(f"expected waiting distance: {EDIST:.4f} bp\n")
 
     # simulate a long chromosome with many genealogies
     NSITES = 1e4
     logger.info(f"simulating {NSITES} bp")
     MODEL.sim_loci(nloci=1, nsites=NSITES)
     logger.info(f"simulated {MODEL.df.shape[0]} genealogies")
-    logger.info(f"simulated:\n{MODEL.df}\n")    
+    logger.info(f"simulated table summary:\n{MODEL.df}\n")    
 
     # compare sim distances to predicted distances
     logger.info("computing expected waiting distances")
@@ -576,5 +576,5 @@ if __name__ == "__main__":
         "...\n"
         "--------------------------"
     )
-    # compare_to_ipcoal_plot(CDATA)
-    # logger.info(f"\n{CDATA.describe().T[['mean', 'std', 'min', 'max']]}")
+    compare_to_ipcoal_plot(CDATA)
+    logger.info(f"\n{CDATA.describe().T[['mean', 'std', 'min', 'max']]}")
