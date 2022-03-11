@@ -7,7 +7,6 @@ on loci or sliding windows of sequence data for comparing
 genealogies with inferred gene trees.
 """
 
-
 import os
 import sys
 import glob
@@ -80,14 +79,14 @@ class TreeInfer:
         """
         # check if method is supported
         if self.method not in SUPPORTED:
-            raise ipcoalError(
+            raise IpcoalError(
                 "method {} not currently supported".format(self.method)
             )
 
         # check for binary of this method (assumes conda install)
         self.binary = os.path.join(sys.prefix, "bin", SUPPORTED[self.method])
         if not os.path.exists(self.binary): 
-            raise ipcoalError(
+            raise IpcoalError(
                 "binary {} not found, please install using conda."
                 .format(self.binary)
             )
