@@ -16,11 +16,11 @@ from msprime.mutations import mutation_model_factory
 import toytree
 from loguru import logger
 
-from ipcoal.phylo.TreeInfer import TreeInfer
 from ipcoal.io.writer import Writer
 from ipcoal.io.transformer import Transformer
 from ipcoal.draw.seqview import draw_seqview
-from ipcoal.utils.utils import calculate_pairwise_dist
+# from ipcoal.utils.utils import calculate_pairwise_dist
+# from ipcoal.phylo.TreeInfer import TreeInfer
 from ipcoal.utils.utils import get_admix_interval_as_gens, IpcoalError
 
 # pylint: disable=too-many-public-methods, invalid-name, too-many-lines, too-many-statements
@@ -123,7 +123,7 @@ class Model:
     """
     def __init__(
         self,
-        tree: Union[str, 'toytree.ToyTree'] = "",
+        tree: Optional[toytree.ToyTree]=None,
         Ne: Optional[int] = None,
         nsamples: Union[int, Dict[Union[str,int],int]]=1,
         admixture_edges: Optional[List[Tuple[int,int,float,float]]]=None,
@@ -139,7 +139,7 @@ class Model:
         self._warn_bad_kwargs(kwargs)
 
         # store user input args
-        self.tree = tree
+        self.tree = tree if tree is not None else "(r);"
         self.neff = Ne       # upper-case only used in input arg.
         self.nsamples = nsamples
         self.admixture_edges = admixture_edges
@@ -402,10 +402,10 @@ class Model:
             self.admixture_edges = admixture_edges
 
     def _set_migration(self):
-        """
-        Checks admixture tuples for proper configuration, and fills
-        the admixture_edges list as int generations.
-            [(src, dest, interval-time-in-gens, rate), ...]
+        """Checks admixture tuples for proper configuration.
+
+        Fills the admixture_edges list as int generations.
+        >>> [(src, dest, interval-time-in-gens, rate), ...]
         """
         # sample times and proportions/rates for admixture intervals
         for iedge in self.admixture_edges:
@@ -651,7 +651,7 @@ class Model:
         """
         if idxs is None:
             idxs = list(self.df.index)[:4]
-        mtre = toytree.mtree(self.df.genealogy[idxs])
+        mtre = toytree.mtree(self.df.genealogy[idxs].tolist())
         canvas, axes, mark = mtre.draw(ts='c', tip_labels=True, **kwargs)
         return canvas, axes, mark
 
@@ -683,7 +683,6 @@ class Model:
         --------
         >>> ...
         """
-        raise NotImplementedError("temporarily deprecated...")
         # bail out if self.admixture_edges
         if self.admixture_edges:
             raise NotImplementedError(
@@ -1304,6 +1303,7 @@ class Model:
         outdir: str="./",
         idxs: List[int]=None,
         diploid: bool=False,
+        quiet: bool=False,
         ):
         """Write concatenated sequence data to a single phylip file.
 
@@ -1321,7 +1321,7 @@ class Model:
             Randomly combine haploid samples into diploid genotypes.
         """
         writer = Writer(self)
-        phystring = writer.write_concat_to_phylip(outdir, name, idxs, diploid)
+        phystring = writer.write_concat_to_phylip(outdir, name, idxs, diploid, quiet)
         if name is None:
             return phystring
         return None
@@ -1333,8 +1333,7 @@ class Model:
         idxs=None,
         diploid=None,
         ):
-        """
-        Write concatenated sequence data to a single nexus file.
+        """Write concatenated sequence data to a single nexus file.
 
         Parameters
         ----------
@@ -1428,181 +1427,23 @@ class Model:
     # post-sim methods
     # ---------------------------------------------------------------
 
-    def infer_gene_tree_windows(
-        self,
-        window_size: Optional[int]=None,
-        inference_method: str = 'raxml',
-        inference_args: Dict[str,str] = None,
-        diploid: bool = False,
-        ) -> pd.DataFrame:
-        """Infer gene trees in intervals using a phylogenetic tool.
 
-        The method is applied to windows spanning every locus.
-        If window_size is None then each locus is treated as an
-        entire concatenated window.
+    # def get_pairwise_distances(self, model=None):
+    #     """
+    #     Returns pairwise distance matrix.
 
-        Parameters
-        ----------
-        window_size: int, None
-            The size of non-overlapping windows to be applied across the
-            sequence alignment to infer gene tree windows. If None then
-            a single gene tree is inferred for the entire concatenated seq.
-        diploid: bool
-            Combine haploid samples into diploid genotype calls.
-        method: str
-            options include "iqtree", "raxml", "mrbayes".
-        kwargs: dict
-            a limited set of supported inference options. See docs.
-
-        Returns
-        -------
-        pd.DataFrame: A DataFrame with window stats and newick trees.
-
-        Example
-        -------
-        >>> sptree = toytree.rtree.unittree(ntips=10, treeheight=1e6)
-        >>> model = ipcoal.Model(sptree, Ne=1e6, nsamples=2)
-        >>> model.sim_loci(nloci=10, nsites=1000)
-        >>> gene_trees = model.infer_gene_tree()
-        """
-        # bail out if the data is only unlinked SNPs
-        if self.df.nbps.max() == 1:
-            raise IpcoalError(
-                "gene tree inference cannot be performed on individual SNPs\n"
-                "perhaps you meant to run .sim_loci() instead of .sim_snps()."
-                )
-        # complain if no seq data exists
-        if self.seqs is None:
-            raise IpcoalError(
-                "Cannot infer trees because no seq data exists. "
-                "You likely called sim_trees() instead of sim_loci()."
-            )
-
-        # if window_size is None then use entire chrom
-        if window_size is None:
-            window_size = self.df.end.max()
-
-        # create the results dataframe
-        resdf = pd.DataFrame({
-            "start": np.arange(0, self.df.end.max(), window_size),
-            "end": np.arange(window_size, self.df.end.max() + window_size, window_size),
-            "nbps": window_size,
-            "nsnps": 0,
-            "inferred_tree": np.nan,
-        })
-
-        # reshape seqs: (nloc, ntips, nsites) to (nwins, ntips, win_size)
-        newseqs = np.zeros((resdf.shape[0], self.nstips, window_size), dtype=int)
-        for idx in resdf.index:
-            # TODO: HERE IT'S ONLY INFERRING AT LOC 0
-            loc = self.seqs[0, :, resdf.start[idx]:resdf.end[idx]]
-            newseqs[idx] = loc
-            resdf.loc[idx, "nsnps"] = (np.any(loc != loc[0], axis=0).sum())
-
-        # init the TreeInference object (similar to ipyrad inference code)
-        tool = TreeInfer(
-            self,
-            inference_method=inference_method,
-            inference_args=inference_args,
-            diploid=diploid,
-            alt_seqs=newseqs,
-        )
-
-        # iterate over nloci. This part could be easily parallelized...
-        for idx in resdf.index:
-            resdf.loc[idx, "inferred_tree"] = tool.run(idx)
-        return resdf
-
-    def infer_gene_trees(
-        self,
-        inference_method: str = 'raxml',
-        inference_args: Optional[Dict[str,str]] = None,
-        diploid: bool = False,
-        ):
-        """Infer gene trees at every discrete locus.
-
-        Parameters
-        ----------
-        inferenc_method: str
-            Select the tree inference method to run. Current options
-            include "raxml", "iqtree", "mrbayes".
-        inference_args: Dict
-            A dict mapping inference arg names and values as strings.
-            These will replace default options, or add additional
-            args. Default raxml kwargs are:
-            >>> raxml_kwargs = {
-            >>>     "f": "d",
-            >>>     "N": "10",
-            >>>     "T": "4",
-            >>>     "m": "GTRGAMMA",
-            >>>     "w": tempfile.gettempdir()
-            >>> }
-        diploid: bool
-            If True then pairs of genotypes are combined into diploid
-            base calls if nsamples in each lineage is divisible by 2.
-        """
-        inference_args = inference_args if inference_args is not None else {}
-
-        # bail out if the data is only unlinked SNPs
-        if self.df.nbps.max() == 1:
-            raise IpcoalError(
-                "gene tree inference cannot be performed on individual SNPs\n"
-                "perhaps you meant to run .sim_loci() instead of .sim_snps()."
-                )
-
-        # expand self.df to include an inferred_trees column
-        self.df["inferred_tree"] = np.nan
-
-        # init the TreeInference object (similar to ipyrad inference code)
-        tool = TreeInfer(
-            self,
-            inference_method=inference_method,
-            inference_args=inference_args,
-            diploid=diploid,
-        )
-
-        # complain if no seq data exists
-        if self.seqs is None:
-            raise IpcoalError(
-                "Cannot infer trees because no seq data exists. "
-                "You likely called sim_trees() instead of sim_loci()."
-            )
-
-        # TODO; if sim_snps() infer one concatenated tree.
-        # ...
-
-        # iterate over nloci. This part could be easily parallelized...
-        for lidx in range(self.seqs.shape[0]):
-
-            # skip invariable loci
-            if self.df.nsnps[self.df.locus == lidx].sum():
-                # let low data fails return NaN
-                try:
-                    tree = tool.run(lidx)
-                    # enter result
-                    self.df.loc[self.df.locus == lidx, "inferred_tree"] = tree
-
-                # caught raxml exception (prob. low data)
-                except IpcoalError as err:
-                    logger.error(err)
-                    raise err
-
-    def get_pairwise_distances(self, model=None):
-        """
-        Returns pairwise distance matrix.
-
-        Parameters:
-        -----------
-        model (str):
-            Default is None meaning the Hamming distance. Supported options:
-                None: Hamming distance, i.e., proportion of differences.
-                "JC": Jukes-Cantor distance, i.e., -3/4 ln((1-(4/3)d))
-                "HKY": Not yet implemented.
-        """
-        # requires data
-        if self.seqs is None:
-            raise IpcoalError("You must first run .sim_snps() or .sim_loci")
-        return calculate_pairwise_dist(self, model)
+    #     Parameters:
+    #     -----------
+    #     model (str):
+    #         Default is None meaning the Hamming distance. Supported options:
+    #             None: Hamming distance, i.e., proportion of differences.
+    #             "JC": Jukes-Cantor distance, i.e., -3/4 ln((1-(4/3)d))
+    #             "HKY": Not yet implemented.
+    #     """
+    #     # requires data
+    #     if self.seqs is None:
+    #         raise IpcoalError("You must first run .sim_snps() or .sim_loci")
+    #     return calculate_pairwise_dist(self, model)
 
     def apply_missing_mask(
         self,
