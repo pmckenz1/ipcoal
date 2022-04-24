@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 
-"""
+"""Logging module.
+
 Logging module primarily used for debugging by developers, but which 
 can be turned on by users for more verbose output by calling:
 
-ipcoal.set_loglevel("DEBUG")
+ipcoal.set_log_level("DEBUG")
 """
 
 import sys
