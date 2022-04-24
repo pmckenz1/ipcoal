@@ -535,7 +535,7 @@ def get_distance_likelihood(
 
 if __name__ == "__main__":
 
-    ipcoal.set_log_level("DEBUG")
+    ipcoal.set_log_level("INFO")
     pd.options.display.max_columns = 20
     pd.options.display.width = 1000
 
@@ -564,17 +564,17 @@ if __name__ == "__main__":
     logger.info(f"simulating {NSITES} bp")
     MODEL.sim_loci(nloci=1, nsites=NSITES)
     logger.info(f"simulated {MODEL.df.shape[0]} genealogies")
-    logger.info(f"simulated table summary:\n{MODEL.df}\n")    
+    logger.info(f"simulated table summary:\n{MODEL.df}\n")
 
     # compare sim distances to predicted distances
-    logger.info("computing expected waiting distances")
-    CDATA = compare_to_ipcoal(ipcoal_model=MODEL, recombination_rate=RECOMB, cores=7)
-    logger.info(
-        "expected waiting distances\n"
-        "--------------------------\n"
-        f"{CDATA.head(15)}\n"
-        "...\n"
-        "--------------------------"
-    )
-    compare_to_ipcoal_plot(CDATA)
-    logger.info(f"\n{CDATA.describe().T[['mean', 'std', 'min', 'max']]}")
+    # logger.info("computing expected waiting distances")
+    # CDATA = compare_to_ipcoal(ipcoal_model=MODEL, recombination_rate=RECOMB, cores=7)
+    # logger.info(
+    #     "expected waiting distances\n"
+    #     "--------------------------\n"
+    #     f"{CDATA.head(15)}\n"
+    #     "...\n"
+    #     "--------------------------"
+    # )
+    #compare_to_ipcoal_plot(CDATA)
+    #logger.info(f"\n{CDATA.describe().T[['mean', 'std', 'min', 'max']]}")
