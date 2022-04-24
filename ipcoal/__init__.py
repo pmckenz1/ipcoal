@@ -4,7 +4,7 @@
 
 Summary
 -------
-The primary interface for `ipcoal` is the `ipcoal.Model` class 
+The primary interface for `ipcoal` is the `ipcoal.Model` class
 which is used to setup, perform, and analyze simulations.
 
 Example
@@ -20,7 +20,7 @@ __author__ = "Patrick McKenzie and Deren Eaton"
 
 from ipcoal.model import Model
 from ipcoal.utils import utils
-import ipcoal.phylo 
+import ipcoal.phylo
 
 # start the logger at log_level WARNING
 from ipcoal.utils.logger_setup import set_log_level

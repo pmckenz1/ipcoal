@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 
-"""
-Draw a sequence array.
+"""Draw a sequence array.
 """
 
 import numpy as np
 import toyplot
 from toytree.utils import ScrollableCanvas
+from loguru import logger
+
+# register logger to module
+logger = logger.bind(name="ipcoal")
 
 
 def draw_seqview(
@@ -25,7 +28,8 @@ def draw_seqview(
 
     """
     # bail out if no seqs array
-    if self.seqs is None:
+    if not self.seqs.size:
+        logger.warning("No sequences simulated.")
         return None, None
 
     # if SNPs then concatenate
