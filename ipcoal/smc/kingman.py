@@ -2,6 +2,10 @@
 
 """Kingman n-coalescent probability functions.
 
+References
+----------
+- ...
+
 TODO
 ----
 - Use scipy.stats instead of np.exp
@@ -23,7 +27,7 @@ logger = logger.bind(name="ipcoal")
 
 
 def get_gene_tree_log_prob_single_pop(neff: float, coal_times: np.ndarray):
-    """Return log prob density of a gene tree in a single population.
+    r"""Return log prob density of a gene tree in a single population.
 
     All labeled histories have equal probability in a single population
     model, and so the probability of a gene tree is calculated only 
@@ -36,6 +40,8 @@ def get_gene_tree_log_prob_single_pop(neff: float, coal_times: np.ndarray):
 
     Modified from equation 5 of Rannala et al. (2020) to use edge 
     lens in units of gens, and population neffs, instead of thetas.
+
+    $ {2 \choose \theta}^{n-1} e^{-\frac{2}{\theta}} $
 
     Parameters
     ----------
@@ -107,7 +113,6 @@ def optim_func(neff: float, coal_times: np.ndarray):
 
 if __name__ == "__main__":
     
-
     ipcoal.set_log_level("INFO")
 
     # simulate genealogies
@@ -122,8 +127,27 @@ if __name__ == "__main__":
         recomb=RECOMB,
         mut=MUT,
     )
-    MODEL.sim_trees(100, 1)
-    IMAP = MODEL.get_imap_dict()
-    GTREES = toytree.mtree(MODEL.df.genealogy.tolist())
+    # MODEL.sim_trees(100, 1)
+    # IMAP = MODEL.get_imap_dict()
+    # GTREES = toytree.mtree(MODEL.df.genealogy.tolist())
 
     # get embedding table
+
+    import ipcoal, toytree, toyplot
+    import numpy as np
+
+    neff = 1e6
+
+    # simulate a genealogy
+    model = ipcoal.Model(None, Ne=neff, nsamples=25)
+    model.sim_trees(1)
+    gtree = toytree.tree(model.df.genealogy[0])
+    coals = np.array(sorted(gtree.get_node_data("height")[gtree.ntips:]))
+    xs = np.logspace(np.log10(neff) - 1, np.log10(neff) + 1, 10)
+    logliks = [get_gene_tree_log_prob_single_pop(i, coals) for i in xs]
+    canvas, axes, mark = toyplot.plot(
+        xs, logliks,
+        xscale="log", height=300, width=400,
+    )
+    axes.vlines([neff])
+    toytree.utils.show(canvas)
