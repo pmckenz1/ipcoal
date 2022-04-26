@@ -6,7 +6,8 @@ Fast calculation of ...
 
 References
 ----------
-- Rannala and Yang (...) "Bayesian"
+- Rannala and Yang (...) "Bayes Estimation of Species Divergence 
+    Times and Ancestral Population Sizes Using DNA Sequences From Multiple Loci
 - Degnan and Salter (...) "..."
 - ... (...) "STELLS-mod..."
 
@@ -57,8 +58,9 @@ def get_msc_embedded_gene_tree_table(
     gt_node_heights = gene_tree.get_node_data("height")
 
     # iterate over species tree nodes from tips to root
-    for nidx in range(species_tree.ntips)[::-1]: #.treenode.traverse("postorder"):
-        st_node = species_tree[nidx]
+    # for nidx in range(species_tree.nnodes - 1)[::-1]: #.treenode.traverse("postorder"):
+    for st_node in species_tree.treenode.traverse("postorder"):        
+        # st_node = species_tree[nidx]
 
         # get n nedges into the species tree interval, for tips it is
         # nsamples, for internal intervals get from child intervals.
@@ -282,7 +284,7 @@ if __name__ == "__main__":
 
 
     # # hello
-    # LOGLIK = get_gene_tree_log_prob_msc(DATA)
+    LOGLIK = get_gene_tree_log_prob_msc(DATA)
     # print(LOGLIK)
 
 
