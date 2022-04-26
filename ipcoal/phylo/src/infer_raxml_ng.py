@@ -217,7 +217,7 @@ def infer_raxml_ng_trees(
     # log report of empty windows.
     if empty:
         logger.warning(
-            f"{empty} loci ({empty / model.df.locus[-1]:.2f}%) "
+            f"{empty} loci ({empty / model.df.locus.iloc[-1]:.2f}%) "
             "contain 0 SNPs and were returned as star trees.")
 
     # create results as a dataframe
