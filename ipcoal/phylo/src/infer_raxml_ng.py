@@ -117,7 +117,8 @@ def infer_raxml_ng_tree(
     diploid: bool=False,
     subst_model: str="GTR+G",
     binary_path: Union[str, Path]=None,
-    no_files: bool=False,    
+    no_files: bool=False,
+    tmpdir: Optional[Path]=None,
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng.
 
@@ -152,7 +153,7 @@ def infer_raxml_ng_tree(
     >>> tree = ipcoal.phylo.infer_raxml_ng_tree(model.seqs, 0)
     >>> tree.draw();
     """
-    fname = _write_tmp_phylip_file(model, idxs, diploid)
+    fname = _write_tmp_phylip_file(model, idxs, diploid, tmpdir)
     kwargs = dict(
         alignment=fname, nboots=nboots, nthreads=nthreads, 
         nworkers=nworkers, seed=seed, subst_model=subst_model,
