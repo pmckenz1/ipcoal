@@ -79,7 +79,7 @@ def infer_raxml_ng_tree_from_phylip(
         "--model", str(subst_model),
         "--redo",
         "--threads", str(nthreads),
-        "--workers", str(nworkers),
+        "--workers", [str(nworkers) if nworkers else 'auto'],
     ]
     if seed:
         cmd.extend(["--seed", str(seed)])
