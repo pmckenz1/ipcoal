@@ -153,11 +153,11 @@ def infer_raxml_ng_tree(
     >>> tree.draw();
     """
     fname = _write_tmp_phylip_file(model, idxs, diploid)
-    args = dict(
+    kwargs = dict(
         alignment=fname, nboots=nboots, nthreads=nthreads, 
         nworkers=nworkers, seed=seed, subst_model=subst_model,
         binary_path=binary_path, no_files=no_files)
-    tree = infer_raxml_ng_tree_from_phylip(*args)
+    tree = infer_raxml_ng_tree_from_phylip(**kwargs)
     for tmp in fname.parent.glob(fname.name + "*"):
         tmp.unlink()
     return tree
