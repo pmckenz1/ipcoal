@@ -186,6 +186,12 @@ def infer_raxml_ng_trees(
         Number of threads used for parallelization.
     binary_path: None, str, or Path
         Path to the ASTRAL binary that is called by `java -jar binary`.
+
+    Note
+    ----
+    The parallelization does not provide a significant speedup if the
+    inference jobs take less than one second or so to run, since the
+    setup of writing/organizing files takes time as well.
     """
     assert model.seqs.ndim == 3, "must first call Model.sim_loci."
 
@@ -197,6 +203,8 @@ def infer_raxml_ng_trees(
     rng = np.random.default_rng(seed)
     empty = 0
     rasyncs = {}
+
+    # TODO: asynchrony so that writing and processing are not limited.
     with ProcessPoolExecutor(max_workers=ncores) as pool:
         for lidx in model.df.locus.unique():
             locus = model.df[model.df.locus == lidx]
@@ -213,7 +221,6 @@ def infer_raxml_ng_trees(
                 kwargs['seed'] = rng.integers(1e12)
                 rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
                 rasyncs[lidx] = rasync
-            print(lidx)
 
     # log report of empty windows.
     if empty:
