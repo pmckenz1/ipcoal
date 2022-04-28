@@ -35,6 +35,7 @@ def _write_tmp_phylip_file(
     model: ipcoal.Model,
     idxs: Union[int, Sequence[int], None]=None,
     diploid: bool=False,
+    tmpdir: Optional[Path]=None,
     ) -> Path:
     """Write concat matrix to a random/tmp named file and return Path.
 
@@ -43,7 +44,7 @@ def _write_tmp_phylip_file(
     be passed to the other function. This makes it easier to pickle
     the arguments and parallelize it.
     """
-    with tempfile.NamedTemporaryFile() as tmp:
+    with tempfile.NamedTemporaryFile(dir=tmpdir) as tmp:
         model.write_concat_to_phylip(
             name=tmp.name,
             outdir=tempfile.gettempdir(),
@@ -57,10 +58,12 @@ def _write_tmp_phylip_file(
 def infer_raxml_ng_tree_from_phylip(
     alignment: Union[str, Path],
     nboots: int=0,
-    nthreads: int=1,
+    nthreads: int=4,
+    nworkers: int=4,
     seed: Optional[int]=None,
     subst_model: str="GTR+G",
     binary_path: Union[str, Path]=None,
+    no_files: bool=False,
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng.
     """
@@ -76,9 +79,12 @@ def infer_raxml_ng_tree_from_phylip(
         "--model", str(subst_model),
         "--redo",
         "--threads", str(nthreads),
+        "--workers", str(nworkers),
     ]
     if seed:
         cmd.extend(["--seed", str(seed)])
+    # if no_files:
+        # cmd.extend(["--nofiles"])
     if nboots:
         cmd.extend(["--all", "--bs-trees", str(nboots)])
         treefile = fname.with_suffix(".phy.raxml.support")
@@ -90,8 +96,13 @@ def infer_raxml_ng_tree_from_phylip(
         if proc.returncode:
             raise IpcoalError(out.decode())
 
-    # parse result and cleanup tmpfiles.
+    # parse result from treefile or stdout if no_files
+    # if no_files:
+        # return out
+    # else:
     tree = toytree.tree(treefile)
+
+    # cleanup tmpfiles.        
     for tmp in fname.parent.glob(fname.name + "*"):
         tmp.unlink()    
     return tree
@@ -100,11 +111,13 @@ def infer_raxml_ng_tree(
     model: ipcoal.Model,
     idxs: Union[int, Sequence[int], None]=None,
     nboots: int=0,
-    nthreads: int=1,
+    nthreads: int=4,
+    nworkers: Optional[int]=None,
     seed: int=None,
     diploid: bool=False,
     subst_model: str="GTR+G",
     binary_path: Union[str, Path]=None,
+    no_files: bool=False,    
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng.
 
@@ -140,7 +153,10 @@ def infer_raxml_ng_tree(
     >>> tree.draw();
     """
     fname = _write_tmp_phylip_file(model, idxs, diploid)
-    args = (fname, nboots, nthreads, seed, subst_model, binary_path)
+    args = dict(
+        alignment=fname, nboots=nboots, nthreads=nthreads, 
+        nworkers=nworkers, seed=seed, subst_model=subst_model,
+        binary_path=binary_path, no_files=no_files)
     tree = infer_raxml_ng_tree_from_phylip(*args)
     for tmp in fname.parent.glob(fname.name + "*"):
         tmp.unlink()
@@ -155,12 +171,14 @@ def infer_raxml_ng_tree(
 def infer_raxml_ng_trees(
     model: ipcoal.Model,
     nboots: int=0,
-    nthreads: int=1,
+    nproc: int=1,
     seed: int=None,
     diploid: bool=False,
     subst_model: str="GTR+G",
     binary_path: Union[str, Path]=None,
-    ncores: int=4,
+    tmpdir: Optional[Path]=None,
+    nthreads: int=4,
+    nworkers: int=4,
     ) -> pd.DataFrame:
     """Return a DataFrame w/ inferred gene trees at every locus.
 
@@ -184,8 +202,16 @@ def infer_raxml_ng_trees(
         Number of bootstrap replicates to run.
     nthreads: int
         Number of threads used for parallelization.
+    seed: int or None
+        ...
+    subst_model: str
+        ...
     binary_path: None, str, or Path
         Path to the ASTRAL binary that is called by `java -jar binary`.
+    nworkers: int
+        ...
+    tmpdir: Path or None
+        Path to store temporary files. Default is tempdir (/tmp).
 
     Note
     ----
@@ -196,7 +222,8 @@ def infer_raxml_ng_trees(
     assert model.seqs.ndim == 3, "must first call Model.sim_loci."
 
     # store arguments to infer method
-    kwargs = dict(nboots=nboots, nthreads=nthreads,
+    kwargs = dict(
+        nboots=nboots, nthreads=nthreads, nworkers=nworkers,
         seed=seed, subst_model=subst_model, binary_path=binary_path)
 
     # distribute jobs in parallel
@@ -205,7 +232,7 @@ def infer_raxml_ng_trees(
     rasyncs = {}
 
     # TODO: asynchrony so that writing and processing are not limited.
-    with ProcessPoolExecutor(max_workers=ncores) as pool:
+    with ProcessPoolExecutor(max_workers=nproc) as pool:
         for lidx in model.df.locus.unique():
             locus = model.df[model.df.locus == lidx]
 
@@ -216,11 +243,13 @@ def infer_raxml_ng_trees(
                 rasyncs[lidx] = tree.write(None)
                 empty += 1
             else:
-                fname = _write_tmp_phylip_file(model, int(lidx), diploid)
+                fname = _write_tmp_phylip_file(model, int(lidx), diploid, tmpdir)
                 kwargs['alignment'] = fname
                 kwargs['seed'] = rng.integers(1e12)
                 rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
                 rasyncs[lidx] = rasync
+            # if not lidx % 100:
+                # print(lidx)
 
     # log report of empty windows.
     if empty:
@@ -239,70 +268,6 @@ def infer_raxml_ng_trees(
         rasyncs[i].result().write() for i in sorted(rasyncs)
     ]
     return data
-
-
-def infer_raxml_ng_trees_from_phylip(
-    alignments: Sequence[Path],
-    nboots: int=0,
-    nthreads: int=1,
-    seed: int=None,
-    diploid: bool=False,
-    subst_model: str="GTR+G",
-    binary_path: Union[str, Path]=None,
-    ncores: int=4,
-    ) -> pd.DataFrame:
-    """Return a DataFrame w/ inferred gene trees at every locus.
-
-    Sequence data is extracted from the model.seqs array and written
-    as concatenated data to a phylip file, either for individual
-    haplotypes or diploid genotypes if diploid=True. If `idxs=None`
-    all data is concatenated, else a subset of one or more loci can
-    be selected to be concatenated.
-
-    CMD: raxml-ng --all --msa {phy} --subst_model {GTR+G} --redo
-
-    Parameters
-    ----------
-    model: str or Path
-        An ipcoal.Model object with simulated locus data.
-    idxs: Sequence[int], int or None
-        The index of one or more loci from an `ipcoal.Model.sim_loci`
-        dataset which will be concatenated and passed to raxml. If
-        None then all loci are concatenated.
-    nboots: int
-        Number of bootstrap replicates to run.
-    nthreads: int
-        Number of threads used for parallelization.
-    binary_path: None, str, or Path
-        Path to the ASTRAL binary that is called by `java -jar binary`.
-    """
-    # store arguments to infer method
-    kwargs = dict(
-        nboots=nboots, nthreads=nthreads,
-        seed=seed, subst_model=subst_model, binary_path=binary_path)
-
-    # distribute jobs in parallel
-    rng = np.random.default_rng(seed)
-    empty = 0
-    rasyncs = {}
-    with ProcessPoolExecutor(max_workers=ncores) as pool:
-        for lidx, path in enumerate(alignments):
-            kwargs['alignment'] = str(path)
-            kwargs['seed'] = rng.integers(1e12)
-            rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
-            rasyncs[lidx] = rasync
-
-    # create results as a dataframe
-    data = (model.df
-        .groupby("locus")
-        .agg({"start": "min", "end": "max", "nbps": "sum", "nsnps": "sum"})
-        .reset_index()
-    )
-    data['gene_tree'] = [
-        rasyncs[i] if isinstance(rasyncs[i], str) else
-        rasyncs[i].result().write() for i in sorted(rasyncs)
-    ]
-    return data    
 
 
 if __name__ == "__main__":
