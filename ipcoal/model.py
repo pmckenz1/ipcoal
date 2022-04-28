@@ -19,6 +19,7 @@ from loguru import logger
 from ipcoal.io.writer import Writer
 from ipcoal.io.transformer import Transformer
 from ipcoal.draw.seqview import draw_seqview
+from ipcoal.core import sim_trees, sim_loci, sim_snps
 # from ipcoal.utils.utils import calculate_pairwise_dist
 # from ipcoal.phylo.TreeInfer import TreeInfer
 from ipcoal.utils.utils import get_admix_interval_as_gens, IpcoalError
@@ -811,56 +812,7 @@ class Model:
         >>> mod.sim_trees(nloci=1, nsites=1000)
         >>> mod.df
         """
-        # check conflicting args
-        if self._recomb_is_map:
-            if nsites:
-                raise IpcoalError(
-                    "Both nsites and recomb_map cannot be used together since"
-                    "the recomb_map also specifies nsites. To use a recomb_map"
-                    "specify nsites=None.")
-            nsites = self.recomb.sequence_length
-
-        datalist = []
-        for lidx in range(nloci):
-            msgen = self._get_tree_sequence_generator(nsites)
-            tree_seq = next(msgen)
-            breaks = [int(i) for i in tree_seq.breakpoints()]
-            starts = breaks[0:len(breaks) - 1]
-            ends = breaks[1:len(breaks)]
-            lengths = [i - j for (i, j) in zip(ends, starts)]
-
-            data = pd.DataFrame({
-                "start": starts,
-                "end": ends,
-                "nbps": lengths,
-                "nsnps": 0,
-                "tidx": 0,
-                "locus": lidx,
-                "genealogy": "",
-                },
-                columns=[
-                    'locus', 'start', 'end', 'nbps',
-                    'nsnps', 'tidx', 'genealogy'
-                ],
-            )
-
-            # iterate over the index of the dataframe to sim for each genealogy
-            for mstree in tree_seq.trees():
-                # convert nwk to original names
-                nwk = mstree.newick(node_labels=self.tipdict, precision=precision)
-                data.loc[mstree.index, "genealogy"] = nwk
-                data.loc[mstree.index, "tidx"] = mstree.index
-            datalist.append(data)
-
-            # store the tree_sequence
-            if self.store_tree_sequences:
-                self.ts_dict[lidx] = tree_seq
-
-        # concatenate all of the genetree dfs
-        data = pd.concat(datalist)
-        data = data.reset_index(drop=True)
-        self.df = data
-        self.seqs = np.array([])
+        sim_trees(self, nloci, nsites, precision)
 
     def sim_loci(
         self,
@@ -893,99 +845,7 @@ class Model:
         >>> model.sim_loci(nloci=10, nsites=1000)
         >>> model.write_loci_to_phylip(outdir="/tmp")
         """
-        # check conflicting args
-        if self._recomb_is_map:
-            if nsites:
-                raise IpcoalError(
-                    "Both nsites and recomb_map cannot be used together since"
-                    "the recomb_map also specifies nsites. To use a recomb_map"
-                    "specify nsites=None.")
-            nsites = self.recomb.sequence_length
-
-        # allow scientific notation, e.g., 1e6
-        nsites = int(nsites)
-        nloci = int(nloci)
-
-        # multidimensional array of sequence arrays to fill
-        aseqarr = np.zeros((nloci, nsites), dtype=np.uint8)
-        seqarr = np.zeros((nloci, self.nstips, nsites), dtype=np.uint8)
-
-        # a list to be concatenated into the final dataframe of genealogies
-        datalist = []
-        for lidx in range(nloci):
-            msgen = self._get_tree_sequence_generator(nsites)
-            tree_seq = next(msgen)
-            breaks = [int(i) for i in tree_seq.breakpoints()]
-            starts = breaks[0:len(breaks) - 1]
-            ends = breaks[1:len(breaks)]
-            lengths = [i - j for (i, j) in zip(ends, starts)]
-
-            data = pd.DataFrame({
-                "start": starts,
-                "end": ends,
-                "nbps": lengths,
-                "nsnps": 0,
-                "tidx": 0,
-                "locus": lidx,
-                "genealogy": "",
-                },
-                columns=[
-                    'locus', 'start', 'end', 'nbps',
-                    'nsnps', 'tidx', 'genealogy'
-                ],
-            )
-
-            # mutate the tree sequence
-            mutated_ts = ms.sim_mutations(
-                tree_sequence=tree_seq,
-                rate=self.mut,
-                model=self.subst_model,
-                random_seed=self.rng_muts.integers(2**31),
-                discrete_genome=True,
-            )
-            # iterate over the index of the dataframe to store each genealogy
-            for mstree in mutated_ts.trees():
-                nwk = mstree.newick(node_labels=self.tipdict, precision=precision)
-                data.loc[mstree.index, "genealogy"] = nwk
-                data.loc[mstree.index, "tidx"] = mstree.index
-                data.loc[mstree.index, "nsnps"] = sum(1 for i in mstree.sites())
-
-            # get genotype array and count nsnps
-            genos = mutated_ts.genotype_matrix(alleles=self._alleles)
-
-            # get an ancestral array with same root frequencies
-            aseqarr[lidx] = self.rng_muts.choice(
-                range(len(self.subst_model.alleles)),
-                size=nsites,
-                replace=True,
-                p=self.subst_model.root_distribution,
-            )
-            seqarr[lidx, :, :] = aseqarr[lidx].copy()
-
-            # impute mutated genos into aseq at variant sites
-            for var in mutated_ts.variants():
-                pos = int(var.site.position)
-                aseqarr[lidx, pos] = self._alleles.index(var.site.ancestral_state)
-                seqarr[lidx, :, pos] = genos[var.index]
-
-            # store the dataframe
-            datalist.append(data)
-
-            # store the tree_sequence
-            if self.store_tree_sequences:
-                self.ts_dict[lidx] = mutated_ts
-
-        # concatenate all of the genetree dfs
-        data = pd.concat(datalist)
-        data = data.reset_index(drop=True)
-
-        # store values to object
-        self.df = data
-        self.seqs = seqarr[:, self._reorder]
-        self.ancestral_seq = aseqarr
-
-        # reset random seeds
-        self._reset_random_generators()
+        sim_loci(self, nloci, nsites, precision)
 
     def sim_snps(
         self,
@@ -1054,117 +914,12 @@ class Model:
         >>> model.sim_snps(nsnps=10)
         >>> model.draw_seqview()
         """
-        # allow scientific notation, e.g., 1e6
-        nsnps = int(nsnps)
-
-        # get min and set max_mutations minimum to 1
-        max_mutations = (max_mutations if max_mutations else 100000)
-        max_alleles = (max_alleles if max_alleles else 100000)
-        assert min_mutations > 0, "min_mutations must be >=1"
-        assert max_alleles >= min_alleles, "max_alleles must be >= min_alleles"
-
-        # get infinite-ish TreeSequence generator
-        msgen = self._get_tree_sequence_generator(1, snp=True)
-
-        # store results (nsnps, ntips); def. 1000 SNPs
-        newicks = []
-        snpidx = 0
-        snparr = np.zeros((self.nstips, nsnps), dtype=np.uint8)
-        ancarr = np.zeros(nsnps, np.uint8)
-
-        # continue until we get nsnps
-        while 1:
-
-            # bail out if nsnps finished
-            if snpidx == nsnps:
-                break
-
-            # get next tree from tree_sequence generator
-            treeseq = next(msgen)
-
-            # try to land a mutation
-            mutated_ts = ms.sim_mutations(
-                tree_sequence=treeseq,
-                rate=self.mut,
-                model=self.subst_model,
-                random_seed=self.rng_muts.integers(2**31),
-                discrete_genome=True,
-            )
-
-            # if repeat_on_trees then keep sim'n til we get a SNP
-            if repeat_on_trees:
-                while 1:
-                    mutated_ts = ms.sim_mutations(
-                        tree_sequence=treeseq,
-                        rate=self.mut,
-                        model=self.subst_model,
-                        random_seed=self.rng_muts.integers(2**31),
-                        discrete_genome=True,
-                    )
-                    try:
-                        variant = next(mutated_ts.variants())
-                    except StopIteration:
-                        continue
-                    if not max_mutations >= len(variant.site.mutations) >= min_mutations:                        
-                        continue
-                    if not max_alleles >= variant.num_alleles >= min_alleles:
-                        continue
-                    break
-
-            # otherwise simply require >1 mutation and >1 alleles
-            else:
-                try:
-                    variant = next(mutated_ts.variants())
-                except StopIteration:
-                    continue
-                # number of mutations (0, 1, or >1)
-                if not max_mutations >= len(variant.site.mutations) >= min_mutations:
-                    continue
-                # number of alleles 
-                if not max_alleles >= variant.num_alleles >= min_alleles:
-                    continue
-
-            # Store result and advance counter
-            snparr[:, snpidx] = mutated_ts.genotype_matrix(alleles=self._alleles)
-            ancarr[snpidx] = self._alleles.index(variant.site.ancestral_state)
-
-            # store the newick string
-            newicks.append(
-                treeseq.first().newick(
-                    node_labels=self.tipdict,
-                    precision=precision,
-                )
-            )
-
-            # store the tree_sequence
-            if self.store_tree_sequences:
-                self.ts_dict[snpidx] = mutated_ts
-
-            # advance counter
-            snpidx += 1
-
-        # init dataframe
-        self.df = pd.DataFrame({
-            "start": 0,
-            "end": 1,
-            "genealogy": newicks,
-            "nbps": 1,
-            "nsnps": 1,
-            "tidx": 0,
-            "locus": range(nsnps),
-            },
-            columns=[
-                'locus', 'start', 'end', 'nbps',
-                'nsnps', 'tidx', 'genealogy',
-            ],
+        sim_snps(
+            model=self, nsnps=nsnps, 
+            min_alleles=min_alleles, max_alleles=max_alleles,
+            min_mutations=min_mutations, max_mutations=max_mutations,
+            repeat_on_trees=repeat_on_trees, precision=precision,
         )
-
-        # reorder rows to be alphanumeric sorted.
-        self.seqs = snparr[self._reorder]
-        self.ancestral_seq = ancarr
-
-        # reset random seeds
-        self._reset_random_generators()
 
     # ---------------------------------------------------------------
     # i/o methods.
