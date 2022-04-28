@@ -213,6 +213,7 @@ def infer_raxml_ng_trees(
                 kwargs['seed'] = rng.integers(1e12)
                 rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
                 rasyncs[lidx] = rasync
+            print(lidx)
 
     # log report of empty windows.
     if empty:
@@ -232,6 +233,69 @@ def infer_raxml_ng_trees(
     ]
     return data
 
+
+def infer_raxml_ng_trees_from_phylip(
+    alignments: Sequence[Path],
+    nboots: int=0,
+    nthreads: int=1,
+    seed: int=None,
+    diploid: bool=False,
+    subst_model: str="GTR+G",
+    binary_path: Union[str, Path]=None,
+    ncores: int=4,
+    ) -> pd.DataFrame:
+    """Return a DataFrame w/ inferred gene trees at every locus.
+
+    Sequence data is extracted from the model.seqs array and written
+    as concatenated data to a phylip file, either for individual
+    haplotypes or diploid genotypes if diploid=True. If `idxs=None`
+    all data is concatenated, else a subset of one or more loci can
+    be selected to be concatenated.
+
+    CMD: raxml-ng --all --msa {phy} --subst_model {GTR+G} --redo
+
+    Parameters
+    ----------
+    model: str or Path
+        An ipcoal.Model object with simulated locus data.
+    idxs: Sequence[int], int or None
+        The index of one or more loci from an `ipcoal.Model.sim_loci`
+        dataset which will be concatenated and passed to raxml. If
+        None then all loci are concatenated.
+    nboots: int
+        Number of bootstrap replicates to run.
+    nthreads: int
+        Number of threads used for parallelization.
+    binary_path: None, str, or Path
+        Path to the ASTRAL binary that is called by `java -jar binary`.
+    """
+    # store arguments to infer method
+    kwargs = dict(
+        nboots=nboots, nthreads=nthreads,
+        seed=seed, subst_model=subst_model, binary_path=binary_path)
+
+    # distribute jobs in parallel
+    rng = np.random.default_rng(seed)
+    empty = 0
+    rasyncs = {}
+    with ProcessPoolExecutor(max_workers=ncores) as pool:
+        for lidx, path in enumerate(alignments):
+            kwargs['alignment'] = str(path)
+            kwargs['seed'] = rng.integers(1e12)
+            rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
+            rasyncs[lidx] = rasync
+
+    # create results as a dataframe
+    data = (model.df
+        .groupby("locus")
+        .agg({"start": "min", "end": "max", "nbps": "sum", "nsnps": "sum"})
+        .reset_index()
+    )
+    data['gene_tree'] = [
+        rasyncs[i] if isinstance(rasyncs[i], str) else
+        rasyncs[i].result().write() for i in sorted(rasyncs)
+    ]
+    return data    
 
 
 if __name__ == "__main__":
