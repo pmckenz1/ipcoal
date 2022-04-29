@@ -63,7 +63,6 @@ def infer_raxml_ng_tree_from_phylip(
     seed: Optional[int]=None,
     subst_model: str="GTR+G",
     binary_path: Union[str, Path]=None,
-    no_files: bool=False,
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng.
     """
@@ -80,11 +79,10 @@ def infer_raxml_ng_tree_from_phylip(
         "--redo",
         "--threads", str(nthreads),
         "--workers", str(nworkers) if nworkers else 'auto',
+        "--nofiles", "interim",
     ]
     if seed:
         cmd.extend(["--seed", str(seed)])
-    # if no_files:
-        # cmd.extend(["--nofiles"])
     if nboots:
         cmd.extend(["--all", "--bs-trees", str(nboots)])
         treefile = fname.with_suffix(".phy.raxml.support")
@@ -96,15 +94,10 @@ def infer_raxml_ng_tree_from_phylip(
         if proc.returncode:
             raise IpcoalError(out.decode())
 
-    # parse result from treefile or stdout if no_files
-    # if no_files:
-        # return out
-    # else:
+    # parse result from treefile and cleanup
     tree = toytree.tree(treefile)
-
-    # cleanup tmpfiles.        
     for tmp in fname.parent.glob(fname.name + "*"):
-        tmp.unlink()    
+        tmp.unlink()
     return tree
 
 def infer_raxml_ng_tree(
@@ -117,7 +110,6 @@ def infer_raxml_ng_tree(
     diploid: bool=False,
     subst_model: str="GTR+G",
     binary_path: Union[str, Path]=None,
-    no_files: bool=False,
     tmpdir: Optional[Path]=None,
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng.
@@ -155,9 +147,9 @@ def infer_raxml_ng_tree(
     """
     fname = _write_tmp_phylip_file(model, idxs, diploid, tmpdir)
     kwargs = dict(
-        alignment=fname, nboots=nboots, nthreads=nthreads, 
+        alignment=fname, nboots=nboots, nthreads=nthreads,
         nworkers=nworkers, seed=seed, subst_model=subst_model,
-        binary_path=binary_path, no_files=no_files)
+        binary_path=binary_path)
     tree = infer_raxml_ng_tree_from_phylip(**kwargs)
     for tmp in fname.parent.glob(fname.name + "*"):
         tmp.unlink()
