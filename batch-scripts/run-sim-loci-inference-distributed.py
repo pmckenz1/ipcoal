@@ -177,14 +177,14 @@ if __name__ == "__main__":
 
     # distribute jobs over all params except NLOCI (pass whole list).
     SEEDS = np.random.default_rng(123).integers(1e12, size=args.nreps)
-    for neff in args.neff:
-        for recomb in args.recomb:
+    for nsites in args.nsites:
+        for neff in args.neff:
             for ctime in args.ctime:
-                for rep in range(args.nreps):
-                    for nsites in args.nsites:
+                for recomb in args.recomb:                
+                    for rep in range(args.nreps):
+
                         # for nloci in args.nloci:
                         # gtime = int(ctime * 4 * neff)
-
                         write_and_submit_sbatch_script(
                             neff=neff,
                             ctime=ctime, 
