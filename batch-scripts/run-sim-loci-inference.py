@@ -151,7 +151,6 @@ def single_command_line_parser():
 
 if __name__ == "__main__":
 
-    # argv = "--tree '((a,b),c);' --neff 200 --ctime 100 --recomb 1e-8 --mut 5e-8 --nsites 100 --nloci 10 --rep 0 --seed 123 --outdir . --ncores 2"
     args = single_command_line_parser()
 
     IMBTREE = toytree.rtree.imbtree(ntips=5)

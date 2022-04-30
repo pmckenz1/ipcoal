@@ -27,7 +27,7 @@ SBATCH = """\
 #SBATCH --ntasks={ncores}
 #SBATCH --mem=12G
 
-python run-sim-loci-inference.py \
+python {root}/run-sim-loci-inference.py \
 --neff {neff} \
 --ctime {ctime} \
 --mut {mut} \
@@ -83,6 +83,7 @@ def write_and_submit_sbatch_script(
         node_heights=" ".join([str(i) for i in node_heights]),
         raxml_bin=raxml_bin,
         outdir=str(outdir),
+        root=str(Path(__file__).parent),
     ))
     # print(sbatch)
     # return
