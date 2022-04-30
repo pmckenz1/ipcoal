@@ -190,5 +190,5 @@ if __name__ == "__main__":
                             node_heights=args.node_heights,
                             raxml_bin=RAXML_BIN,
                         )
-                        time.sleep(0.1)
+                        time.sleep(1)
     print(f"{njobs} jobs submitted.")
