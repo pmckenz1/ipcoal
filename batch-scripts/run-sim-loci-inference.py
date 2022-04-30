@@ -1,0 +1,180 @@
+#!/usr/bin/env python
+
+"""Recombination effects on MSC inference.
+
+This Python script includes code to run a simulation routine, to 
+accept arguments from the command line to parameterize this function,
+and to distribute job submissions of this script to SLURM over 
+hundreds of combination of parameter settings.
+
+This script sets up a total of 6400 jobs across different parameter
+combinations, each of which takes a few hours to run, so it is a 
+good idea to use HPC to run this.
+
+Example
+-------
+>>> python run-sim-loci-inference-distributed.py  \
+>>>     --ncores 2 \
+>>>     --nreps 100 \
+>>>     --nsites 2000 10000 \
+>>>     --popsizes 1e4 1e5 \
+>>>     --ctimes 0.1 0.2 0.3 0.4 0.5 0.75 1.0 1.25 \
+>>>     --mut 5e-8 \
+>>>     --recomb 0 5e-9 \
+>>>     --tree (E:1,(D:0.06,(C:0.055,(B:0.01,A:0.01):0.045):0.005):0.94); \
+>>>     --bindir /home/deren/miniconda3/ \
+>>>     --outdir /scratch/recomb/ \
+>>>     --account dsi
+
+Authors: Deren Eaton and Patrick McKenzie
+"""
+
+import sys
+from typing import List
+import argparse
+from pathlib import Path
+import toytree
+import ipcoal
+
+
+def run_sim_loci_inference(
+    tree: toytree.ToyTree,
+    ctime: int,
+    recomb: float,
+    mut: float,
+    neff: int,
+    rep: int,
+    seed: int,
+    nsites: int,
+    outdir: Path,
+    ncores: int,
+    nloci: List[int],
+    raxml_bin: Path,
+    ):
+    """Writes simulated genealogies and inference results to WORKDIR.
+
+    This only nees to be run for the largest NLOCI value.    
+    """
+    # create name for this job based on params
+    params = (
+        f"neff{int(neff)}-ctime{ctime}-"
+        f"recomb{int(bool(recomb))}-rep{rep}-"
+        f"nloci{max(nloci)}-nsites{nsites}"
+    )
+    locpath = outdir / (params + "-sim-loci.csv")
+    gtpath = outdir / (params + "-gene-trees.csv")
+
+    # scale species tree to a new root height in generations
+    root_in_gens = ctime * 4 * neff
+    sptree = tree.mod.edges_scale_to_root_height(root_in_gens)
+
+    # init coal Model
+    model = ipcoal.Model(
+        sptree, 
+        Ne=neff, 
+        seed_trees=seed,
+        seed_mutations=seed,
+        mut=mut,
+        recomb=recomb
+    )
+
+    # simulate the largest size dataset of NLOCI
+    model.sim_loci(nloci=max(nloci), nsites=nsites)
+    model.df.to_csv(locpath)
+    
+    # infer gene trees for every locus and write to CSV
+    raxdf = ipcoal.phylo.infer_raxml_ng_trees(
+        model, 
+        nproc=ncores, 
+        nworkers=1, 
+        nthreads=1,
+        seed=seed,
+        binary_path=raxml_bin,
+    )
+    raxdf.to_csv(gtpath)
+
+    # infer concatenation tree for each NLOCI size
+    for numloci in sorted(nloci):
+        numloci = int(numloci)
+        ctree = ipcoal.phylo.infer_raxml_ng_tree(
+            model, 
+            idxs=list(range(0, numloci)),
+            nworkers=1, 
+            nthreads=ncores, 
+            seed=seed,
+            binary_path=raxml_bin,
+        )
+        ctree.write(outdir / (params + f"-concat-{numloci}.nwk"))
+    return raxdf
+
+
+def single_command_line_parser():
+    """Parse command line arguments and return.
+
+    Example
+    -------
+    >>> python run-sim-loci-inference.py --neff 100000 \
+    >>> --ctime 1.5 --recomb 5e-08 --nsites 2000 --nloci 20000 --rep 81
+    """
+    parser = argparse.ArgumentParser(
+        description='Coalescent simulation and tree inference w/ recombination')
+    parser.add_argument(
+        '--neff', type=float, required=True, help='Effective population size')
+    parser.add_argument(
+        '--ctime', type=float, required=True, help='Root species tree height in coal units.')
+    parser.add_argument(
+        '--recomb', type=float, required=True, help='Recombination rate.')
+    parser.add_argument(
+        '--mut', type=float, required=True, help='Mutation rate.')
+    parser.add_argument(
+        '--nsites', type=int, required=True, help='length of simulated loci')
+    parser.add_argument(
+        '--nloci', type=int, nargs="*", required=True, help='Number of independent loci to simulate')
+    parser.add_argument(
+        '--rep', type=int, required=True, help='replicate id.')
+    parser.add_argument(
+        '--seed', type=int, required=True, help='random seed.')
+    parser.add_argument(
+        '--outdir', type=Path, required=True, help='directory to write output files (e.g., scratch)')
+    parser.add_argument(
+        '--ncores', type=int, required=True, help='number of cores.')
+    parser.add_argument(
+        '--node-heights', type=float, nargs=4, required=True, help='imbalanced species tree relative node heights.')
+    parser.add_argument(
+        '--raxml-bin', type=Path, help='path to raxml-ng binary')
+    # parser.add_argument(
+    #     '--astral-path', type=Path, help='directory with raxml-ng and astral3 binaries')
+    return parser.parse_args()
+
+
+
+
+if __name__ == "__main__":
+
+    # argv = "--tree '((a,b),c);' --neff 200 --ctime 100 --recomb 1e-8 --mut 5e-8 --nsites 100 --nloci 10 --rep 0 --seed 123 --outdir . --ncores 2"
+    args = single_command_line_parser()
+
+    IMBTREE = toytree.rtree.imbtree(ntips=5)
+    SPTREE = IMBTREE.set_node_data("height", dict(zip(range(5, 9), args.node_heights)))    
+
+    args.raxml_bin = (
+        Path(args.raxml_bin) if args.raxml_bin 
+        else Path(sys.prefix) / "bin" /  "raxml-ng")
+    assert args.raxml_bin.exists(), f"Cannot find {args.raxml_bin}. Use conda instructions."
+
+    Path(args.outdir).mkdir(exist_ok=True)
+
+    run_sim_loci_inference(
+        tree=SPTREE,
+        ctime=args.ctime,
+        recomb=args.recomb,
+        mut=args.mut,
+        neff=args.neff,
+        rep=args.rep,
+        seed=args.seed,
+        nloci=args.nloci,
+        nsites=args.nsites,
+        outdir=args.outdir,
+        ncores=args.ncores,
+        raxml_bin=args.raxml_bin,
+    )
