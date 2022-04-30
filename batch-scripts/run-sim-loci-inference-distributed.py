@@ -2,8 +2,14 @@
 
 """...
 
+This Python script includes code to run a simulation routine, to 
+accept arguments from the command line to parameterize this function,
+and to distribute job submissions of this script to SLURM over 
+hundreds of combination of parameter settings.
 
->>> sbatch {TMPDIR}/{JOBNAME}.sh
+This script sets up a total of 6400 jobs across different parameter
+combinations, each of which takes a few hours to run, so it is a 
+good idea to use HPC to run this.
 
 """
 
@@ -21,8 +27,8 @@ SBATCH = """\
 
 #SBATCH --account={account}
 #SBATCH --job-name={jobname}
-#SBATCH --output={jobname}.out
-#SBATCH --error={jobname}.err
+#SBATCH --output={outpath}.out
+#SBATCH --error={outpath}.err
 #SBATCH --time=11:59:00
 #SBATCH --ntasks={ncores}
 #SBATCH --mem=12G
@@ -82,11 +88,11 @@ def write_and_submit_sbatch_script(
         seed=seed,
         node_heights=" ".join([str(i) for i in node_heights]),
         raxml_bin=raxml_bin,
-        outdir=str(outdir),
+        outdir=outdir,
+        outpath=outdir / params,
         root=str(Path(__file__).parent),
     ))
     # print(sbatch)
-    # return
 
     # write the sbatch shell script
     tmpfile = (outdir / params).with_suffix(".sh")
@@ -126,7 +132,7 @@ def distributed_command_line_parser():
     parser.add_argument(
         '--recomb', type=float, default=[0, 5e-8], nargs=2, help='Recombination rate.')
     parser.add_argument(
-        '--mut', type=float, default=5e-9, nargs=1, help='Mutation rate.')
+        '--mut', type=float, default=5e-9, help='Mutation rate.')
     parser.add_argument(
         '--node-heights', type=float, default=[0.05, 0.055, 0.06, 1], nargs=4, help='Internal relative node heights')
     parser.add_argument(
@@ -167,10 +173,10 @@ if __name__ == "__main__":
     assert RAXML_BIN.exists(), f"cannot find {RAXML_BIN}. Use conda instructions."
 
     # distribute jobs over all params except NLOCI (pass whole list).
+    SEEDS = np.random.default_rng(123).integers(1e12, size=args.nreps)
     for neff in args.neff:
         for recomb in args.recomb:
             for ctime in args.ctime:
-                SEEDS = np.random.default_rng(123).integers(1e12, size=args.nreps)
                 for rep in range(args.nreps):
                     for nsites in args.nsites:
                         # for nloci in args.nloci:

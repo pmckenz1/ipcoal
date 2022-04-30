@@ -2,29 +2,7 @@
 
 """Recombination effects on MSC inference.
 
-This Python script includes code to run a simulation routine, to 
-accept arguments from the command line to parameterize this function,
-and to distribute job submissions of this script to SLURM over 
-hundreds of combination of parameter settings.
 
-This script sets up a total of 6400 jobs across different parameter
-combinations, each of which takes a few hours to run, so it is a 
-good idea to use HPC to run this.
-
-Example
--------
->>> python run-sim-loci-inference-distributed.py  \
->>>     --ncores 2 \
->>>     --nreps 100 \
->>>     --nsites 2000 10000 \
->>>     --popsizes 1e4 1e5 \
->>>     --ctimes 0.1 0.2 0.3 0.4 0.5 0.75 1.0 1.25 \
->>>     --mut 5e-8 \
->>>     --recomb 0 5e-9 \
->>>     --tree (E:1,(D:0.06,(C:0.055,(B:0.01,A:0.01):0.045):0.005):0.94); \
->>>     --bindir /home/deren/miniconda3/ \
->>>     --outdir /scratch/recomb/ \
->>>     --account dsi
 
 Authors: Deren Eaton and Patrick McKenzie
 """
