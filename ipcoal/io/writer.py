@@ -74,9 +74,7 @@ class Writer:
             # check that idxs exist
             for loc in np.array(self.idxs):
                 if loc not in range(self.seqs.shape[0]):
-                    raise IpcoalError(
-                        "idx {} is not in the data set".format(loc))
-
+                    raise IpcoalError(f"idx {loc} is not in the data set")
             # subset self.seqs to selected loci
             idxs = np.array(sorted(self.idxs))
             self.seqs = self.seqs[idxs]

@@ -24,4 +24,5 @@ import ipcoal.phylo
 
 # start the logger at log_level WARNING
 from ipcoal.utils.logger_setup import set_log_level
+from ipcoal.utils.utils import IpcoalError
 set_log_level("WARNING")
