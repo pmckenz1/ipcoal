@@ -59,7 +59,7 @@ def run_sim_loci_inference(
 
     # simulate the largest size dataset of NLOCI
     model.sim_loci(nloci=max(nloci), nsites=nsites)
-    model.df.to_csv(locpath)
+    # model.df.to_csv(locpath)  # uncomment to save genealogies
     
     # infer gene trees for every locus and write to CSV
     raxdf = ipcoal.phylo.infer_raxml_ng_trees(
@@ -70,7 +70,7 @@ def run_sim_loci_inference(
         seed=seed,
         binary_path=raxml_bin,
     )
-    raxdf.to_csv(gtpath)
+    # raxdf.to_csv(gtpath)  # uncomment to save gene trees
 
     # iterate over subsample sizes of NLOCI 
     for numloci in sorted(nloci):
