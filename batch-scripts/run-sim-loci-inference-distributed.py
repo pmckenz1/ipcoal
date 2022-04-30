@@ -46,6 +46,7 @@ python {root}/run-sim-loci-inference.py \
 --ncores {ncores} \
 --node-heights {node_heights} \
 --raxml-bin {raxml_bin} \
+--astral-bin {astral_bin} \
 --outdir {outdir}
 """
 
@@ -64,6 +65,7 @@ def write_and_submit_sbatch_script(
     account: str,
     node_heights: List[float],
     raxml_bin: Path,
+    astral_bin: Path,    
     ):
     """Submit an sbatch job to the cluster with these params."""
     # build parameter name string
@@ -88,6 +90,7 @@ def write_and_submit_sbatch_script(
         seed=seed,
         node_heights=" ".join([str(i) for i in node_heights]),
         raxml_bin=raxml_bin,
+        astral_bin=astral_bin,
         outdir=outdir,
         outpath=outdir / params,
         root=str(Path(__file__).parent),
@@ -196,6 +199,7 @@ if __name__ == "__main__":
                             account=args.account,
                             node_heights=args.node_heights,
                             raxml_bin=RAXML_BIN,
+                            astral_bin=ASTRAL_BIN,                            
                         )
                         time.sleep(1)
     print(f"{njobs} jobs submitted.")

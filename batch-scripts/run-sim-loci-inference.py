@@ -28,6 +28,7 @@ def run_sim_loci_inference(
     ncores: int,
     nloci: List[int],
     raxml_bin: Path,
+    astral_bin: Path,
     ):
     """Writes simulated genealogies and inference results to WORKDIR.
 
@@ -71,9 +72,11 @@ def run_sim_loci_inference(
     )
     raxdf.to_csv(gtpath)
 
-    # infer concatenation tree for each NLOCI size
+    # iterate over subsample sizes of NLOCI 
     for numloci in sorted(nloci):
         numloci = int(numloci)
+
+        # infer a concatenation tree
         ctree = ipcoal.phylo.infer_raxml_ng_tree(
             model, 
             idxs=list(range(0, numloci)),
@@ -82,8 +85,26 @@ def run_sim_loci_inference(
             seed=seed,
             binary_path=raxml_bin,
         )
-        ctree.write(outdir / (params + f"-concat-{numloci}.nwk"))
-    return raxdf
+        ctree.write(outdir / (params + f"-concat-subloci{numloci}.nwk"))
+
+        # infer astral species tree from true genealogies (the first)
+        # genealogy at each locus, since subsequent trees are recomb...
+        genealogies = model.df.loc[model.df.tidx == 0].genealogy
+        atree1 = ipcoal.phylo.infer_astral_tree(
+            toytree.mtree(genealogies),
+            binary_path=astral_bin,
+            seed=seed,            
+        )
+        atree1.write(outdir / (params + f"-astral-genealogy-subloci{numloci}.nwk"))
+
+        # infer astral species tree from true genealogies (the first)
+        # genealogy at each locus, since subsequent trees are recomb...
+        atree2 = ipcoal.phylo.infer_astral_tree(
+            toytree.mtree(raxdf.gene_tree),
+            binary_path=astral_bin,
+            seed=seed,            
+        )
+        atree2.write(outdir / (params + f"-astral-genetree-subloci{numloci}.nwk"))
 
 
 def single_command_line_parser():
@@ -120,6 +141,8 @@ def single_command_line_parser():
         '--node-heights', type=float, nargs=4, required=True, help='imbalanced species tree relative node heights.')
     parser.add_argument(
         '--raxml-bin', type=Path, help='path to raxml-ng binary')
+    parser.add_argument(
+        '--astral-bin', type=Path, help='path to astral-III binary')
     # parser.add_argument(
     #     '--astral-path', type=Path, help='directory with raxml-ng and astral3 binaries')
     return parser.parse_args()
@@ -139,6 +162,11 @@ if __name__ == "__main__":
         else Path(sys.prefix) / "bin" /  "raxml-ng")
     assert args.raxml_bin.exists(), f"Cannot find {args.raxml_bin}. Use conda instructions."
 
+    args.astral_bin = (
+        Path(args.astral_bin) if args.astral_bin 
+        else Path(sys.prefix) / "bin" /  "astral.5.7.1.jar")
+    assert args.astral_bin.exists(), f"Cannot find {args.astral_bin}. Use conda instructions."
+
     Path(args.outdir).mkdir(exist_ok=True)
 
     run_sim_loci_inference(
@@ -154,4 +182,5 @@ if __name__ == "__main__":
         outdir=args.outdir,
         ncores=args.ncores,
         raxml_bin=args.raxml_bin,
+        astral_bin=args.astral_bin,        
     )
