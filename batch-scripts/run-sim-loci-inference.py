@@ -31,7 +31,7 @@ def run_sim_loci_inference(
     ):
     """Writes simulated genealogies and inference results to WORKDIR.
 
-    This only nees to be run for the largest NLOCI value.    
+    This only nees to be run for the largest NLOCI value.
     """
     # create name for this job based on params
     params = (
@@ -48,8 +48,8 @@ def run_sim_loci_inference(
 
     # init coal Model
     model = ipcoal.Model(
-        sptree, 
-        Ne=neff, 
+        sptree,
+        Ne=neff,
         seed_trees=seed,
         seed_mutations=seed,
         mut=mut,
@@ -59,30 +59,32 @@ def run_sim_loci_inference(
     # simulate the largest size dataset of NLOCI
     model.sim_loci(nloci=max(nloci), nsites=nsites)
     # model.df.to_csv(locpath)  # uncomment to save genealogies
-    
+
     # infer gene trees for every locus and write to CSV
     raxdf = ipcoal.phylo.infer_raxml_ng_trees(
-        model, 
-        nproc=ncores, 
-        nworkers=1, 
+        model,
+        nproc=ncores,
+        nworkers=1,
         nthreads=1,
         seed=seed,
         binary_path=raxml_bin,
+        tmpdir=outdir,
     )
     # raxdf.to_csv(gtpath)  # uncomment to save gene trees
 
-    # iterate over subsample sizes of NLOCI 
+    # iterate over subsample sizes of NLOCI
     for numloci in sorted(nloci):
         numloci = int(numloci)
 
         # infer a concatenation tree
         ctree = ipcoal.phylo.infer_raxml_ng_tree(
-            model, 
+            model,
             idxs=list(range(0, numloci)),
-            nworkers=1, 
-            nthreads=ncores, 
+            nworkers=1,
+            nthreads=ncores,
             seed=seed,
             binary_path=raxml_bin,
+            tmpdir=outdir,
         )
         ctree.write(outdir / (params + f"-concat-subloci{numloci}.nwk"))
 
@@ -92,7 +94,8 @@ def run_sim_loci_inference(
         atree1 = ipcoal.phylo.infer_astral_tree(
             toytree.mtree(genealogies),
             binary_path=astral_bin,
-            seed=seed,            
+            seed=seed,
+            tmpdir=outdir,
         )
         atree1.write(outdir / (params + f"-astral-genealogy-subloci{numloci}.nwk"))
 
@@ -101,7 +104,8 @@ def run_sim_loci_inference(
         atree2 = ipcoal.phylo.infer_astral_tree(
             toytree.mtree(raxdf.gene_tree),
             binary_path=astral_bin,
-            seed=seed,            
+            seed=seed,
+            tmpdir=outdir,
         )
         atree2.write(outdir / (params + f"-astral-genetree-subloci{numloci}.nwk"))
 
@@ -154,15 +158,15 @@ if __name__ == "__main__":
     args = single_command_line_parser()
 
     IMBTREE = toytree.rtree.imbtree(ntips=5)
-    SPTREE = IMBTREE.set_node_data("height", dict(zip(range(5, 9), args.node_heights)))    
+    SPTREE = IMBTREE.set_node_data("height", dict(zip(range(5, 9), args.node_heights)))
 
     args.raxml_bin = (
-        Path(args.raxml_bin) if args.raxml_bin 
+        Path(args.raxml_bin) if args.raxml_bin
         else Path(sys.prefix) / "bin" /  "raxml-ng")
     assert args.raxml_bin.exists(), f"Cannot find {args.raxml_bin}. Use conda instructions."
 
     args.astral_bin = (
-        Path(args.astral_bin) if args.astral_bin 
+        Path(args.astral_bin) if args.astral_bin
         else Path(sys.prefix) / "bin" /  "astral.5.7.1.jar")
     assert args.astral_bin.exists(), f"Cannot find {args.astral_bin}. Use conda instructions."
 
@@ -181,5 +185,5 @@ if __name__ == "__main__":
         outdir=args.outdir,
         ncores=args.ncores,
         raxml_bin=args.raxml_bin,
-        astral_bin=args.astral_bin,        
+        astral_bin=args.astral_bin,
     )
