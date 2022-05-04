@@ -200,28 +200,25 @@ if __name__ == "__main__":
                         paths = [args.outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in args.nloci]
                         if all(i.exists() for i in paths):
                             njobs -= 1
-                            # print(f"skipping job {params}, result files exist.")
+                            print(f"skipping job {params}, result files exist.")
                             continue
-                        else:
-                            print(params)
 
-                        # for nloci in args.nloci:
                         # gtime = int(ctime * 4 * neff)
-                        # write_and_submit_sbatch_script(
-                        #     neff=neff,
-                        #     ctime=ctime, 
-                        #     mut=args.mut,
-                        #     recomb=recomb, 
-                        #     nloci=args.nloci,
-                        #     nsites=nsites,
-                        #     rep=rep,
-                        #     seed=SEEDS[rep],
-                        #     ncores=args.ncores,
-                        #     outdir=args.outdir,
-                        #     account=args.account,
-                        #     node_heights=args.node_heights,
-                        #     raxml_bin=RAXML_BIN,
-                        #     astral_bin=ASTRAL_BIN,                            
-                        # )
-                        # time.sleep(0.1)
+                        write_and_submit_sbatch_script(
+                            neff=neff,
+                            ctime=ctime, 
+                            mut=args.mut,
+                            recomb=recomb, 
+                            nloci=args.nloci,
+                            nsites=nsites,
+                            rep=rep,
+                            seed=SEEDS[rep],
+                            ncores=args.ncores,
+                            outdir=args.outdir,
+                            account=args.account,
+                            node_heights=args.node_heights,
+                            raxml_bin=RAXML_BIN,
+                            astral_bin=ASTRAL_BIN,                            
+                        )
+                        time.sleep(0.5)
     print(f"{njobs} jobs submitted.")
