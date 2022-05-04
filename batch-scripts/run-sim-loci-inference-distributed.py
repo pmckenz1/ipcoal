@@ -198,6 +198,8 @@ if __name__ == "__main__":
 
                         # check for existing output files and skip this job if present
                         paths = [args.outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in args.nloci]
+                        for i in paths:
+                            print(i, i.exists())
                         if all(i.exists() for i in paths):
                             print(f"skipping job {params}, result files exist.")
                             continue
