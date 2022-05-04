@@ -34,6 +34,7 @@ def infer_astral_tree(
     annotation: int=3,
     seed: Optional[int]=None,
     imap: Dict[str, Sequence[str]]=None,
+    tmpdir: Optional[Path]=None,
     ) -> toytree.ToyTree:
     """Return tree inferred by astral from a collection of gene trees.
 
@@ -73,8 +74,9 @@ def infer_astral_tree(
     >>> astree = ipcoal.phylo.infer_astral_tree(mtree)
     >>> astree.draw();
     """
+    tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
     assert Path(binary_path).exists(), BINARY_MISSING.format(binary_path)
-    with tempfile.NamedTemporaryFile() as tmpfile:
+    with tempfile.NamedTemporaryFile(dir=tmpdir) as tmpfile:
         fname = Path(tmpfile.name)
 
         # write trees to a file separated by newlines w/o edge lens/labels
@@ -119,4 +121,4 @@ if __name__ == "__main__":
 
     ASTRAL = "/home/deren/miniconda3/envs/ipyrad/bin/astral.5.7.1.jar"
     TREE = infer_astral_tree("/tmp/test.trees", binary_path=ASTRAL)
-    TREE._draw_browser(ts='s', node_labels="support");
+    TREE._draw_browser(ts='s', node_labels="support")

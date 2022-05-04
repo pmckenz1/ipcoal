@@ -44,10 +44,10 @@ def _write_tmp_phylip_file(
     be passed to the other function. This makes it easier to pickle
     the arguments and parallelize it.
     """
+    tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
     with tempfile.NamedTemporaryFile(dir=tmpdir) as tmp:
         model.write_concat_to_phylip(
             name=tmp.name,
-            outdir=tempfile.gettempdir(),
             idxs=idxs,
             diploid=diploid,
             quiet=True,
@@ -266,7 +266,6 @@ def infer_raxml_ng_trees(
 if __name__ == "__main__":
 
     BIN = "/home/deren/miniconda3/envs/ipyrad/bin/raxml-ng"
-
     TREE = toytree.rtree.unittree(ntips=5, seed=123, treeheight=1e6)
     MODEL = ipcoal.Model(TREE, Ne=5e4, subst_model="jc69")
     MODEL.sim_loci(nloci=10, nsites=20)

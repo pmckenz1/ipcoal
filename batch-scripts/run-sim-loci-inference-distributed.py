@@ -48,6 +48,7 @@ python {root}/run-sim-loci-inference.py \
 --raxml-bin {raxml_bin} \
 --astral-bin {astral_bin} \
 --outdir {outdir}
+
 """
 
 
@@ -74,6 +75,12 @@ def write_and_submit_sbatch_script(
         f"recomb{int(bool(recomb))}-rep{rep}-"
         f"nloci{max(nloci)}-nsites{nsites}"
     )
+
+    # check for existing output files and skip this job if present
+    paths = [outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in nloci]
+    if all(i.exists() for i in paths):
+        print(f"skipping job {params}, result files exist.")
+        return 
 
     # expand sbatch shell script with parameters
     sbatch = SBATCH.format(**dict(
@@ -117,14 +124,13 @@ def distributed_command_line_parser():
     >>>     --ncores 2 \
     >>>     --nreps 100 \
     >>>     --nsites 2000 10000 \
-    >>>     --popsizes 1e4 1e5 \
+    >>>     --neff 1e4 1e5 \
     >>>     --ctimes 0.1 0.2 0.3 0.4 0.5 0.75 1.0 1.25 \
     >>>     --mut 5e-8 \
     >>>     --recomb 0 5e-9 \
-    >>>     --tree (E:1,(D:0.06,(C:0.055,(B:0.01,A:0.01):0.045):0.005):0.94); \
-    >>>     --bindir /home/deren/miniconda3/ \
+    >>>     --node-heights 0.01 0.05 0.06 1 \
     >>>     --outdir /scratch/recomb/ \
-    >>>     --account dsi
+    >>>     --account eaton \
     """
     parser = argparse.ArgumentParser(
         description='Coalescent simulation and tree inference w/ recombination')
@@ -183,23 +189,36 @@ if __name__ == "__main__":
                 for recomb in args.recomb:                
                     for rep in range(args.nreps):
 
+                        # skip submitting job if all outfiles exist.
+                        params = (
+                            f"neff{neff}-ctime{int(ctime)}-"
+                            f"recomb{int(bool(recomb))}-rep{rep}-"
+                            f"nloci{max(args.nloci)}-nsites{nsites}"
+                        )
+
+                        # check for existing output files and skip this job if present
+                        paths = [args.outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in args.nloci]
+                        if all(i.exists() for i in paths):
+                            print(f"skipping job {params}, result files exist.")
+                            continue
+
                         # for nloci in args.nloci:
                         # gtime = int(ctime * 4 * neff)
-                        write_and_submit_sbatch_script(
-                            neff=neff,
-                            ctime=ctime, 
-                            mut=args.mut,
-                            recomb=recomb, 
-                            nloci=args.nloci,
-                            nsites=nsites,
-                            rep=rep,
-                            seed=SEEDS[rep],
-                            ncores=args.ncores,
-                            outdir=args.outdir,
-                            account=args.account,
-                            node_heights=args.node_heights,
-                            raxml_bin=RAXML_BIN,
-                            astral_bin=ASTRAL_BIN,                            
-                        )
-                        time.sleep(1)
+                        # write_and_submit_sbatch_script(
+                        #     neff=neff,
+                        #     ctime=ctime, 
+                        #     mut=args.mut,
+                        #     recomb=recomb, 
+                        #     nloci=args.nloci,
+                        #     nsites=nsites,
+                        #     rep=rep,
+                        #     seed=SEEDS[rep],
+                        #     ncores=args.ncores,
+                        #     outdir=args.outdir,
+                        #     account=args.account,
+                        #     node_heights=args.node_heights,
+                        #     raxml_bin=RAXML_BIN,
+                        #     astral_bin=ASTRAL_BIN,                            
+                        # )
+                        time.sleep(0.1)
     print(f"{njobs} jobs submitted.")

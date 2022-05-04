@@ -3,7 +3,6 @@
 """Recombination effects on MSC inference.
 
 
-
 Authors: Deren Eaton and Patrick McKenzie
 """
 
@@ -40,8 +39,8 @@ def run_sim_loci_inference(
         f"recomb{int(bool(recomb))}-rep{rep}-"
         f"nloci{max(nloci)}-nsites{nsites}"
     )
-    locpath = outdir / (params + "-sim-loci.csv")
-    gtpath = outdir / (params + "-gene-trees.csv")
+    # locpath = outdir / (params + "-sim-loci.csv")
+    # gtpath = outdir / (params + "-gene-trees.csv")
 
     # scale species tree to a new root height in generations
     root_in_gens = ctime * 4 * neff
