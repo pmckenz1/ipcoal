@@ -77,10 +77,10 @@ def write_and_submit_sbatch_script(
     )
 
     # check for existing output files and skip this job if present
-    paths = [outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in nloci]
-    if all(i.exists() for i in paths):
-        print(f"skipping job {params}, result files exist.")
-        return 
+    # paths = [outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in nloci]
+    # if all(i.exists() for i in paths):
+    #     print(f"skipping job {params}, result files exist.")
+    #     return 
 
     # expand sbatch shell script with parameters
     sbatch = SBATCH.format(**dict(
@@ -204,21 +204,21 @@ if __name__ == "__main__":
 
                         # for nloci in args.nloci:
                         # gtime = int(ctime * 4 * neff)
-                        # write_and_submit_sbatch_script(
-                        #     neff=neff,
-                        #     ctime=ctime, 
-                        #     mut=args.mut,
-                        #     recomb=recomb, 
-                        #     nloci=args.nloci,
-                        #     nsites=nsites,
-                        #     rep=rep,
-                        #     seed=SEEDS[rep],
-                        #     ncores=args.ncores,
-                        #     outdir=args.outdir,
-                        #     account=args.account,
-                        #     node_heights=args.node_heights,
-                        #     raxml_bin=RAXML_BIN,
-                        #     astral_bin=ASTRAL_BIN,                            
-                        # )
+                        write_and_submit_sbatch_script(
+                            neff=neff,
+                            ctime=ctime, 
+                            mut=args.mut,
+                            recomb=recomb, 
+                            nloci=args.nloci,
+                            nsites=nsites,
+                            rep=rep,
+                            seed=SEEDS[rep],
+                            ncores=args.ncores,
+                            outdir=args.outdir,
+                            account=args.account,
+                            node_heights=args.node_heights,
+                            raxml_bin=RAXML_BIN,
+                            astral_bin=ASTRAL_BIN,                            
+                        )
                         time.sleep(0.1)
     print(f"{njobs} jobs submitted.")
