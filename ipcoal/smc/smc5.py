@@ -313,17 +313,13 @@ def topo_unch_prob_bt(
     treetable.neff = treetable.neff*2
 
     gnode_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,genealogy,imap,gnode.idx).reset_index(drop=True)
-    ######################
 
     gnode_st_nodes = gnode_ints.st_node
 
     # get intervals for the parent branch
     parent = gnode.up
     if not parent.is_root():
-        #parent_ints = get_intervals(parent,treetable,SPTREE)
-        ###################
         parent_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,gt,imap,parent.idx).reset_index(drop=True)
-        ###################
 
     else:
         parent_ints = pd.DataFrame([gnode.up.height,
@@ -336,10 +332,7 @@ def topo_unch_prob_bt(
 
     # get index of sibling, and its intervals
     sib = list(set(parent.children).difference(set([gnode])))[0]
-    #sib_ints = get_intervals(sib,treetable,SPTREE)
-    ##################
     sib_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,genealogy,imap,sib.idx).reset_index(drop=True)
-    ##################
 
     # get shared intervals of sibling
     # by asking which sib_ints are in the same species tree branch
