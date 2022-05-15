@@ -319,7 +319,7 @@ def topo_unch_prob_bt(
     # get intervals for the parent branch
     parent = gnode.up
     if not parent.is_root():
-        parent_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,gt,imap,parent.idx).reset_index(drop=True)
+        parent_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,genealogy,imap,parent.idx).reset_index(drop=True)
 
     else:
         parent_ints = pd.DataFrame([gnode.up.height,
