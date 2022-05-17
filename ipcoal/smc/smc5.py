@@ -200,12 +200,14 @@ def p_ik(
     '''
     Recycled in the math, for getting coal chances for intervals between i and k
     '''
+
     # Special case if i and k are equal:
     if i == k:
         # -1/a_i
         first=-1/table.iloc[i].nedges
         # e^{-a_i*T_i/n_i}
         second=np.exp((-table.iloc[i].nedges/(table.iloc[i].neff))*table.iloc[i].stop)
+        logger.info(f"inside pik where i==j.\n{table}\n{i} {k}: {first*second:.4f}\n-------------------")
         return(first*second)
     
     # If i and k are not equal:
@@ -224,7 +226,7 @@ def p_ik(
         # Second half of the equation
         # 1/a_k * (1-e^{-(a_k/n_k)*T_k})
         secondhalf = (1/table.iloc[k].nedges) * (1-np.exp(-(table.iloc[k].nedges/table.iloc[k].neff)*table.iloc[k].dist))
-
+        logger.info(f"inside pik.\n{table}\n{i} {k}: {firsthalf*secondhalf:.4f}\n-------------------")
         return(firsthalf*secondhalf)
 
 def pb1(
@@ -387,6 +389,11 @@ def get_topo_unchange_prob(
             #get probability of topology not changing if recomb event falls on this branch
             topo_unchanged_prob = normalize*(firstsum + secsum)
             
+
+            logger.warning(f"gnode={gnode}")
+            logger.warning(f"pb1={firstsum}")
+            logger.warning(f"pb2={secsum}") 
+            logger.warning("---------------------------------")            
             #print(topo_unchanged_prob)
 
             # contribute to total probability of unchanged genealogical topology
@@ -438,7 +445,59 @@ def get_tree_unchange_prob(
                 sumval += first + second*third*fourth
 
             brprob = sumval * (1/(t_ub-t_lb))
+            logger.warning(f"node={gnode.idx}, prob={brprob:.4f}")
 
             totaled_probs += ((t_ub-t_lb) / gtree_total_length) * brprob
     return(totaled_probs)
 
+
+if __name__ == "__main__":
+
+    ipcoal.set_log_level("ERROR")
+    pd.options.display.max_columns = 20
+    pd.options.display.width = 1000
+
+    # SPTREE = toytree.rtree.imbtree(ntips=4, treeheight=2e6, seed=123)
+    # SPTREE = SPTREE.set_node_data("Ne", default=5e5)
+
+    # # simulate one genealogy
+    # RECOMB = 1e-9
+    # NSAMPS = dict(zip(SPTREE.get_tip_labels(), [3, 2, 1, 1]))
+    # MODEL = ipcoal.Model(SPTREE, seed_trees=123, nsamples=NSAMPS, recomb=RECOMB)
+    # MODEL.sim_trees(1, 1)
+    # IMAP = MODEL.get_imap_dict()
+    # GTREE = toytree.tree(MODEL.df.genealogy[0])
+
+
+    SPTREE = toytree.tree("(((A,B),C),D);")
+    SPTREE.set_node_data("height", inplace=True, default=0, mapping={
+        4: 200_000, 5: 400_000, 6: 600_000,
+    })
+    SPTREE.set_node_data("Ne", inplace=True, default=100_000);
+
+    GTREE = toytree.tree("(((0,1),(2,(3,4))),(5,6));")
+    GTREE.set_node_data("height", inplace=True, default=0, mapping={
+        7: 100_000, 8: 120_000, 9: 300_000, 10: 450_000, 11: 650_000, 12: 800_000,
+    })
+    IMAP = {
+        "A": ['0', '1', '2'],
+        "B": ['3', '4'],
+        "C": ['5',],
+        "D": ['6',],
+    }        
+
+    c0, a, m = SPTREE.draw(ts='p')
+    c1, a, m = GTREE.draw(ts='c')
+    # toytree.utils.show([c0, c1])
+
+    e_table = get_embedded_gene_tree_table(SPTREE, GTREE, IMAP)
+    logger.info(f"One embedded gene tree table:\n{e_table}")
+
+    logger.warning("")
+    logger.info(f"Pik(0, 0) = {p_ik(0, 0, e_table)}")
+    logger.info(f"Pik(0, 1) = {p_ik(0, 1, e_table)}")
+    logger.info(f"Pik(0, 2) = {p_ik(0, 2, e_table)}")        
+
+    logger.warning("")
+    print(f"Prob(tree-change) = {1 - get_tree_unchange_prob(SPTREE, GTREE, IMAP)}")
+    print(f"Prob(topo-change) = {1 - get_topo_unchange_prob(SPTREE, GTREE, IMAP)}")    
