@@ -207,7 +207,6 @@ def p_ik(
         first=-1/table.iloc[i].nedges
         # e^{-a_i*T_i/n_i}
         second=np.exp((-table.iloc[i].nedges/(table.iloc[i].neff))*table.iloc[i].stop)
-        logger.info(f"inside pik where i==j.\n{table}\n{i} {k}: {first*second:.4f}\n-------------------")
         return(first*second)
     
     # If i and k are not equal:
@@ -226,7 +225,6 @@ def p_ik(
         # Second half of the equation
         # 1/a_k * (1-e^{-(a_k/n_k)*T_k})
         secondhalf = (1/table.iloc[k].nedges) * (1-np.exp(-(table.iloc[k].nedges/table.iloc[k].neff)*table.iloc[k].dist))
-        logger.info(f"inside pik.\n{table}\n{i} {k}: {firsthalf*secondhalf:.4f}\n-------------------")
         return(firsthalf*secondhalf)
 
 def pb1(
@@ -393,7 +391,6 @@ def topo_unch_prob_bt(
             third_term += p_ik(i, k, merged_ints)*np.exp((merged_ints.iloc[i].nedges / merged_ints.iloc[i].neff)*t)
         return(2*(first_term + second_term) + third_term)
     
-    
 def tree_unch_prob_bt(
     gnode,
     t,
@@ -419,7 +416,6 @@ def tree_unch_prob_bt(
     mask1 = gnode_ints.start <= t
     mask2 = gnode_ints.stop > t
     i = gnode_ints[mask1 & mask2].index[0] # if getting error here, probably t is on boundary of branch (eg 0 round error at tips)
-
 
     first_term = 1 / gnode_ints.iloc[i].nedges
     second_term = 0
@@ -512,13 +508,6 @@ def get_topo_unchange_prob(
 
             #get probability of topology not changing if recomb event falls on this branch
             topo_unchanged_prob = normalize*(firstsum + secsum)
-            
-
-            logger.warning(f"gnode={gnode}")
-            logger.warning(f"pb1={firstsum}")
-            logger.warning(f"pb2={secsum}") 
-            logger.warning("---------------------------------")            
-            #print(topo_unchanged_prob)
 
             # contribute to total probability of unchanged genealogical topology
             total_prob += ((t_ub-t_lb)/gtree_total_length)*topo_unchanged_prob
@@ -569,7 +558,6 @@ def get_tree_unchange_prob(
                 sumval += first + second*third*fourth
 
             brprob = sumval * (1/(t_ub-t_lb))
-            logger.warning(f"node={gnode.idx}, prob={brprob:.4f}")
 
             totaled_probs += ((t_ub-t_lb) / gtree_total_length) * brprob
     return(totaled_probs)
@@ -577,7 +565,8 @@ def get_tree_unchange_prob(
 
 if __name__ == "__main__":
 
-    ipcoal.set_log_level("ERROR")
+    import toyplot
+    ipcoal.set_log_level("WARNING")
     pd.options.display.max_columns = 20
     pd.options.display.width = 1000
 
@@ -617,11 +606,15 @@ if __name__ == "__main__":
     e_table = get_embedded_gene_tree_table(SPTREE, GTREE, IMAP)
     logger.info(f"One embedded gene tree table:\n{e_table}")
 
-    logger.warning("")
-    logger.info(f"Pik(0, 0) = {p_ik(0, 0, e_table)}")
-    logger.info(f"Pik(0, 1) = {p_ik(0, 1, e_table)}")
-    logger.info(f"Pik(0, 2) = {p_ik(0, 2, e_table)}")        
+    times = np.linspace(GTREE[2].height, GTREE[2].up.height, 50, endpoint=False)
+    probs1 = np.array([tree_unch_prob_bt(GTREE[2], i, SPTREE, GTREE, IMAP) for i in times])
+    probs2 = np.array([topo_unch_prob_bt(GTREE[2], i, SPTREE, GTREE, IMAP) for i in times])    
+    # probs2 = np.array([topo_unch_prob_bt(e_table, 2, 8, 9, i) for i in times])
+    c2, a, m = toyplot.plot(times, 1 - probs1, width=400, height=300, ymin=0, ymax=1)
+    # a.vlines(e2.stop, color='red')
+    c3, a, m = toyplot.plot(times, 1 - probs2, width=400, height=300, ymin=0, ymax=1)    
+    # a.vlines(e2.stop, color='red')
+    toytree.utils.show([c1, c2, c3]) 
 
-    logger.warning("")
     print(f"Prob(tree-change) = {1 - get_tree_unchange_prob(SPTREE, GTREE, IMAP)}")
     print(f"Prob(topo-change) = {1 - get_topo_unchange_prob(SPTREE, GTREE, IMAP)}")    
