@@ -304,6 +304,130 @@ def pb2(
     
     return((1/curr_ai) * (2*curr_Ti+second_term))
 
+def topo_unch_prob_bt(
+    gnode,
+    t,
+    species_tree,
+    genealogy,
+    imap,
+    ):
+    treetable = get_embedded_gene_tree_table(species_tree, genealogy, imap)
+    treetable.neff = treetable.neff*2
+
+    gnode_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,genealogy,imap,gnode.idx).reset_index(drop=True)
+
+    gnode_st_nodes = gnode_ints.st_node
+
+    # get intervals for the parent branch
+    parent = gnode.up
+    if not parent.is_root():
+        parent_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,genealogy,imap,parent.idx).reset_index(drop=True)
+
+    else:
+        parent_ints = pd.DataFrame([gnode.up.height,
+                             gnode.up.height + 1e9, # giant number here, infinite root branch length
+                             gnode_ints.iloc[-1].st_node,
+                             gnode_ints.iloc[-1].neff,
+                             1,
+                             np.nan,
+                             1e9],index=['start','stop','st_node','neff','nedges','coal','dist']).T
+
+    # get index of sibling, and its intervals
+    sib = list(set(parent.children).difference(set([gnode])))[0]
+    sib_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,genealogy,imap,sib.idx).reset_index(drop=True)
+
+    # get shared intervals of sibling
+    # by asking which sib_ints are in the same species tree branch
+    # (and later pruning to those which exist at the same time as gnode)
+    sib_shared = sib_ints.loc[[i in np.array(gnode_st_nodes) for i in sib_ints.st_node]]
+
+    # get important times
+    # time at which sharing starts
+    t_mb = sib_shared.iloc[0].start
+
+    # time at which branch ends
+    t_ub = gnode_ints.stop.iloc[-1]
+
+    # time at which branch starts
+    t_lb = gnode_ints.start.iloc[0]
+
+    # in case the sibling branch starts earlier in sp tree branch than gnode branch
+    if t_mb < t_lb:
+        t_mb = t_lb
+        sib_shared = gnode_ints.copy()
+
+    # merging the current branch and parent branch dataframes
+    merged_ints = pd.concat([gnode_ints,parent_ints],ignore_index=True)
+
+    # get first interval index that is shared with sibling
+    m = merged_ints.loc[merged_ints.stop > t_mb].index[0]
+
+    # get number of intervals in current branch
+    I_b = len(gnode_ints)
+
+    # get number of intervals in combined branches
+    I_bc = len(merged_ints)
+
+    # get starting interval
+    mask1 = merged_ints.start <= t
+    mask2 = merged_ints.stop > t
+    i = merged_ints[mask1 & mask2].index[0]
+
+    # if first case
+    if i < m:
+        first_term = 1 / merged_ints.iloc[i].nedges
+        second_term = 0
+        for k in range(i,I_bc):
+            second_term += p_ik(i, k, merged_ints)*np.exp((merged_ints.iloc[i].nedges / merged_ints.iloc[i].neff)*t)
+        third_term = 0
+        for k in range(m,I_b):
+            third_term += p_ik(i, k, merged_ints)*np.exp((merged_ints.iloc[i].nedges / merged_ints.iloc[i].neff)*t)
+        return(first_term + second_term + third_term)
+    else:
+        first_term = 1 / merged_ints.iloc[i].nedges
+        second_term = 0
+        for k in range(i,I_b):
+            second_term += p_ik(i, k, merged_ints)*np.exp((merged_ints.iloc[i].nedges / merged_ints.iloc[i].neff)*t)
+        third_term = 0
+        for k in range(I_b,I_bc):
+            third_term += p_ik(i, k, merged_ints)*np.exp((merged_ints.iloc[i].nedges / merged_ints.iloc[i].neff)*t)
+        return(2*(first_term + second_term) + third_term)
+    
+    
+def tree_unch_prob_bt(
+    gnode,
+    t,
+    species_tree,
+    genealogy,
+    imap
+    ):
+    treetable = get_embedded_gene_tree_table(species_tree, genealogy, imap)
+    treetable.neff = treetable.neff*2
+
+    gnode_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,genealogy,imap,gnode.idx).reset_index(drop=True)
+
+    # time at which branch ends
+    t_ub = gnode_ints.stop.iloc[-1]
+
+    # time at which branch starts
+    t_lb = gnode_ints.start.iloc[0]
+
+    # get number of intervals in current branch
+    I_b = len(gnode_ints)
+
+    # get starting interval
+    mask1 = gnode_ints.start <= t
+    mask2 = gnode_ints.stop > t
+    i = gnode_ints[mask1 & mask2].index[0] # if getting error here, probably t is on boundary of branch (eg 0 round error at tips)
+
+
+    first_term = 1 / gnode_ints.iloc[i].nedges
+    second_term = 0
+    for k in range(i,I_b):
+        second_term += p_ik(i, k, gnode_ints)*np.exp((gnode_ints.iloc[i].nedges / gnode_ints.iloc[i].neff)*t)
+
+    return(first_term + second_term)
+
 def get_topo_unchange_prob(
     species_tree: toytree.ToyTree, 
     genealogy: toytree.ToyTree, 
