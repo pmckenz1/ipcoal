@@ -187,7 +187,11 @@ def get_embedded_path_of_gene_tree_edge(
     # select intervals
     gt_node = gene_tree[idx]
     mask0 = table.st_node.isin(sidxs)
-    mask1 = table.start >= gt_node.height
+    if gt_node.is_leaf():
+        mask1 = table.start >= 0
+    else:
+        mask1 = table.start >= gt_node.height
+    #mask1 = table.start >= gt_node.height
     mask2 = table.stop <= gt_node.up.height
     subtable = table[mask0 & mask1 & mask2]
     return subtable
@@ -529,14 +533,11 @@ def get_tree_unchange_prob(
     treetable = get_embedded_gene_tree_table(species_tree,genealogy,imap)
     treetable.neff = treetable.neff*2
     total_prob = 0
-    all_int_tables = []
     for gnode in genealogy.treenode.traverse(strategy='postorder'):
         if not gnode.is_root():
             # get intervals for the current branch
             gnode_ints = get_embedded_path_of_gene_tree_edge(treetable,species_tree,genealogy,imap,gnode.idx).reset_index(drop=True)
 
-            gnode_ints.neff = gnode_ints.neff
-            all_int_tables.append(gnode_ints)
             # time at which branch ends
             t_ub = gnode_ints.stop.iloc[-1]
             # time at which branch starts
