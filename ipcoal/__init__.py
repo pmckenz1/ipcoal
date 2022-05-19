@@ -21,6 +21,7 @@ __author__ = "Patrick McKenzie and Deren Eaton"
 from ipcoal.model import Model
 from ipcoal.utils import utils
 import ipcoal.phylo
+import ipcoal.smc
 
 # start the logger at log_level WARNING
 from ipcoal.utils.logger_setup import set_log_level

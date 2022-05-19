@@ -357,6 +357,8 @@ class Writer:
             loclen = txf.seqs.shape[2]
             phymap = io5.create_dataset(
                 "phymap", shape=(nloci, 5), dtype=np.int64)
+
+            # TODO: check indexing...
             phymap[:, 0] = range(1, nloci + 1)  # 1-indexed
             phymap[:, 1] = range(0, nloci * loclen, loclen)
             phymap[:, 2] = phymap[:, 1] + loclen

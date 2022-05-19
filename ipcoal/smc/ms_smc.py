@@ -6,10 +6,6 @@ Measure genome distance until genealogical changes under the
 Sequential Markovian Coalescent (SMC) given a parameterized species
 tree model.
 
-Examples
----------
-...
-
 """
 
 from typing import Dict, TypeVar, Sequence
@@ -18,6 +14,7 @@ import numpy as np
 import pandas as pd
 import toytree
 import toyplot
+from scipy import stats
 import ipcoal
 
 # pylint: disable="cell-var-from-loop"
@@ -61,8 +58,7 @@ def get_genealogy_embedding_table(
     gt_node_heights = genealogy.get_node_data("height")
 
     # iterate over stree from tips to root storing stree node data
-    for st_node in species_tree.treenode.traverse("postorder"):
-
+    for st_node in species_tree.traverse("postorder"):
         # get all gtree names descended from this sptree interval
         gt_tips = set.union(*[set(imap[i]) for i in st_node.get_leaf_names()])
 
@@ -74,11 +70,13 @@ def get_genealogy_embedding_table(
         mask_above = True if st_node.is_root() else gt_node_heights < st_node.up.height
         nodes_in_time_slice = gt_node_heights[mask_below & mask_above]
 
-        # filter internal nodes to parents of gt_nodes
+        # filter internal nodes must be ancestors of gt_nodes (in this interval)
+        # get internal nodes in this interval by getting all nodes in this
+        # time interval and requiring that all their desc are in gt_nodes.
         inodes = []
         for gidx in nodes_in_time_slice.sort_values().index:
             gt_node = genealogy[gidx]
-            if set(gt_node.children).intersection(gt_nodes):
+            if not set(gt_node.get_leaf_names()).difference(gt_tips):
                 inodes.append(gt_node)
 
         # vars to be updated at coal events
@@ -331,10 +329,16 @@ def get_probability_tree_unchanged_given_b(table: pd.DataFrame, branch: int) -> 
     for idx in btab.index:
         term1 = (1 / btab.nedges[idx]) * btab.dist[idx]
         term2_outer = (btab.neff[idx] / btab.nedges[idx])
+
+        # Avoid overflow when inner value here is too large. This happens
+        # when neff is low. hack solution for now is to use float128,
+        # but maybe use expit function in the future.
         term2_inner = (
             np.exp((btab.nedges[idx] / btab.neff[idx]) * btab.stop[idx]) -
             np.exp((btab.nedges[idx] / btab.neff[idx]) * btab.start[idx])
         )
+
+        # pij component
         term3 = sum(_get_pij(btab, idx, jdx) for jdx in btab.loc[idx:].index)
         prob += term1 + (term2_inner * term2_outer * term3)
     return (1 / (tbu - tbl)) * prob
@@ -667,6 +671,100 @@ def plot_edge_probabilities(
         axis.x.ticks.locator = toyplot.locator.Explicit([btable.start.iloc[0]] + list(btable.stop))
     return canvas
 
+def get_expected_waiting_distance_to_recombination_event(
+    genealogy: ToyTree,
+    recombination_rate: float,
+    ) -> float:
+    """..."""
+    return get_waiting_distance_to_recombination_event_rv(
+        genealogy, recombination_rate).mean()
+
+def get_expected_waiting_distance_to_tree_change(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> float:
+    """..."""
+    return get_waiting_distance_to_tree_change_rv(
+        species_tree,
+        genealogy, 
+        imap,
+        recombination_rate).mean()
+
+def get_expected_waiting_distance_to_topology_change(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> float:
+    """..."""    
+    return get_waiting_distance_to_topology_change_rv(
+        species_tree,
+        genealogy, 
+        imap,
+        recombination_rate).mean()
+
+def get_waiting_distance_to_recombination_event_rv(
+    genealogy: ToyTree,
+    recombination_rate: float,
+    ) -> stats._distn_infrastructure.rv_frozen:
+    r"""Return ...
+
+    Waiting distances between events are modeled as an exponentially
+    distributed random variable (rv). This probability distribution
+    is represented in scipy by an `rv_continous` class object. This
+    function returns a "frozen" rv_continous object that has its 
+    rate parameter fixed, where the rate of recombination on the 
+    input genealogy is a product of its sum of edge lengths (L(G)) 
+    and the per-site per-generation recombination rate (r). 
+
+    $$ \lambda_r = L(G) * r $$
+
+    The returned frozen `rv_continous` variable can be used to 
+    calculate likelihoods using its `.pdf` method; to sample 
+    random waiting distances using its `.rvs` method; to get the
+    mean expected waiting distance from `.mean`; among other things.
+    See scipy docs.
+    
+    Parameters
+    -----------
+    ...
+
+    Examples
+    --------
+    >>> ...
+    """
+    sumlen = sum(i.dist for i in genealogy if not i.is_root())
+    lambda_ = sumlen * recombination_rate
+    return stats.expon.freeze(scale=1/lambda_)
+
+def get_waiting_distance_to_tree_change_rv(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> stats._distn_infrastructure.rv_frozen:
+    """Return ...
+    """
+    sumlen = sum(i.dist for i in genealogy if not i.is_root())
+    prob_tree = get_probability_of_tree_change(species_tree, genealogy, imap)
+    lambda_ = sumlen * prob_tree * recombination_rate
+    return stats.expon.freeze(scale=1/lambda_)
+
+def get_waiting_distance_to_topology_change_rv(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> stats._distn_infrastructure.rv_frozen:
+    """..."""
+    sumlen = sum(i.dist for i in genealogy if not i.is_root())
+    prob_topo = get_probability_of_topology_change(species_tree, genealogy, imap)
+    lambda_ = sumlen * prob_topo * recombination_rate
+    return stats.expon.freeze(scale=1/lambda_)
+
+
 
 if __name__ == "__main__":
 
@@ -720,8 +818,8 @@ if __name__ == "__main__":
     print(f"Probability of tree-change\n{p_tree:.3f}\n")
     print(f"Probability of topology-change\n{p_topo:.3f}\n")
 
-    CANVAS = plot_edge_probabilities(SPTREE, GTREE, IMAP, 2)
-    toytree.utils.show(CANVAS)
+    # CANVAS = plot_edge_probabilities(SPTREE, GTREE, IMAP, 2)
+    # toytree.utils.show(CANVAS)
 
     raise SystemExit(0)
 

@@ -2,6 +2,8 @@
 
 """Kingman n-coalescent probability functions.
 
+NOT YET IMPLEMENTED.
+
 References
 ----------
 - ...

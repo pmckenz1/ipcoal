@@ -2,7 +2,7 @@
 
 """Calculate likelihood of a gene tree embedded in a species tree.
 
-Fast calculation of ...
+NOT YET IMPLEMENTED..
 
 References
 ----------
