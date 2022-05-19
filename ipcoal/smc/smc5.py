@@ -191,7 +191,7 @@ def get_embedded_path_of_gene_tree_edge(
         mask1 = table.start >= 0
     else:
         mask1 = table.start >= gt_node.height
-    #mask1 = table.start >= gt_node.height
+
     mask2 = table.stop <= gt_node.up.height
     subtable = table[mask0 & mask1 & mask2]
     return subtable
