@@ -219,10 +219,12 @@ def _get_sum_pb1(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
     for idx in utab.index:
 
         # first term applies only to the interval in which recomb occurred
-        first_term = btab.neff[idx] * (
-            np.exp((btab.nedges[idx] / btab.neff[idx]) * btab.stop[idx]) -
-            np.exp((btab.nedges[idx] / btab.neff[idx]) * btab.start[idx])
-        )
+        estop = (btab.nedges[idx] / btab.neff[idx]) * btab.stop[idx]
+        estart = (btab.nedges[idx] / btab.neff[idx]) * btab.start[idx]
+        if estop > 100:
+            first_term = 1e15
+        else:
+            first_term = btab.neff[idx] * (np.exp(estop) - np.exp(estart))
 
         # p_ij across bc
         # logger.warning(f"{[(ftab, idx, jidx) for jidx in ftab.index]}")
@@ -261,10 +263,12 @@ def _get_sum_pb2(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
     for idx in mtab.index:
 
         # first term applies to only to gtab (branch on which recomb occurs)
-        first_term =  btab.neff[idx] * (
-            np.exp(btab.nedges[idx] * btab.stop[idx] / btab.neff[idx]) -
-            np.exp(btab.nedges[idx] * btab.start[idx] / btab.neff[idx])
-        )
+        estop = btab.nedges[idx] * btab.stop[idx] / btab.neff[idx]
+        estart = btab.nedges[idx] * btab.start[idx] / btab.neff[idx]
+        if estop > 100:
+            first_term = 1e15
+        else:
+            first_term =  btab.neff[idx] * (np.exp(estop) - np.exp(estart))
 
         # p_ij across intervals on b
         sum1 = sum(_get_pij(btab, idx, bidx) for bidx in btab.index)
@@ -300,7 +304,8 @@ def get_probability_tree_unchanged_given_b_and_tr(table: pd.DataFrame, branch: i
     idx = btab[(time >= btab.start) & (time <= btab.stop)].index[0]
 
     # get two terms and return the sum
-    inner = np.exp((btab.nedges[idx] / btab.neff[idx]) * time)
+    inner = (btab.nedges[idx] / btab.neff[idx]) * time
+    inner = np.exp(inner) if inner < 100 else 1e15
     term1 = (1 / btab.nedges[idx]) + _get_pij(btab, idx, idx) * inner
 
     # iterate over all intervals from idx to end of b and get pij
@@ -333,10 +338,12 @@ def get_probability_tree_unchanged_given_b(table: pd.DataFrame, branch: int) -> 
         # Avoid overflow when inner value here is too large. This happens
         # when neff is low. hack solution for now is to use float128,
         # but maybe use expit function in the future.
-        term2_inner = (
-            np.exp((btab.nedges[idx] / btab.neff[idx]) * btab.stop[idx]) -
-            np.exp((btab.nedges[idx] / btab.neff[idx]) * btab.start[idx])
-        )
+        estop = (btab.nedges[idx] / btab.neff[idx]) * btab.stop[idx]
+        estart = (btab.nedges[idx] / btab.neff[idx]) * btab.start[idx]
+        if estop > 100:
+            term2_inner = 1e15
+        else:
+            term2_inner = np.exp(estop) - np.exp(estart)
 
         # pij component
         term3 = sum(_get_pij(btab, idx, jdx) for jdx in btab.loc[idx:].index)
@@ -376,7 +383,7 @@ def get_probability_topology_unchanged_given_b_and_tr(
     ptab = table[table.edges.apply(lambda x: parent in x)]
 
     # get interval containing time tr
-    idx = btab[(time >= btab.start) & (time <= btab.stop)].index[0]
+    idx = btab[(time >= btab.start) & (time < btab.stop)].index[0]
 
     # get intervals containing both b and b' (at and above t_r)
     mtab = btab.loc[btab.index.intersection(stab.index)]
@@ -386,7 +393,8 @@ def get_probability_topology_unchanged_given_b_and_tr(
     ftab.sort_index(inplace=True) # maybe not necessary
 
     # rate
-    inner = np.exp((btab.nedges[idx] / btab.neff[idx]) * time)
+    inner = (btab.nedges[idx] / btab.neff[idx]) * time
+    inner = np.exp(inner) if inner < 100 else 1e15
 
     # probability of recoalescing with self in interval idx
     term1 = (1 / btab.nedges[idx])
@@ -647,7 +655,7 @@ def plot_edge_probabilities(
 
     # add vertical lines at interval breaks
     style = {"stroke": "black", "stroke-width": 2, "stroke-dasharray": "4,2"}
-    intervals = [btable.start.iloc[0]] + list(btable.stop)
+    intervals = [btable.start.iloc[0]] + list(btable.stop - 0.001)
     for itime in intervals:
         iprob_tree = get_probability_tree_unchanged_given_b_and_tr(etable, bidx, itime)
         iprob_topo = get_probability_topology_unchanged_given_b_and_tr(etable, bidx, sidx, pidx, itime)
@@ -797,7 +805,7 @@ if __name__ == "__main__":
     }
 
     # Select a branch to plot and get its relations
-    BIDX = 7
+    BIDX = 2
     BRANCH = GTREE[BIDX]
     SIDX = BRANCH.get_sisters()[0].idx
     PIDX = BRANCH.up.idx
@@ -818,8 +826,8 @@ if __name__ == "__main__":
     print(f"Probability of tree-change\n{p_tree:.3f}\n")
     print(f"Probability of topology-change\n{p_topo:.3f}\n")
 
-    # CANVAS = plot_edge_probabilities(SPTREE, GTREE, IMAP, 2)
-    # toytree.utils.show(CANVAS)
+    CANVAS = plot_edge_probabilities(SPTREE, GTREE, IMAP, 2)
+    toytree.utils.show(CANVAS)
 
     raise SystemExit(0)
 
