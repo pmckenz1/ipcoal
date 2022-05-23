@@ -136,10 +136,12 @@ class Model:
         admixture_edges: Optional[List[Tuple[int,int,float,float]]]=None,
         mut: Union[float, ms.RateMap]=1e-8,
         recomb: Union[float, ms.RateMap]=1e-9,
+        ancestry_model: Union[str,ms.AncestryModel]="hudson",
         subst_model: Union[str, ms.MutationModel]="JC69",
         seed_trees: Optional[int]=None,
         seed_mutations: Optional[int]=None,
         store_tree_sequences: bool=False,
+        record_full_arg: bool=False,
         **kwargs,
         ):
 
@@ -153,8 +155,10 @@ class Model:
         self.admixture_edges = admixture_edges
         self.mut = mut
         self.recomb = recomb
+        self.ancestry_model = ancestry_model
         self.subst_model = subst_model
         self.store_tree_sequences = store_tree_sequences
+        self.record_full_arg = record_full_arg
 
         # public attrs to be filled, or storing init args.
         self.samples: List[ms.SampleSet] = None
@@ -744,6 +748,8 @@ class Model:
             recombination_rate=(None if self._recomb_is_map else self.recomb),
             random_seed=self.rng_trees.integers(2**31),
             discrete_genome=True,
+            record_full_arg=self.record_full_arg,
+            model=self.ancestry_model,
         )
         mutated_ts = ms.sim_mutations(
             tree_sequence=treeseq,
@@ -774,6 +780,8 @@ class Model:
             num_replicates=(int(1e20) if snp else 1),
             random_seed=self.rng_trees.integers(2**31),
             discrete_genome=True,
+            record_full_arg=self.record_full_arg,
+            model=self.ancestry_model,
         )
         return tsgen
 
