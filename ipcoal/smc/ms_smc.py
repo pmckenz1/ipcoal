@@ -5,7 +5,6 @@
 Measure genome distance until genealogical changes under the
 Sequential Markovian Coalescent (SMC) given a parameterized species
 tree model.
-
 """
 
 from typing import Dict, TypeVar, Sequence
@@ -22,6 +21,10 @@ import ipcoal
 logger = logger.bind(name="ipcoal")
 ToyTree = TypeVar("ToyTree")
 
+
+###################################################################
+# Get embedding table
+###################################################################
 
 def get_genealogy_embedding_table(
     species_tree: ToyTree,
@@ -136,6 +139,10 @@ def get_genealogy_embedding_edge_path(table: pd.DataFrame, branch: int) -> pd.Da
         An integer index (idx) label to select a genealogy branch.
     """
     return table[table.edges.apply(lambda x: branch in x)]
+
+###################################################################
+# Get re-coalescent in piecewise funtions
+###################################################################
 
 def _get_pij(itab: pd.DataFrame, idx: int, jdx: int) -> float:
     """Return pij value for two intervals.
@@ -280,6 +287,10 @@ def _get_sum_pb2(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
         pbval += (1 / btab.nedges[idx]) * ((2 * btab.dist[idx]) + (first_term * second_term))
     return pbval
 
+###################################################################
+# Get prob. tree- or topo-change given branch and time
+###################################################################
+
 def get_probability_tree_unchanged_given_b_and_tr(table: pd.DataFrame, branch: int, time: float) -> float:
     """Return prob tree-change does not occur given recomb on branch b at time t.
 
@@ -313,42 +324,6 @@ def get_probability_tree_unchanged_given_b_and_tr(table: pd.DataFrame, branch: i
     for jdx in btab.loc[idx + 1:].index:
         term2 += _get_pij(btab, idx, jdx) * inner
     return term1 + term2
-
-def get_probability_tree_unchanged_given_b(table: pd.DataFrame, branch: int) -> float:
-    """Return prob tree-change does not occur given recomb on branch b.
-
-    Parameters
-    ----------
-    table:
-        A table returned by the `get_genealogy_embedding_table` func.
-    branch:
-        An integer index (idx) label to select a genealogy branch.
-    """
-    # get all intervals on branch b
-    btab = table[table.edges.apply(lambda x: branch in x)]
-    tbl = btab.start.min()
-    tbu = btab.stop.max()
-
-    # sum over the intervals on b where recomb could occur
-    prob = 0
-    for idx in btab.index:
-        term1 = (1 / btab.nedges[idx]) * btab.dist[idx]
-        term2_outer = (btab.neff[idx] / btab.nedges[idx])
-
-        # Avoid overflow when inner value here is too large. This happens
-        # when neff is low. hack solution for now is to use float128,
-        # but maybe use expit function in the future.
-        estop = (btab.nedges[idx] / btab.neff[idx]) * btab.stop[idx]
-        estart = (btab.nedges[idx] / btab.neff[idx]) * btab.start[idx]
-        if estop > 100:
-            term2_inner = 1e15
-        else:
-            term2_inner = np.exp(estop) - np.exp(estart)
-
-        # pij component
-        term3 = sum(_get_pij(btab, idx, jdx) for jdx in btab.loc[idx:].index)
-        prob += term1 + (term2_inner * term2_outer * term3)
-    return (1 / (tbu - tbl)) * prob
 
 def get_probability_topology_unchanged_given_b_and_tr(
     table: pd.DataFrame,
@@ -421,6 +396,46 @@ def get_probability_topology_unchanged_given_b_and_tr(
     term3 *= inner
     return 2 * (term1 + term2) + term3
 
+###################################################################
+# Get prob. topology-change given branch
+###################################################################
+
+def get_probability_tree_unchanged_given_b(table: pd.DataFrame, branch: int) -> float:
+    """Return prob tree-change does not occur given recomb on branch b.
+
+    Parameters
+    ----------
+    table:
+        A table returned by the `get_genealogy_embedding_table` func.
+    branch:
+        An integer index (idx) label to select a genealogy branch.
+    """
+    # get all intervals on branch b
+    btab = table[table.edges.apply(lambda x: branch in x)]
+    tbl = btab.start.min()
+    tbu = btab.stop.max()
+
+    # sum over the intervals on b where recomb could occur
+    prob = 0
+    for idx in btab.index:
+        term1 = (1 / btab.nedges[idx]) * btab.dist[idx]
+        term2_outer = (btab.neff[idx] / btab.nedges[idx])
+
+        # Avoid overflow when inner value here is too large. This happens
+        # when neff is low. hack solution for now is to use float128,
+        # but maybe use expit function in the future.
+        estop = (btab.nedges[idx] / btab.neff[idx]) * btab.stop[idx]
+        estart = (btab.nedges[idx] / btab.neff[idx]) * btab.start[idx]
+        if estop > 100:
+            term2_inner = 1e15
+        else:
+            term2_inner = np.exp(estop) - np.exp(estart)
+
+        # pij component
+        term3 = sum(_get_pij(btab, idx, jdx) for jdx in btab.loc[idx:].index)
+        prob += term1 + (term2_inner * term2_outer * term3)
+    return (1 / (tbu - tbl)) * prob
+
 def get_probability_topology_unchanged_given_b(
     table: pd.DataFrame,
     branch: int,
@@ -465,6 +480,10 @@ def get_probability_topology_unchanged_given_b(
     pb2 = _get_sum_pb2(btab, ptab, mtab)
     logger.info(f"sum-pb2={pb2:.3f}")
     return (1 / (t_ub - t_lb)) * (pb1 + pb2)
+
+###################################################################
+# Get probability given genealogy
+###################################################################
 
 def get_probability_of_no_change(
     species_tree: ToyTree,
@@ -603,6 +622,138 @@ def get_probability_of_topology_change(
             total_prob += (gnode.dist / sumlen) * topo_unchanged_prob
     return 1 - total_prob
 
+###################################################################
+# Get waiting distances
+###################################################################
+
+def get_expected_waiting_distance_to_recombination_event(
+    genealogy: ToyTree,
+    recombination_rate: float,
+    ) -> float:
+    """..."""
+    return get_waiting_distance_to_recombination_event_rv(
+        genealogy, recombination_rate).mean()
+
+def get_expected_waiting_distance_to_tree_change(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> float:
+    """..."""
+    return get_waiting_distance_to_tree_change_rv(
+        species_tree,
+        genealogy, 
+        imap,
+        recombination_rate).mean()
+
+def get_expected_waiting_distance_to_topology_change(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> float:
+    """..."""    
+    return get_waiting_distance_to_topology_change_rv(
+        species_tree,
+        genealogy, 
+        imap,
+        recombination_rate).mean()
+
+###################################################################
+# Get scipy exponential random variable parameterized by lambda
+###################################################################
+
+def get_waiting_distance_to_recombination_event_rv(
+    genealogy: ToyTree,
+    recombination_rate: float,
+    ) -> stats._distn_infrastructure.rv_frozen:
+    r"""Return the exponential probability density for waiting distance
+    to next recombination event.
+
+    Waiting distances between events are modeled as an exponentially
+    distributed random variable (rv). This probability distribution
+    is represented in scipy by an `rv_continous` class object. This
+    function returns a "frozen" rv_continous object that has its 
+    rate parameter fixed, where the rate of recombination on the 
+    input genealogy is a product of its sum of edge lengths (L(G)) 
+    and the per-site per-generation recombination rate (r). 
+
+    $$ \lambda_r = L(G) * r $$
+
+    The returned frozen `rv_continous` variable can be used to 
+    calculate likelihoods using its `.pdf` method; to sample 
+    random waiting distances using its `.rvs` method; to get the
+    mean expected waiting distance from `.mean`; among other things.
+    See scipy docs.
+    
+    Parameters
+    -----------
+    genealogy: ToyTree
+        A genealogy with branch lengths in generations.
+    recombination rate: float
+        A per-site per-generation recombination rate.
+    """
+    sumlen = sum(i.dist for i in genealogy if not i.is_root())
+    lambda_ = sumlen * recombination_rate
+    return stats.expon.freeze(scale=1/lambda_)
+
+def get_waiting_distance_to_no_change_rv():
+    pass
+
+def get_waiting_distance_to_tree_change_rv(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> stats._distn_infrastructure.rv_frozen:
+    r"""Return the exponential probability density for waiting distance
+    to next tree-change event.
+
+    Waiting distances between events are modeled as an exponentially
+    distributed random variable (rv). This probability distribution
+    is represented in scipy by an `rv_continous` class object. This
+    function returns a "frozen" rv_continous object that has its 
+    rate parameter fixed, where the rate of recombination on the 
+    input genealogy is a product of its sum of edge lengths (L(G)) 
+    and the per-site per-generation recombination rate (r). 
+
+    $$ \lambda_r = L(G) * r * P(tree-change)$$
+
+    The returned frozen `rv_continous` variable can be used to 
+    calculate likelihoods using its `.pdf` method; to sample 
+    random waiting distances using its `.rvs` method; to get the
+    mean expected waiting distance from `.mean`; among other things.
+    See scipy docs.
+    
+    Parameters
+    -----------
+    genealogy: ToyTree
+        A genealogy with branch lengths in generations.
+    recombination rate: float
+        A per-site per-generation recombination rate.
+    """
+    sumlen = sum(i.dist for i in genealogy if not i.is_root())
+    prob_tree = get_probability_of_tree_change(species_tree, genealogy, imap)
+    lambda_ = sumlen * prob_tree * recombination_rate
+    return stats.expon.freeze(scale=1/lambda_)
+
+def get_waiting_distance_to_topology_change_rv(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> stats._distn_infrastructure.rv_frozen:
+    """..."""
+    sumlen = sum(i.dist for i in genealogy if not i.is_root())
+    prob_topo = get_probability_of_topology_change(species_tree, genealogy, imap)
+    lambda_ = sumlen * prob_topo * recombination_rate
+    return stats.expon.freeze(scale=1/lambda_)
+
+###################################################################
+# Plotting 
+###################################################################
+
 def plot_edge_probabilities(
     species_tree: ToyTree,
     genealogy: ToyTree,
@@ -678,100 +829,6 @@ def plot_edge_probabilities(
         axis.label.offset = 20
         axis.x.ticks.locator = toyplot.locator.Explicit([btable.start.iloc[0]] + list(btable.stop))
     return canvas
-
-def get_expected_waiting_distance_to_recombination_event(
-    genealogy: ToyTree,
-    recombination_rate: float,
-    ) -> float:
-    """..."""
-    return get_waiting_distance_to_recombination_event_rv(
-        genealogy, recombination_rate).mean()
-
-def get_expected_waiting_distance_to_tree_change(
-    species_tree: ToyTree,
-    genealogy: ToyTree,
-    imap: Dict[str, Sequence[str]],
-    recombination_rate: float,
-    ) -> float:
-    """..."""
-    return get_waiting_distance_to_tree_change_rv(
-        species_tree,
-        genealogy, 
-        imap,
-        recombination_rate).mean()
-
-def get_expected_waiting_distance_to_topology_change(
-    species_tree: ToyTree,
-    genealogy: ToyTree,
-    imap: Dict[str, Sequence[str]],
-    recombination_rate: float,
-    ) -> float:
-    """..."""    
-    return get_waiting_distance_to_topology_change_rv(
-        species_tree,
-        genealogy, 
-        imap,
-        recombination_rate).mean()
-
-def get_waiting_distance_to_recombination_event_rv(
-    genealogy: ToyTree,
-    recombination_rate: float,
-    ) -> stats._distn_infrastructure.rv_frozen:
-    r"""Return ...
-
-    Waiting distances between events are modeled as an exponentially
-    distributed random variable (rv). This probability distribution
-    is represented in scipy by an `rv_continous` class object. This
-    function returns a "frozen" rv_continous object that has its 
-    rate parameter fixed, where the rate of recombination on the 
-    input genealogy is a product of its sum of edge lengths (L(G)) 
-    and the per-site per-generation recombination rate (r). 
-
-    $$ \lambda_r = L(G) * r $$
-
-    The returned frozen `rv_continous` variable can be used to 
-    calculate likelihoods using its `.pdf` method; to sample 
-    random waiting distances using its `.rvs` method; to get the
-    mean expected waiting distance from `.mean`; among other things.
-    See scipy docs.
-    
-    Parameters
-    -----------
-    ...
-
-    Examples
-    --------
-    >>> ...
-    """
-    sumlen = sum(i.dist for i in genealogy if not i.is_root())
-    lambda_ = sumlen * recombination_rate
-    return stats.expon.freeze(scale=1/lambda_)
-
-def get_waiting_distance_to_tree_change_rv(
-    species_tree: ToyTree,
-    genealogy: ToyTree,
-    imap: Dict[str, Sequence[str]],
-    recombination_rate: float,
-    ) -> stats._distn_infrastructure.rv_frozen:
-    """Return ...
-    """
-    sumlen = sum(i.dist for i in genealogy if not i.is_root())
-    prob_tree = get_probability_of_tree_change(species_tree, genealogy, imap)
-    lambda_ = sumlen * prob_tree * recombination_rate
-    return stats.expon.freeze(scale=1/lambda_)
-
-def get_waiting_distance_to_topology_change_rv(
-    species_tree: ToyTree,
-    genealogy: ToyTree,
-    imap: Dict[str, Sequence[str]],
-    recombination_rate: float,
-    ) -> stats._distn_infrastructure.rv_frozen:
-    """..."""
-    sumlen = sum(i.dist for i in genealogy if not i.is_root())
-    prob_topo = get_probability_of_topology_change(species_tree, genealogy, imap)
-    lambda_ = sumlen * prob_topo * recombination_rate
-    return stats.expon.freeze(scale=1/lambda_)
-
 
 
 if __name__ == "__main__":
@@ -850,7 +907,7 @@ if __name__ == "__main__":
     SPTREE.set_node_data("height", inplace=True, default=0, mapping={
         4: 200_000, 5: 400_000, 6: 600_000,
     })
-    SPTREE.set_node_data("Ne", inplace=True, default=100_000);
+    SPTREE.set_node_data("Ne", inplace=True, default=1_000);
 
     GTREE = toytree.tree("(((0,1),(2,(3,4))),(5,6));")
     GTREE.set_node_data("height", inplace=True, default=0, mapping={
