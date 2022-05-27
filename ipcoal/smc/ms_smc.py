@@ -422,8 +422,7 @@ def get_probability_tree_unchanged_given_b(table: pd.DataFrame, branch: int) -> 
         term2_outer = (btab.neff[idx] / btab.nedges[idx])
 
         # Avoid overflow when inner value here is too large. This happens
-        # when neff is low. hack solution for now is to use float128,
-        # but maybe use expit function in the future.
+        # when neff is low so that deep coalescence is nearly impossible.
         estop = (btab.nedges[idx] / btab.neff[idx]) * btab.stop[idx]
         estart = (btab.nedges[idx] / btab.neff[idx]) * btab.start[idx]
         if estop > 100:
@@ -634,6 +633,19 @@ def get_expected_waiting_distance_to_recombination_event(
     return get_waiting_distance_to_recombination_event_rv(
         genealogy, recombination_rate).mean()
 
+def get_expected_waiting_distance_to_no_change(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> float:
+    """..."""
+    return get_waiting_distance_to_no_change_rv(
+        species_tree,
+        genealogy, 
+        imap,
+        recombination_rate).mean()
+
 def get_expected_waiting_distance_to_tree_change(
     species_tree: ToyTree,
     genealogy: ToyTree,
@@ -698,8 +710,47 @@ def get_waiting_distance_to_recombination_event_rv(
     lambda_ = sumlen * recombination_rate
     return stats.expon.freeze(scale=1/lambda_)
 
-def get_waiting_distance_to_no_change_rv():
-    pass
+def get_waiting_distance_to_no_change_rv(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    ) -> stats._distn_infrastructure.rv_frozen:
+    r"""Return the exponential probability density for waiting distance
+    to next no-change event.
+
+    Waiting distances between events are modeled as an exponentially
+    distributed random variable (rv). This probability distribution
+    is represented in scipy by an `rv_continous` class object. This
+    function returns a "frozen" rv_continous object that has its 
+    rate parameter fixed, where the rate of a no-change recombination
+    event on the input genealogy is a product of its sum of edge 
+    lengths (L(G)), the per-site per-generation recombination rate 
+    (r) and the Prob(no-change | S,G).
+
+    $$ \lambda_r = L(G) * r * P(no-change | S, G)$$
+
+    The returned frozen `rv_continous` variable can be used to 
+    calculate likelihoods using its `.pdf` method; to sample 
+    random waiting distances using its `.rvs` method; to get the
+    mean expected waiting distance from `.mean`; among other things.
+    See scipy docs.
+    
+    Parameters
+    -----------
+    species_tree: ToyTree
+        ...
+    genealogy: ToyTree
+        A genealogy with branch lengths in generations.
+    imap: Dict[str, Sequence[str]]
+        ...
+    recombination rate: float
+        A per-site per-generation recombination rate.
+    """
+    sumlen = sum(i.dist for i in genealogy if not i.is_root())
+    prob_tree = 1 - get_probability_of_tree_change(species_tree, genealogy, imap)
+    lambda_ = sumlen * prob_tree * recombination_rate
+    return stats.expon.freeze(scale=1/lambda_)
 
 def get_waiting_distance_to_tree_change_rv(
     species_tree: ToyTree,
@@ -744,7 +795,16 @@ def get_waiting_distance_to_topology_change_rv(
     imap: Dict[str, Sequence[str]],
     recombination_rate: float,
     ) -> stats._distn_infrastructure.rv_frozen:
-    """..."""
+    """...
+
+    Parameters
+    ----------
+    species_tree: ToyTree
+        A species tree with edge lengths in units of generations and
+        a feature named Ne on each Node with the diploid effective 
+        population size for that species tree interval.
+    ...
+    """
     sumlen = sum(i.dist for i in genealogy if not i.is_root())
     prob_topo = get_probability_of_topology_change(species_tree, genealogy, imap)
     lambda_ = sumlen * prob_topo * recombination_rate
