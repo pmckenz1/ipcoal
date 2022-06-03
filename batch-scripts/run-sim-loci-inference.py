@@ -151,29 +151,30 @@ def single_command_line_parser():
     return parser.parse_args()
 
 
-
-
-if __name__ == "__main__":
-
+def main():
+    """Parse command line args and start an inference job."""
     args = single_command_line_parser()
 
-    IMBTREE = toytree.rtree.imbtree(ntips=5)
-    SPTREE = IMBTREE.set_node_data("height", dict(zip(range(5, 9), args.node_heights)))
+    imbtree = toytree.rtree.imbtree(ntips=5)
+    sptree = imbtree.set_node_data(
+        "height", dict(zip(range(5, 9), args.node_heights)))
 
     args.raxml_bin = (
         Path(args.raxml_bin) if args.raxml_bin
         else Path(sys.prefix) / "bin" /  "raxml-ng")
-    assert args.raxml_bin.exists(), f"Cannot find {args.raxml_bin}. Use conda instructions."
+    assert args.raxml_bin.exists(), (
+        f"Cannot find {args.raxml_bin}. Use conda instructions.")
 
     args.astral_bin = (
         Path(args.astral_bin) if args.astral_bin
         else Path(sys.prefix) / "bin" /  "astral.5.7.1.jar")
-    assert args.astral_bin.exists(), f"Cannot find {args.astral_bin}. Use conda instructions."
+    assert args.astral_bin.exists(), (
+        f"Cannot find {args.astral_bin}. Use conda instructions.")
 
     Path(args.outdir).mkdir(exist_ok=True)
 
     run_sim_loci_inference(
-        tree=SPTREE,
+        tree=sptree,
         ctime=args.ctime,
         recomb=args.recomb,
         mut=args.mut,
@@ -187,3 +188,7 @@ if __name__ == "__main__":
         raxml_bin=args.raxml_bin,
         astral_bin=args.astral_bin,
     )
+
+
+if __name__ == "__main__":
+    main()
