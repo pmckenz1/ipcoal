@@ -172,7 +172,7 @@ def main():
     ilen = args.nreps
     slen = len(args.nsites)
     njobs = nlen * rlen * clen * slen * ilen
-    print(f"Submitting {njobs} sbatch jobs at 1 second intervals.")
+    print(f"Submitting {njobs} sbatch jobs at {args.delay} second intervals.")
 
     # find conda installed packages
     Path(args.outdir).mkdir(exist_ok=True)

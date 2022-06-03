@@ -36,9 +36,11 @@ def run_sim_loci_inference(
     # create name for this job based on params
     params = (
         f"neff{int(neff)}-ctime{ctime}-"
-        f"recomb{int(bool(recomb))}-rep{rep}-"
+        f"recomb{int(bool(recomb))}-"
         f"nloci{max(nloci)}-nsites{nsites}"
     )
+    jobdir = outdir / params
+    jobdir.mkdir(exist_ok=True)
     # locpath = outdir / (params + "-sim-loci.csv")
     # gtpath = outdir / (params + "-gene-trees.csv")
 
@@ -68,7 +70,7 @@ def run_sim_loci_inference(
         nthreads=1,
         seed=seed,
         binary_path=raxml_bin,
-        tmpdir=outdir,
+        tmpdir=jobdir,
     )
     # raxdf.to_csv(gtpath)  # uncomment to save gene trees
 
@@ -84,9 +86,9 @@ def run_sim_loci_inference(
             nthreads=ncores,
             seed=seed,
             binary_path=raxml_bin,
-            tmpdir=outdir,
+            tmpdir=jobdir,
         )
-        ctree.write(outdir / (params + f"-concat-subloci{numloci}.nwk"))
+        ctree.write(jobdir / f"rep{rep}-concat-subloci{numloci}.nwk")
 
         # infer astral species tree from true genealogies (the first)
         # genealogy at each locus, since subsequent trees are linked.
@@ -95,18 +97,18 @@ def run_sim_loci_inference(
             toytree.mtree(genealogies),
             binary_path=astral_bin,
             seed=seed,
-            tmpdir=outdir,
+            tmpdir=jobdir,
         )
-        atree1.write(outdir / (params + f"-astral-genealogy-subloci{numloci}.nwk"))
+        atree1.write(jobdir / f"rep{rep}-astral-genealogy-subloci{numloci}.nwk")
 
         # infer astral species tree from inferred gene trees.
         atree2 = ipcoal.phylo.infer_astral_tree(
             toytree.mtree(raxdf.gene_tree),
             binary_path=astral_bin,
             seed=seed,
-            tmpdir=outdir,
+            tmpdir=jobdir,
         )
-        atree2.write(outdir / (params + f"-astral-genetree-subloci{numloci}.nwk"))
+        atree2.write(jobdir / f"rep{rep}-astral-genetree-subloci{numloci}.nwk")
 
 
 def single_command_line_parser():
