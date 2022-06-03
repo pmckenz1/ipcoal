@@ -32,6 +32,7 @@ SBATCH = """\
 #SBATCH --ntasks={ncores}
 #SBATCH --mem=12G
 
+# run the command to write and submit a shell script
 python {root}/run-sim-loci-inference.py \
 --neff {neff} \
 --ctime {ctime} \
@@ -45,9 +46,7 @@ python {root}/run-sim-loci-inference.py \
 --ncores {ncores} \
 --node-heights {node_heights} \
 --raxml-bin {raxml_bin} \
---astral-bin {astral_bin} \
---outdir {outdir}
-
+--astral-bin {astral_bin}
 """
 
 
