@@ -66,6 +66,7 @@ def write_and_submit_sbatch_script(
     node_heights: List[float],
     raxml_bin: Path,
     astral_bin: Path,
+    test: bool,
     ):
     """Submit an sbatch job to the cluster with these params."""
     # build parameter name string
@@ -74,12 +75,6 @@ def write_and_submit_sbatch_script(
         f"recomb{int(bool(recomb))}-rep{rep}-"
         f"nloci{max(nloci)}-nsites{nsites}"
     )
-
-    # check for existing output files and skip this job if present
-    # paths = [outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in nloci]
-    # if all(i.exists() for i in paths):
-    #     print(f"skipping job {params}, result files exist.")
-    #     return
 
     # expand sbatch shell script with parameters
     sbatch = SBATCH.format(**dict(
@@ -109,9 +104,10 @@ def write_and_submit_sbatch_script(
         out.write(sbatch)
 
     # submit job to HPC SLURM job manager
-    cmd = ['sbatch', str(tmpfile)]
-    with Popen(cmd, stdout=PIPE, stderr=STDOUT) as proc:
-        out, _ = proc.communicate()
+    if not test:
+        cmd = ['sbatch', str(tmpfile)]
+        with Popen(cmd, stdout=PIPE, stderr=STDOUT) as proc:
+            out, _ = proc.communicate()
 
 
 def distributed_command_line_parser():
@@ -138,9 +134,9 @@ def distributed_command_line_parser():
     parser.add_argument(
         '--ctime', type=float, default=[0.1, 1.5], nargs="*", help='Root species tree height in coalescent units')
     parser.add_argument(
-        '--recomb', type=float, default=[0, 5e-8], nargs=2, help='Recombination rate.')
+        '--recomb', type=float, default=[0, 5e-9], nargs=2, help='Recombination rate.')
     parser.add_argument(
-        '--mut', type=float, default=5e-9, help='Mutation rate.')
+        '--mut', type=float, default=5e-8, help='Mutation rate.')
     parser.add_argument(
         '--node-heights', type=float, default=[0.05, 0.055, 0.06, 1], nargs=4, help='Internal relative node heights')
     parser.add_argument(
@@ -155,6 +151,11 @@ def distributed_command_line_parser():
         '--account', type=str, default="free", help='Account name for SLURM job submission')
     parser.add_argument(
         '--ncores', type=int, default=2, help='Number of cores per job (recommended=2)')
+    parser.add_argument(
+        '--test', type=bool, default=False, help='if True then sbatch scripts are created but not submitted')
+    parser.add_argument(
+        '--delay', type=float, default=0.5, help='Number of seconds delay between SLURM job submissions.')
+
     return parser.parse_args()
 
 
@@ -219,8 +220,9 @@ def main():
                             node_heights=args.node_heights,
                             raxml_bin=raxml_bin,
                             astral_bin=astral_bin,
+                            test=args.test,
                         )
-                        time.sleep(0.5)
+                        time.sleep(args.delay)
     print(f"{njobs} jobs submitted.")
 
 

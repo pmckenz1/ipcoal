@@ -89,7 +89,7 @@ def run_sim_loci_inference(
         ctree.write(outdir / (params + f"-concat-subloci{numloci}.nwk"))
 
         # infer astral species tree from true genealogies (the first)
-        # genealogy at each locus, since subsequent trees are recomb...
+        # genealogy at each locus, since subsequent trees are linked.
         genealogies = model.df.loc[model.df.tidx == 0].genealogy
         atree1 = ipcoal.phylo.infer_astral_tree(
             toytree.mtree(genealogies),
@@ -99,8 +99,7 @@ def run_sim_loci_inference(
         )
         atree1.write(outdir / (params + f"-astral-genealogy-subloci{numloci}.nwk"))
 
-        # infer astral species tree from true genealogies (the first)
-        # genealogy at each locus, since subsequent trees are recomb...
+        # infer astral species tree from inferred gene trees.
         atree2 = ipcoal.phylo.infer_astral_tree(
             toytree.mtree(raxdf.gene_tree),
             binary_path=astral_bin,
