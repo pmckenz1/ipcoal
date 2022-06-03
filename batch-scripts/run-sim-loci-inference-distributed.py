@@ -65,7 +65,7 @@ def write_and_submit_sbatch_script(
     node_heights: List[float],
     raxml_bin: Path,
     astral_bin: Path,
-    test: bool,
+    dry_run: bool,
     ):
     """Submit an sbatch job to the cluster with these params."""
     # build parameter name string
@@ -104,7 +104,7 @@ def write_and_submit_sbatch_script(
         out.write(sbatch)
 
     # submit job to HPC SLURM job manager
-    if not test:
+    if not dry_run:
         cmd = ['sbatch', str(tmpfile)]
         with Popen(cmd, stdout=PIPE, stderr=STDOUT) as proc:
             out, _ = proc.communicate()
@@ -152,7 +152,7 @@ def distributed_command_line_parser():
     parser.add_argument(
         '--ncores', type=int, default=2, help='Number of cores per job (recommended=2)')
     parser.add_argument(
-        '--test', type=bool, default=False, help='if True then sbatch scripts are created but not submitted')
+        '--dry-run', action='store_true', help='Write sbatch scripts but do not submit them.')
     parser.add_argument(
         '--delay', type=float, default=0.5, help='Number of seconds delay between SLURM job submissions.')
 
@@ -220,7 +220,7 @@ def main():
                             node_heights=args.node_heights,
                             raxml_bin=raxml_bin,
                             astral_bin=astral_bin,
-                            test=args.test,
+                            dry_run=args.dry_run,
                         )
                         time.sleep(args.delay)
     print(f"{njobs} jobs submitted.")
