@@ -2,15 +2,14 @@
 
 """...
 
-This Python script includes code to run a simulation routine, to 
+This Python script includes code to run a simulation routine, to
 accept arguments from the command line to parameterize this function,
-and to distribute job submissions of this script to SLURM over 
+and to distribute job submissions of this script to SLURM over
 hundreds of combination of parameter settings.
 
 This script sets up a total of 6400 jobs across different parameter
-combinations, each of which takes a few hours to run, so it is a 
+combinations, each of which takes a few hours to run, so it is a
 good idea to use HPC to run this.
-
 """
 
 from typing import List
@@ -53,10 +52,10 @@ python {root}/run-sim-loci-inference.py \
 
 
 def write_and_submit_sbatch_script(
-    neff: int, 
-    ctime: int, 
+    neff: int,
+    ctime: int,
     mut: float,
-    recomb: float, 
+    recomb: float,
     rep: int,
     seed: int,
     nsites: int,
@@ -66,7 +65,7 @@ def write_and_submit_sbatch_script(
     account: str,
     node_heights: List[float],
     raxml_bin: Path,
-    astral_bin: Path,    
+    astral_bin: Path,
     ):
     """Submit an sbatch job to the cluster with these params."""
     # build parameter name string
@@ -80,7 +79,7 @@ def write_and_submit_sbatch_script(
     # paths = [outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in nloci]
     # if all(i.exists() for i in paths):
     #     print(f"skipping job {params}, result files exist.")
-    #     return 
+    #     return
 
     # expand sbatch shell script with parameters
     sbatch = SBATCH.format(**dict(
@@ -159,7 +158,8 @@ def distributed_command_line_parser():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def main():
+    """Parse command line args, write sbatch scripts, and submit to SLURM."""
 
     # parse command line args
     args = distributed_command_line_parser()
@@ -175,18 +175,18 @@ if __name__ == "__main__":
 
     # find conda installed packages
     Path(args.outdir).mkdir(exist_ok=True)
-    BINDIR = Path(sys.prefix) / "bin"
-    ASTRAL_BIN = BINDIR / "astral.5.7.1.jar"
-    RAXML_BIN = BINDIR / "raxml-ng"
-    assert ASTRAL_BIN.exists(), f"cannot find {ASTRAL_BIN}. Use conda instructions."
-    assert RAXML_BIN.exists(), f"cannot find {RAXML_BIN}. Use conda instructions."
+    bindir = Path(sys.prefix) / "bin"
+    astral_bin = bindir / "astral.5.7.1.jar"
+    raxml_bin = bindir / "raxml-ng"
+    assert astral_bin.exists(), f"cannot find {astral_bin}. Use conda instructions."
+    assert raxml_bin.exists(), f"cannot find {raxml_bin}. Use conda instructions."
 
     # distribute jobs over all params except NLOCI (pass whole list).
-    SEEDS = np.random.default_rng(123).integers(1e12, size=args.nreps)
+    seeds = np.random.default_rng(123).integers(1e12, size=args.nreps)
     for nsites in args.nsites:
         for neff in args.neff:
             for ctime in args.ctime:
-                for recomb in args.recomb:                
+                for recomb in args.recomb:
                     for rep in range(args.nreps):
 
                         # skip submitting job if all outfiles exist.
@@ -206,19 +206,23 @@ if __name__ == "__main__":
                         # gtime = int(ctime * 4 * neff)
                         write_and_submit_sbatch_script(
                             neff=neff,
-                            ctime=ctime, 
+                            ctime=ctime,
                             mut=args.mut,
-                            recomb=recomb, 
+                            recomb=recomb,
                             nloci=args.nloci,
                             nsites=nsites,
                             rep=rep,
-                            seed=SEEDS[rep],
+                            seed=seeds[rep],
                             ncores=args.ncores,
                             outdir=args.outdir,
                             account=args.account,
                             node_heights=args.node_heights,
-                            raxml_bin=RAXML_BIN,
-                            astral_bin=ASTRAL_BIN,                            
+                            raxml_bin=raxml_bin,
+                            astral_bin=astral_bin,
                         )
                         time.sleep(0.5)
     print(f"{njobs} jobs submitted.")
+
+
+if __name__ == "__main__":
+    main()
