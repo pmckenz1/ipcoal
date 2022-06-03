@@ -75,7 +75,6 @@ def write_and_submit_sbatch_script(
         f"recomb{int(bool(recomb))}-rep{rep}-"
         f"nloci{max(nloci)}-nsites{nsites}"
     )
-    print(params)
 
     # expand sbatch shell script with parameters
     sbatch = SBATCH.format(**dict(
@@ -99,9 +98,9 @@ def write_and_submit_sbatch_script(
     ))
     # print(sbatch)
 
-    # write the sbatch shell script
-    tmpfile = (outdir / params).with_suffix(".sh")
-    print(tmpfile)
+    # write the sbatch shell script (careful here using with_suffix
+    # b/c the params string name has a '.' in it for decimal ctime.
+    tmpfile = (outdir / (params + '.sh'))
     with open(tmpfile, 'w', encoding='utf-8') as out:
         out.write(sbatch)
 
