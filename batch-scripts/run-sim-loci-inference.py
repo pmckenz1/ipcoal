@@ -41,8 +41,6 @@ def run_sim_loci_inference(
     )
     jobdir = outdir / params
     jobdir.mkdir(exist_ok=True)
-    # locpath = outdir / (params + "-sim-loci.csv")
-    # gtpath = outdir / (params + "-gene-trees.csv")
 
     # scale species tree to a new root height in generations
     root_in_gens = ctime * 4 * neff
@@ -109,6 +107,24 @@ def run_sim_loci_inference(
             tmpdir=jobdir,
         )
         atree2.write(jobdir / f"rep{rep}-astral-genetree-subloci{numloci}.nwk")
+
+    # cleanup
+    jobparams = (
+        f"neff{int(neff)}-ctime{ctime}-"
+        f"recomb{int(bool(recomb))}-rep{rep}-"
+        f"nloci{max(nloci)}-nsites{nsites}"
+    )
+    sh_file = outdir / (jobparams + ".sh")
+    err_file = outdir / (jobparams + ".err")
+    out_file = outdir / (jobparams + ".out")
+
+    if not err_file.stat().st_size:
+        err_file.unlink()
+    if not out_file.stat().st_size:
+        out_file.unlink()
+    sh_file.unlink()
+
+
 
 
 def single_command_line_parser():
