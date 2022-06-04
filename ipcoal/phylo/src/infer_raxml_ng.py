@@ -55,6 +55,32 @@ def _write_tmp_phylip_file(
     fname = Path(tmp.name).with_suffix(".phy")
     return fname
 
+def infer_raxml_ng_tree_from_alignment(
+    alignment: str,
+    nboots: int=0,
+    nthreads: int=4,
+    nworkers: int=4,
+    seed: Optional[int]=None,
+    subst_model: str="GTR+G",
+    binary_path: Union[str, Path]=None,
+    tmpdir: Optional[Path]=None,
+    ) -> toytree.ToyTree:
+    """Return a single ML tree inferred by raxml-ng from a phylip string."""
+    tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
+    with tempfile.NamedTemporaryFile(dir=tmpdir) as tmp:
+
+        # write phylip data to the tmpfile
+        fname = Path(tmp.name).with_suffix(".phy")
+        with open(fname, 'w', encoding="utf-8") as out:
+            out.write(alignment)
+
+        return infer_raxml_ng_tree_from_phylip(
+            alignment=fname, nboots=nboots, nthreads=nthreads,
+            nworkers=nworkers, seed=seed, subst_model=subst_model, 
+            binary_path=binary_path,
+        )
+
+
 def infer_raxml_ng_tree_from_phylip(
     alignment: Union[str, Path],
     nboots: int=0,
@@ -68,13 +94,13 @@ def infer_raxml_ng_tree_from_phylip(
     """
     binary_path = binary_path if binary_path else RAXML
     assert Path(binary_path).exists(), BINARY_MISSING.format(binary_path)
-    fname = Path(alignment)
-    assert fname.exists(), f"{fname} alignment input file does not exist"
+    fpath = Path(alignment)
+    assert fpath.exists(), f"{fpath} alignment input file does not exist"
 
     # run `raxml-ng [search|all] ...`
     cmd = [
         binary_path,
-        "--msa", str(fname),
+        "--msa", str(fpath),
         "--model", str(subst_model),
         "--redo",
         "--threads", str(nthreads),
@@ -85,9 +111,9 @@ def infer_raxml_ng_tree_from_phylip(
         cmd.extend(["--seed", str(seed)])
     if nboots:
         cmd.extend(["--all", "--bs-trees", str(nboots)])
-        treefile = fname.with_suffix(".phy.raxml.support")
+        treefile = fpath.with_suffix(".phy.raxml.support")
     else:
-        treefile = fname.with_suffix(".phy.raxml.bestTree")
+        treefile = fpath.with_suffix(".phy.raxml.bestTree")
 
     with Popen(cmd, stderr=STDOUT, stdout=PIPE) as proc:
         out, _ = proc.communicate()
@@ -96,7 +122,8 @@ def infer_raxml_ng_tree_from_phylip(
 
     # parse result from treefile and cleanup
     tree = toytree.tree(treefile)
-    for tmp in fname.parent.glob(fname.name + "*"):
+    tmpfiles = fpath.parent.glob(fpath.name + ".*")
+    for tmp in tmpfiles:
         tmp.unlink()
     return tree
 
@@ -236,13 +263,19 @@ def infer_raxml_ng_trees(
                 rasyncs[lidx] = tree.write(None)
                 empty += 1
             else:
-                fname = _write_tmp_phylip_file(model, int(lidx), diploid, tmpdir)
-                kwargs['alignment'] = fname
+                # disk-crushing mode.
+                # fname = _write_tmp_phylip_file(model, int(lidx), diploid, tmpdir)
+                # kwargs['alignment'] = fname
+                # kwargs['seed'] = rng.integers(1e12)
+                # rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
+                # rasyncs[lidx] = rasync
+
+                # disk-friendly mode
+                ali = model.write_concat_to_phylip(idxs=int(lidx), diploid=diploid, quiet=True)
+                kwargs['alignment'] = ali
                 kwargs['seed'] = rng.integers(1e12)
-                rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
+                rasync = pool.submit(infer_raxml_ng_tree_from_alignment, **kwargs)
                 rasyncs[lidx] = rasync
-            # if not lidx % 100:
-                # print(lidx)
 
     # log report of empty windows.
     if empty:
