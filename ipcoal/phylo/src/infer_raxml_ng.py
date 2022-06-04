@@ -74,12 +74,13 @@ def infer_raxml_ng_tree_from_alignment(
         with open(fname, 'w', encoding="utf-8") as out:
             out.write(alignment)
 
-        return infer_raxml_ng_tree_from_phylip(
+        tree = infer_raxml_ng_tree_from_phylip(
             alignment=fname, nboots=nboots, nthreads=nthreads,
             nworkers=nworkers, seed=seed, subst_model=subst_model, 
             binary_path=binary_path,
         )
-
+    fname.unlink()
+    return tree
 
 def infer_raxml_ng_tree_from_phylip(
     alignment: Union[str, Path],
@@ -126,6 +127,7 @@ def infer_raxml_ng_tree_from_phylip(
     for tmp in tmpfiles:
         tmp.unlink()
     return tree
+
 
 def infer_raxml_ng_tree(
     model: ipcoal.Model,
@@ -244,7 +246,8 @@ def infer_raxml_ng_trees(
     # store arguments to infer method
     kwargs = dict(
         nboots=nboots, nthreads=nthreads, nworkers=nworkers,
-        seed=seed, subst_model=subst_model, binary_path=binary_path)
+        seed=seed, subst_model=subst_model, 
+        binary_path=binary_path, tmpdir=tmpdir)
 
     # distribute jobs in parallel
     rng = np.random.default_rng(seed)

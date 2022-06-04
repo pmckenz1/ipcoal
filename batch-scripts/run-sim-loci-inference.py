@@ -125,8 +125,6 @@ def run_sim_loci_inference(
     sh_file.unlink()
 
 
-
-
 def single_command_line_parser():
     """Parse command line arguments and return.
 
