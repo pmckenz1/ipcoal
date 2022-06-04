@@ -184,12 +184,11 @@ def main():
 
     # distribute jobs over all params except NLOCI (pass whole list).
     seeds = np.random.default_rng(123).integers(1e12, size=args.nreps)
-    for nsites in args.nsites:
-        for neff in args.neff:
+    for rep in range(args.nreps):
+        for nsites in args.nsites:
             for ctime in args.ctime:
                 for recomb in args.recomb:
-                    for rep in range(args.nreps):
-
+                    for neff in args.neff:
                         # skip submitting job if all outfiles exist.
                         params = (
                             f"neff{neff}-ctime{ctime}-"
