@@ -5,6 +5,7 @@
 """
 
 from typing import Union, Sequence, Optional
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -45,7 +46,7 @@ def _write_tmp_phylip_file(
     the arguments and parallelize it.
     """
     tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
-    with tempfile.NamedTemporaryFile(dir=tmpdir) as tmp:
+    with tempfile.NamedTemporaryFile(dir=tmpdir, suffix=f"_{os.getpid()}") as tmp:
         model.write_concat_to_phylip(
             name=tmp.name,
             idxs=idxs,
