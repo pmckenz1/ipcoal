@@ -27,6 +27,14 @@ logger = logger.bind(name="ipcoal")
 ToyTree = TypeVar("ToyTree")
 
 
+
+################################################################
+################################################################
+## TOPOLOGY CHANGE
+################################################################
+################################################################
+
+
 def get_fast_probability_of_topology_change(garr, barr, sumlen):
     # traverse over all edges of the genealogy
     total_prob = 0
@@ -38,6 +46,35 @@ def get_fast_probability_of_topology_change(garr, barr, sumlen):
         # contribute to total probability normalized by prop edge len
         total_prob += (blen / sumlen) * prob
     return 1 - total_prob    
+
+def _get_fast_probability_topology_unchanged_given_b(barr, parr, sarr) -> float:
+    # get all intervals on branches b, c, and b', respectively
+    btab = table[table.edges.apply(lambda x: branch in x)]
+    ptab = table[table.edges.apply(lambda x: parent in x)]
+    stab = table[table.edges.apply(lambda x: sibling in x)]
+
+    # get intervals containing both b and b' (above t_m)
+    mtab = btab.loc[btab.index.intersection(stab.index)]
+
+    # get lower and upper bounds of this gtree edge
+    t_lb, t_ub = btab.start.min(), btab.stop.max()
+
+    # get sum pb1 from intervals 0 to m
+    # logger.info(f"{idx},{jdx}, {list(itab.index)}")
+    pb1 = _get_sum_pb1(btab, ptab, mtab)
+    logger.info(f"sum-pb1={pb1:.3f}")
+
+    # get sum pb2 from m to end of b
+    pb2 = _get_sum_pb2(btab, ptab, mtab)
+    logger.info(f"sum-pb2={pb2:.3f}")
+    return (1 / (t_ub - t_lb)) * (pb1 + pb2)    
+
+
+################################################################
+################################################################
+## TREE CHANGE
+################################################################
+################################################################
 
 @njit
 def get_fast_probability_of_tree_change(
@@ -117,29 +154,6 @@ def _get_fast_probability_tree_unchanged_given_b(arr: np.ndarray) -> float:
     return (1 / (tbu - tbl)) * sumval
 
 
-def _get_fast_probability_topology_unchanged_given_b(barr, parr, sarr) -> float:
-    # get all intervals on branches b, c, and b', respectively
-    btab = table[table.edges.apply(lambda x: branch in x)]
-    ptab = table[table.edges.apply(lambda x: parent in x)]
-    stab = table[table.edges.apply(lambda x: sibling in x)]
-
-    # get intervals containing both b and b' (above t_m)
-    mtab = btab.loc[btab.index.intersection(stab.index)]
-
-    # get lower and upper bounds of this gtree edge
-    t_lb, t_ub = btab.start.min(), btab.stop.max()
-
-    # get sum pb1 from intervals 0 to m
-    # logger.info(f"{idx},{jdx}, {list(itab.index)}")
-    pb1 = _get_sum_pb1(btab, ptab, mtab)
-    logger.info(f"sum-pb1={pb1:.3f}")
-
-    # get sum pb2 from m to end of b
-    pb2 = _get_sum_pb2(btab, ptab, mtab)
-    logger.info(f"sum-pb2={pb2:.3f}")
-    return (1 / (t_ub - t_lb)) * (pb1 + pb2)    
-
-
 @njit
 def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
     """Return pij value for two intervals.
@@ -216,11 +230,12 @@ def get_fast_waiting_distance_to_tree_change_rates(
         lambdas[gidx] = sumlen * prob_tree * recombination_rate
     return lambdas
 
-#########################
-# 
-# Get embedding data
-# 
-#########################
+
+################################################################
+################################################################
+# GET EMBEDDING DATA
+################################################################
+################################################################
 
 
 def get_concat_embedding_data(etables: List[pd.DataFrame]) -> np.ndarray:
@@ -290,11 +305,11 @@ def get_super_lengths(econcat: np.ndarray) -> np.ndarray:
     return larr
 
 
-######################### 
-#
-# likelihood
-#
-#########################
+################################################################
+################################################################
+# LIKELIHOOD FUNCTIONS
+################################################################
+################################################################
 
 @njit
 def update_neffs(supertable: np.ndarray, popsizes: np.ndarray) -> None:
@@ -358,6 +373,12 @@ def get_loglik_parallel(
     return -loglik                    
 
 
+################################################################
+################################################################
+# MAIN
+################################################################
+################################################################
+
 if __name__ == "__main__":
 
 
@@ -397,10 +418,12 @@ if __name__ == "__main__":
 
     # Get genealogy embedding table
     ETABLE = get_genealogy_embedding_table(SPTREE, GTREE, IMAP)
-    print(f"Full genealogy embedding table\n{ETABLE}\n")
+    print(f"Single genealogy embedding table\n{ETABLE}\n")
+
+    eee = get_concat_embedding_data([ETABLE, ETABLE, ETABLE])
+    print(f"Fast multiple genealogy embedding table\n{eee}\n")
 
     EARR, BARR, SARR = get_data([ETABLE, ETABLE, ETABLE])
-
 
     for gidx, sumlen in enumerate(SARR):
         garr = EARR[EARR[:, 6] == gidx]

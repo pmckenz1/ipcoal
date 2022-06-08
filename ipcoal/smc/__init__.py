@@ -22,10 +22,12 @@ from ipcoal.smc.ms_smc import (
 	plot_edge_probabilities,
 
 	get_expected_waiting_distance_to_recombination_event,
+	get_expected_waiting_distance_to_no_change,
 	get_expected_waiting_distance_to_tree_change,
 	get_expected_waiting_distance_to_topology_change,
 
 	get_waiting_distance_to_recombination_event_rv,
+	get_waiting_distance_to_no_change_rv,	
 	get_waiting_distance_to_tree_change_rv,
 	get_waiting_distance_to_topology_change_rv,
 )
