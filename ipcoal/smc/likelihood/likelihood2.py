@@ -495,6 +495,7 @@ def get_tree_distance_loglik(
     # get rates (lambdas) for waiting distances
     rates = get_fast_waiting_distance_to_tree_change_rates(*args)
     # do not allow rates to be 0, minimum is 1bp b/c genome is discrete
+    logger.debug(f"min rates={min(rates):.3f}")
     rates[rates == 0] = 1
     # get logpdf of observed waiting distances given rates (lambdas)
     logliks = stats.expon.logpdf(scale=1/rates, x=lengths)
