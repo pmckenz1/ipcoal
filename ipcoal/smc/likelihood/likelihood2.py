@@ -369,7 +369,6 @@ def get_fast_probability_of_tree_change(
         # get P(tree-unchanged | S, G, b)
         idxs = np.nonzero(garr[:, 7 + bidx])[0]
         prob = _get_fast_probability_tree_unchanged_given_b(garr[idxs, :])
-
         # contribute to total probability normalized by prop edge len
         total_prob += (blen / sumlen) * prob
     return 1 - total_prob
@@ -433,7 +432,9 @@ def get_fast_waiting_distance_to_tree_change_rates(
         garr = embedding_arr[embedding_arr[:, 6] == gidx]
         barr = blen_arr[gidx]
         sumlen = sumlen_arr[gidx]
+        # probability is a float in [0-1]
         prob_tree = get_fast_probability_of_tree_change(garr, barr, sumlen)
+        # lambda is a rate > 0
         lambdas[gidx] = sumlen * prob_tree * recombination_rate
     return lambdas
 
@@ -494,9 +495,6 @@ def get_tree_distance_loglik(
     args = embedding_arr, blen_arr, sumlen_arr, recomb
     # get rates (lambdas) for waiting distances
     rates = get_fast_waiting_distance_to_tree_change_rates(*args)
-    # do not allow rates to be 0, minimum is 1bp b/c genome is discrete
-    logger.debug(f"min rates={min(rates):.3f}")
-    rates[rates == 0] = 1
     # get logpdf of observed waiting distances given rates (lambdas)
     logliks = stats.expon.logpdf(scale=1/rates, x=lengths)
     return -np.sum(logliks)
