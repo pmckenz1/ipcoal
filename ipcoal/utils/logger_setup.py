@@ -36,7 +36,7 @@ def set_log_level(log_level="INFO"):
 
     This removes default loguru handler, but leaves any others, 
     and adds a new one that will filter to only print logs from 
-    toytree modules, which should use `logger.bind(name='toytree')`.
+    ipcoal modules, which should use `logger.bind(name='ipcoal')`.
     """
     for idx in LOGGERS:
         try:

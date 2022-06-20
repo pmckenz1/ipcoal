@@ -236,9 +236,11 @@ def _get_sum_pb1(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
         # p_ij across bc
         # logger.warning(f"{[(ftab, idx, jidx) for jidx in ftab.index]}")
         sum1 = sum(_get_pij(ftab, idx, jidx) for jidx in ftab.index)
+        # logger.info(f"sum1={sum1}")
         # p_ij from m to end of b
         # logger.warning(f"{[(btab, idx, sidx) for sidx in mtab.index]}")
         sum2 = sum(_get_pij(btab, idx, sidx) for sidx in mtab.index)
+        # logger.info(f"sum2={sum2}")
         second_term = sum1 + sum2
 
         # and multiply them together.
@@ -374,7 +376,6 @@ def get_probability_topology_unchanged_given_b_and_tr(
     # probability of recoalescing with self in interval idx
     term1 = (1 / btab.nedges[idx])
 
-    logger.info(f"{time:.1f}, {idx}")
     # if t_r < t_m then use three interval equation
     if time < mtab.start.min():
 
@@ -473,11 +474,11 @@ def get_probability_topology_unchanged_given_b(
     # get sum pb1 from intervals 0 to m
     # logger.info(f"{idx},{jdx}, {list(itab.index)}")
     pb1 = _get_sum_pb1(btab, ptab, mtab)
-    logger.info(f"sum-pb1={pb1:.3f}")
+    # logger.info(f"branch {branch}, sum-pb1={pb1:.3f}")
 
     # get sum pb2 from m to end of b
     pb2 = _get_sum_pb2(btab, ptab, mtab)
-    logger.info(f"sum-pb2={pb2:.3f}")
+    # logger.info(f"branch {branch}, sum-pb2={pb2:.3f}")
     return (1 / (t_ub - t_lb)) * (pb1 + pb2)
 
 ###################################################################
@@ -642,7 +643,7 @@ def get_expected_waiting_distance_to_no_change(
     """..."""
     return get_waiting_distance_to_no_change_rv(
         species_tree,
-        genealogy, 
+        genealogy,
         imap,
         recombination_rate).mean()
 
@@ -655,7 +656,7 @@ def get_expected_waiting_distance_to_tree_change(
     """..."""
     return get_waiting_distance_to_tree_change_rv(
         species_tree,
-        genealogy, 
+        genealogy,
         imap,
         recombination_rate).mean()
 
@@ -665,10 +666,10 @@ def get_expected_waiting_distance_to_topology_change(
     imap: Dict[str, Sequence[str]],
     recombination_rate: float,
     ) -> float:
-    """..."""    
+    """..."""
     return get_waiting_distance_to_topology_change_rv(
         species_tree,
-        genealogy, 
+        genealogy,
         imap,
         recombination_rate).mean()
 
@@ -686,19 +687,19 @@ def get_waiting_distance_to_recombination_event_rv(
     Waiting distances between events are modeled as an exponentially
     distributed random variable (rv). This probability distribution
     is represented in scipy by an `rv_continous` class object. This
-    function returns a "frozen" rv_continous object that has its 
-    rate parameter fixed, where the rate of recombination on the 
-    input genealogy is a product of its sum of edge lengths (L(G)) 
-    and the per-site per-generation recombination rate (r). 
+    function returns a "frozen" rv_continous object that has its
+    rate parameter fixed, where the rate of recombination on the
+    input genealogy is a product of its sum of edge lengths (L(G))
+    and the per-site per-generation recombination rate (r).
 
     $$ \lambda_r = L(G) * r $$
 
-    The returned frozen `rv_continous` variable can be used to 
-    calculate likelihoods using its `.pdf` method; to sample 
+    The returned frozen `rv_continous` variable can be used to
+    calculate likelihoods using its `.pdf` method; to sample
     random waiting distances using its `.rvs` method; to get the
     mean expected waiting distance from `.mean`; among other things.
     See scipy docs.
-    
+
     Parameters
     -----------
     genealogy: ToyTree
@@ -722,20 +723,20 @@ def get_waiting_distance_to_no_change_rv(
     Waiting distances between events are modeled as an exponentially
     distributed random variable (rv). This probability distribution
     is represented in scipy by an `rv_continous` class object. This
-    function returns a "frozen" rv_continous object that has its 
+    function returns a "frozen" rv_continous object that has its
     rate parameter fixed, where the rate of a no-change recombination
-    event on the input genealogy is a product of its sum of edge 
-    lengths (L(G)), the per-site per-generation recombination rate 
+    event on the input genealogy is a product of its sum of edge
+    lengths (L(G)), the per-site per-generation recombination rate
     (r) and the Prob(no-change | S,G).
 
     $$ \lambda_r = L(G) * r * P(no-change | S, G)$$
 
-    The returned frozen `rv_continous` variable can be used to 
-    calculate likelihoods using its `.pdf` method; to sample 
+    The returned frozen `rv_continous` variable can be used to
+    calculate likelihoods using its `.pdf` method; to sample
     random waiting distances using its `.rvs` method; to get the
     mean expected waiting distance from `.mean`; among other things.
     See scipy docs.
-    
+
     Parameters
     -----------
     species_tree: ToyTree
@@ -764,19 +765,19 @@ def get_waiting_distance_to_tree_change_rv(
     Waiting distances between events are modeled as an exponentially
     distributed random variable (rv). This probability distribution
     is represented in scipy by an `rv_continous` class object. This
-    function returns a "frozen" rv_continous object that has its 
-    rate parameter fixed, where the rate of recombination on the 
-    input genealogy is a product of its sum of edge lengths (L(G)) 
-    and the per-site per-generation recombination rate (r). 
+    function returns a "frozen" rv_continous object that has its
+    rate parameter fixed, where the rate of recombination on the
+    input genealogy is a product of its sum of edge lengths (L(G))
+    and the per-site per-generation recombination rate (r).
 
     $$ \lambda_r = L(G) * r * P(tree-change)$$
 
-    The returned frozen `rv_continous` variable can be used to 
-    calculate likelihoods using its `.pdf` method; to sample 
+    The returned frozen `rv_continous` variable can be used to
+    calculate likelihoods using its `.pdf` method; to sample
     random waiting distances using its `.rvs` method; to get the
     mean expected waiting distance from `.mean`; among other things.
     See scipy docs.
-    
+
     Parameters
     -----------
     genealogy: ToyTree
@@ -801,7 +802,7 @@ def get_waiting_distance_to_topology_change_rv(
     ----------
     species_tree: ToyTree
         A species tree with edge lengths in units of generations and
-        a feature named Ne on each Node with the diploid effective 
+        a feature named Ne on each Node with the diploid effective
         population size for that species tree interval.
     ...
     """
@@ -811,7 +812,7 @@ def get_waiting_distance_to_topology_change_rv(
     return stats.expon.freeze(scale=1/lambda_)
 
 ###################################################################
-# Plotting 
+# Plotting
 ###################################################################
 
 def plot_edge_probabilities(

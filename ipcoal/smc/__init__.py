@@ -31,3 +31,11 @@ from ipcoal.smc.ms_smc import (
 	get_waiting_distance_to_tree_change_rv,
 	get_waiting_distance_to_topology_change_rv,
 )
+
+from ipcoal.smc.likelihood.embedding import (
+	Embedding, TreeEmbedding, TopologyEmbedding
+)
+from ipcoal.smc.likelihood.utils import (
+	get_topology_interval_lengths,
+	iter_unique_topologies_from_genealogies,
+)

@@ -4,123 +4,20 @@
 
 This contains modified versions of the functions in ms_smc.py that
 are written to be faster (using jit compilation) and to reduce some
-redundancy that would arise when the same functions are run 
-repeatedly without changing the 
+redundancy that would arise when the same functions are run
+repeatedly without changing the
 
 """
 
-from typing import TypeVar, Dict, Tuple, List
-from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import pandas as pd
 from scipy import stats
 from loguru import logger
 import toytree
 from numba import njit, prange
-import ipcoal
-from ipcoal.smc import (
-    get_probability_tree_unchanged_given_b,
-    get_genealogy_embedding_table,
-)
+from ipcoal.smc.likelihood.embedding import TreeEmbedding, TopologyEmbedding
 
 logger = logger.bind(name="ipcoal")
-ToyTree = TypeVar("ToyTree")
-
-
-################################################################
-################################################################
-# GET EMBEDDING DATA
-################################################################
-################################################################
-
-
-def get_concat_embedding_data(etables: List[pd.DataFrame]) -> pd.DataFrame:
-    """Return concatenated embedding table labeled by genealogy and branch.
-
-    This function is provided primarily for didactic purposes. The 
-    concatenated embedding table is 
-    """
-    # check that etable is properly formatted
-    ninodes = etables[0].iloc[-1, 6][0]
-
-    # iterate over each embedding table
-    btables = []
-    for gidx, etable in enumerate(etables):
-        # make a column for the genealogy index
-        etable["gindex"] = gidx
-        
-        # make presence/absence column for each branch
-        bidxs = np.zeros((etable.shape[0], ninodes))
-        for bidx in range(ninodes):
-            btable = etable[etable.edges.apply(lambda x: bidx in x)]
-            # record branches in this interval as 1.
-            bidxs[btable.index, bidx] = 1
-        bidxs = pd.DataFrame(bidxs, columns=range(ninodes))
-        btable = pd.concat([etable, bidxs], axis=1)
-        btable = btable.drop(columns=["coal", "edges"], index=[btable.index[-1]])
-        btable.neff *= 2
-        btables.append(btable)
-    return pd.concat(btables, ignore_index=True)
-
-
-def get_relationship_table(genealogies):
-    """Return an array with relationships among nodes in each genealogy.
-
-    The returned table is used in likelihood calculations for the 
-    waiting distance to topology-change events.
-    """
-    ntrees = len(genealogies)
-    nnodes = genealogies[0].nnodes
-    farr = np.zeros((ntrees, nnodes, 3))
-    for tidx, tree in enumerate(genealogies):
-        for nidx, node in enumerate(tree):
-            farr[tidx, nidx] = nidx, node.get_sisters()[0].idx, node.up.idx
-    return farr
-
-
-def get_data(etables: List[pd.DataFrame]) -> Tuple:
-    """Returns a tuple of four numpy arrays for MS-SMC' likelihood func.
-
-    This returns numpy arrays with all data needed for fast calculations
-    of tree or topology waiting distances. The returned arrays are
-    1. concatenated genealogy embedding table
-    2. genealogy all edge lengths table
-    3. summed genealogy edge lengths table
-    4. genealogy edge relationships table 
-    """
-    earr = get_concat_embedding_data(etables)
-    barr = get_super_lengths(earr)
-    sarr = barr.sum(axis=1)
-    return earr.values.astype(float), barr, sarr
-
-
-def get_super_lengths(econcat: pd.DataFrame) -> np.ndarray:
-    """Return array of shape=(ngenealogies, nnodes) with all edge lengths.
-
-    Parameters
-    ----------
-    econcat: pd.DataFrame
-        The concatenated genealogy embedding table.
-    """
-    gidxs = sorted(econcat.gindex.unique())
-    nnodes = econcat.shape[1] - 7
-    larr = np.zeros((len(gidxs), nnodes), dtype=float)
-
-    for gidx in gidxs:
-        # get etable for this genealogy
-        garr = econcat[econcat.gindex == gidx].values
-        ixs, iys = np.nonzero(garr[:, 7:])
-
-        # iterate over nodes of the genealogy
-        for bidx in range(nnodes):
-            # get index of intervals with this branch
-            idxs = ixs[iys == bidx]
-            barr = garr[idxs, :]
-            blow = barr[:, 0].min()
-            btop = barr[:, 1].max()
-            larr[gidx, bidx] = btop - blow
-    return larr
-
 
 ################################################################
 ################################################################
@@ -156,7 +53,7 @@ def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
     jdx:
         Index of an interval in jtable.
     """
-    # pii 
+    # pii
     if idx == jdx:
         term1 = -(1 / itab[idx, 4])
         term2 = np.exp(-(itab[idx, 4] / itab[idx, 3]) * itab[idx, 1])
@@ -180,11 +77,21 @@ def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
     term3 = np.exp(term3_inner_a - term3_inner_b)
     return term1 * term2 * term3
 
-
+@njit
 def _get_fast_sum_pb1(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> float:
-    """Return value for the $p_{b,1}$ variable. 
+    """Return value for the $p_{b,1}$ variable.
 
-    This includes components on branch below below t_m.
+    Parameters
+    ----------
+    btab: np.ndarray
+        Array of all intervals on branch b.
+    mtab: np.ndarray
+        Array of a subset of btab, including intervals on branch b
+        shared with b' (its sister lineage). This potentially excludes
+        intervals on b below a species divergence separating b and b'.
+    ftab: np.ndarray
+        Array of a superset of btab, including all intervals on branch
+        b or on its parent branch, c.
     """
     pbval = 0
 
@@ -192,9 +99,12 @@ def _get_fast_sum_pb1(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> f
     t_m = mtab[:, 0].min()
     for idx in range(btab.shape[0]):
         row = btab[idx]
+
+        # if idx interval start is >=tm it doesn't affect pb1 (its in pb2)
         if row[0] >= t_m:
             continue
 
+        # get first term
         estop = (row[4] / row[3]) * row[1]
         estart = (row[4] / row[3]) * row[0]
         if estop > 100:
@@ -202,25 +112,39 @@ def _get_fast_sum_pb1(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> f
         else:
             first_term = row[3] * (np.exp(estop) - np.exp(estart))
 
-        # pij across bc
+        # pij across bc (from this i on b to each j on bc)
         sum1 = 0
         for jidx in range(ftab.shape[0]):
-            sum1 += _get_fast_pij(ftab, idx, jidx)  # TODO CHECK IDXS
+            sum1 += _get_fast_pij(ftab, idx, jidx)
+        # logger.info(f"sum1={sum1}")
 
-        # pij from m to end of b
+        # pij across b > tm (from this i on b to each j on b above tm)
         sum2 = 0
-        for sidx in range(mtab.shape[0]):
-            sum2 += _get_fast_pij(btab, idx, sidx)
+        for jidx in range(mtab.shape[0]):
+            # which row in mtab corresponds to idx in btab
+            midx = np.argmax(btab[:, 0] == mtab[jidx, 0])
+            sum2 += _get_fast_pij(btab, idx, midx)
+        # logger.info(f"sum2={sum2}")
 
         second_term = sum1 + sum2
         pbval += (1 / row[4]) * (row[5] + (first_term * second_term))
     return pbval
 
-
+@njit
 def _get_fast_sum_pb2(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> float:
-    """Return value for the $p_{b,1}$ variable. 
+    """Return value for the $p_{b,2}$ variable.
 
-    This includes components on branch below below t_m.
+    Parameters
+    ----------
+    btab: np.ndarray
+        Array of all intervals on branch b.
+    mtab: np.ndarray
+        Array of a subset of btab, including intervals on branch b
+        shared with b' (its sister lineage). This potentially excludes
+        intervals on b below a species divergence separating b and b'.
+    ftab: np.ndarray
+        Array of a superset of btab, including all intervals on branch
+        b or on its parent branch, c.
     """
     pbval = 0
 
@@ -228,6 +152,7 @@ def _get_fast_sum_pb2(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> f
     for idx in range(mtab.shape[0]):
         row = mtab[idx]
 
+        # get first term
         estop = (row[4] / row[3]) * row[1]
         estart = (row[4] / row[3]) * row[0]
         if estop > 100:
@@ -237,16 +162,15 @@ def _get_fast_sum_pb2(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> f
 
         # pij across intervals on b
         sum1 = 0
-        for bidx in range(btab.shape[0]):
-            sum1 += _get_fast_pij(btab, idx, bidx)  # TODO CHECK IDXS
+        for jidx in range(idx, mtab.shape[0]):
+            sum1 += _get_fast_pij(mtab, idx, jidx)
 
         # pij across intervals on c
         sum2 = 0
         for pidx in range(ftab.shape[0]):
-            # skip intervals ...
-            if ftab[pidx, 0]:
-                pass
-            sum2 += _get_fast_pij(ftab, idx, pidx)
+            if pidx >= btab.shape[0]:
+                midx = np.argmax(ftab[:, 0] == mtab[idx, 0])
+                sum2 += _get_fast_pij(ftab, midx, pidx)
 
         second_term = (2 * sum1) + sum2
         pbval += (1 / row[4]) * ((2 * row[5]) + (first_term * second_term))
@@ -260,31 +184,45 @@ def _get_fast_sum_pb2(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> f
 ################################################################
 
 
-def get_fast_probability_of_topology_change(
-    garr: np.ndarray, 
-    barr: np.array, 
+@njit
+def _get_fast_probability_of_topology_change(
+    garr: np.ndarray,
+    barr: np.ndarray,
     sumlen: float,
+    rarr: np.ndarray,
     ) -> float:
     """Return probability that recombination causes a topology-change.
 
     """
     total_prob = 0
 
-    # iterate over branch indices 
-    for bidx, blen in enumerate(barr):
+    # iterate over branch indices
+    for bidx, blen in enumerate(barr[:-1]):
 
-        # get indices to select intervals of the genealogy embedding 
-        # table that include this branch, for every genealogy.
-        idxs = np.nonzero(garr[:, 7 + bidx])[0]
+        # in contrast to the tree change probability function we do
+        # not subselect the branch intervals here, but instead do it
+        # the 'given_b' function, where it also selects based on
+        # sibling and parent idxs.
+        # idxs = np.nonzero(garr[:, 7 + bidx])[0]
+
+        # get relationships
+        sidx = rarr[bidx, 1]
+        pidx = rarr[bidx, 2]
 
         # get P(tree-unchanged | S, G, b) for every genealogy
-        prob = _get_fast_probability_topology_unchanged_given_b(garr[idxs, :])
+        prob = _get_fast_probability_topology_unchanged_given_b(
+            arr=garr,
+            branch=bidx,
+            sibling=sidx,
+            parent=pidx,
+        )
 
         # get Prob scaled by the proportion of this branch on each tree.
         total_prob += (blen / sumlen) * prob
-    return 1 - total_prob    
+    return 1 - total_prob
 
 
+@njit
 def _get_fast_probability_topology_unchanged_given_b(
     arr: np.ndarray,
     branch: int,
@@ -292,7 +230,7 @@ def _get_fast_probability_topology_unchanged_given_b(
     parent: int,
     ) -> float:
     """Return probability of tree-change that does not change topology.
-    
+
     Parameters
     ----------
     arr: np.ndarray
@@ -302,13 +240,13 @@ def _get_fast_probability_topology_unchanged_given_b(
     sibling: int
         Node index of the sibling of 'branch'.
     parent: int
-        Node index of the parent of 'branch'.        
+        Node index of the parent of 'branch'.
     """
     # get all intervals on branch b
     btab = arr[arr[:, 7 + branch] == 1]
 
     # get intervals containing both b and b' (above t_m)
-    mtab = arr[(arr[:, 7 + branch] == 1) and (arr[:, 7 + sibling] == 1)]
+    mtab = arr[(arr[:, 7 + branch] == 1) & (arr[:, 7 + sibling] == 1)]
 
     # get intervals containing either b or c
     ftab = arr[(arr[:, 7 + branch] == 1) | (arr[:, 7 + parent] == 1)]
@@ -318,14 +256,39 @@ def _get_fast_probability_topology_unchanged_given_b(
 
     # get sum pb1 from intervals 0 to m
     pb1 = _get_fast_sum_pb1(btab, ftab, mtab)
+    # logger.info(f"branch {branch}, sum-pb1={pb1:.3f}")
 
     # get sum pb2 from m to end of b
     pb2 = _get_fast_sum_pb2(btab, ftab, mtab)
+    # logger.info(f"branch {branch}, sum-pb2={pb2:.3f}")
     return (1 / (t_ub - t_lb)) * (pb1 + pb2)
 
 
-def get_fast_waiting_distance_to_topology_change_rates():
-    pass
+@njit(parallel=True)
+def get_fast_waiting_distance_to_topology_change_rates(
+    earr: np.ndarray,
+    barr: np.ndarray,
+    sarr: np.ndarray,
+    rarr: np.ndarray,
+    recombination_rate: float,
+    ) -> np.ndarray:
+    """return LAMBDA rate parameters for waiting distance prob density.
+
+    """
+    lambdas = np.zeros(len(sarr))
+
+    # use numba parallel to iterate over genealogies
+    for gidx in prange(len(sarr)):
+        garr = earr[earr[:, 6] == gidx]
+        blens = barr[gidx]
+        sumlen = sarr[gidx]
+        relate = rarr[gidx]
+        # probability is a float in [0-1]
+        prob_topo = _get_fast_probability_of_topology_change(garr, blens, sumlen, relate)
+        # lambda is a rate > 0
+        lambdas[gidx] = sumlen * prob_topo * recombination_rate
+    return lambdas
+
 
 ################################################################
 ################################################################
@@ -334,9 +297,9 @@ def get_fast_waiting_distance_to_topology_change_rates():
 ################################################################
 
 @njit
-def get_fast_probability_of_tree_change(
-    garr: np.ndarray, 
-    barr: np.array, 
+def _get_fast_probability_of_tree_change(
+    garr: np.ndarray,
+    barr: np.array,
     sumlen: float,
     ) -> float:
     """Return probability that recombination causes a tree-change.
@@ -358,14 +321,14 @@ def get_fast_probability_of_tree_change(
         Genealogy embedding intervals for this genealogy.
     iarr:
         Indexer to get intervals unique to each branch.
-    barr: 
+    barr:
         Branch lengths for each branch on the genealogy.
     sumlen:
         Sum of branch lengths on the genealogy.
     """
     # traverse over all edges of the genealogy
     total_prob = 0
-    for bidx, blen in enumerate(barr):
+    for bidx, blen in enumerate(barr[:-1]):
         # get P(tree-unchanged | S, G, b)
         idxs = np.nonzero(garr[:, 7 + bidx])[0]
         prob = _get_fast_probability_tree_unchanged_given_b(garr[idxs, :])
@@ -413,27 +376,27 @@ def _get_fast_probability_tree_unchanged_given_b(arr: np.ndarray) -> float:
 
 @njit(parallel=True)
 def get_fast_waiting_distance_to_tree_change_rates(
-    embedding_arr: np.ndarray,
-    blen_arr: np.ndarray,
-    sumlen_arr: np.ndarray,
+    earr: np.ndarray,
+    barr: np.ndarray,
+    sarr: np.ndarray,
     recombination_rate: float,
     ) -> np.ndarray:
     """Return LAMBDA rate parameters for waiting distance prob. density.
 
     Note
-    ----    
+    ----
     etable here is 2X neff and no NaN (not default embedding table.)
     """
-    lambdas = np.zeros(len(sumlen_arr))
+    lambdas = np.zeros(len(sarr))
 
     # use numba parallel to iterate over genealogies
-    for gidx in prange(len(sumlen_arr)):
-        sumlen = sumlen_arr[gidx]
-        garr = embedding_arr[embedding_arr[:, 6] == gidx]
-        barr = blen_arr[gidx]
-        sumlen = sumlen_arr[gidx]
+    # pylint-disable: not-an-iterable
+    for gidx in prange(len(sarr)):
+        garr = earr[earr[:, 6] == gidx]
+        blens = barr[gidx]
+        sumlen = sarr[gidx]
         # probability is a float in [0-1]
-        prob_tree = get_fast_probability_of_tree_change(garr, barr, sumlen)
+        prob_tree = _get_fast_probability_of_tree_change(garr, blens, sumlen)
         # lambda is a rate > 0
         lambdas[gidx] = sumlen * prob_tree * recombination_rate
     return lambdas
@@ -445,43 +408,46 @@ def get_fast_waiting_distance_to_tree_change_rates(
 ################################################################
 ################################################################
 
+
 @njit
-def update_neffs(supertable: np.ndarray, popsizes: np.ndarray) -> None:
-    """Updates the embedding table with new Ne values.
-    
-    Note: this function takes Ne as input and sets the ni variable
-    in the embedding table to 2Ne.
+def _update_neffs(supertable: np.ndarray, popsizes: np.ndarray) -> None:
+    """Updates 2X diploid Ne values in the concatenated embedding array.
+
+    This is used during MCMC proposals to update Ne values.
+
+    Note
+    ----
+    This function takes diploid Ne as input and stores it to the
+    earr table as 2X the diploid Ne value!!!
     """
     for idx, popsize in enumerate(popsizes):
         supertable[supertable[:, 2] == idx, 3] = popsize * 2
 
 
 def get_tree_distance_loglik(
-    params: np.ndarray, 
-    recomb: float, 
-    lengths: np.ndarray, 
-    embedding_arr: np.ndarray,
-    blen_arr: np.ndarray,
-    sumlen_arr: np.ndarray,
+    embedding: TreeEmbedding,
+    params: np.ndarray,
+    recomb: float,
+    lengths: np.ndarray,
     ) -> float:
-    """Return -loglik of tree-sequence waiting distances between 
+    """Return -loglik of tree-sequence waiting distances between
     tree change events given species tree parameters.
-    
+
     Here we will assume a fixed known recombination rate.
 
     Parameters
     ----------
     params: np.ndarray
         An array of effective population sizes to apply to each linaege
-        in the demographic model, ordered by their idx label in the 
+        in the demographic model, ordered by their idx label in the
         species tree ToyTree object.
     recomb: float
         per site per generation recombination rate.
     lengths: np.ndarray
-        An array of observed waiting distances until tree change 
+        An array of observed waiting distances until tree change
         events.
     embedding_arr: np.ndarray
-        An array of genealogy embedding tables for all observed 
+        An array of genealogy embedding tables for all observed
         genealogies concatenated.
     blen_arr: np.ndarray
         An array of the branch lengths of each Node in each genealogy.
@@ -489,42 +455,56 @@ def get_tree_distance_loglik(
         An array of the sum of branch lengths in each genealogy.
     """
     # set test parameters on the species tree
-    update_neffs(embedding_arr, params)
-    
-    # get probability distribution
-    args = embedding_arr, blen_arr, sumlen_arr, recomb
+    earr, barr, sarr = embedding.get_data()
+    _update_neffs(earr, params)
+
     # get rates (lambdas) for waiting distances
-    rates = get_fast_waiting_distance_to_tree_change_rates(*args)
+    rates = get_fast_waiting_distance_to_tree_change_rates(
+        earr, barr, sarr, recomb)
+
     # get logpdf of observed waiting distances given rates (lambdas)
     logliks = stats.expon.logpdf(scale=1/rates, x=lengths)
     return -np.sum(logliks)
 
 
-# def get_tree_distance_loglik_parallel(
-#     params: List[int],
-#     recomb: float, 
-#     lengths: np.ndarray, 
-#     edicts: Dict,
-#     nworkers: int=4,
-#     ) -> float:
-#     """Return -loglik of tree-sequence waiting distances given species tree.
-#     """
-#     # set test parameters on the species tree
-#     update_neffs(edicts, dict(zip(range(len(params)), params)))
-    
-#     # get probability distribution
-#     rasyncs = []
-#     with ProcessPoolExecutor(max_workers=nworkers) as pool:
-#         for edict in edicts:
-#             rasync = pool.submit(
-#                 get_fast_waiting_distance_to_tree_change_rv, *(edict, recomb))            
-#             rasyncs.append(rasync)
-#     loglik = 0    
-#     for idx, rasync in enumerate(rasyncs):
-#         dist = rasync.result()
-#         loglik += dist.logpdf(lengths[idx])
-#         # print(idx, lengths[idx], dist.mean(), dist.pdf(lengths[idx]))
-#     return -loglik                    
+def get_topology_distance_loglik(
+    embedding: TopologyEmbedding,
+    params: np.ndarray,
+    recomb: float,
+    lengths: np.ndarray,
+    ) -> float:
+    """Return -loglik of tree-sequence waiting distances between
+    topology change events given species tree parameters.
+
+    Parameters
+    ----------
+    params: np.ndarray
+        An array of effective population sizes to apply to each linaege
+        in the demographic model, ordered by their idx label in the
+        species tree ToyTree object.
+    recomb: float
+        per site per generation recombination rate.
+    lengths: np.ndarray
+        An array of observed waiting distances until tree change
+        events.
+    embedding_arr: np.ndarray
+        An array of genealogy embedding tables for all observed
+        genealogies concatenated.
+    blen_arr: np.ndarray
+        An array of the branch lengths of each Node in each genealogy.
+    sumlen_arr: np.ndarray
+        An array of the sum of branch lengths in each genealogy.
+    """
+    # set test parameters on the species tree
+    earr, barr, sarr, rarr = embedding.get_data()
+    _update_neffs(earr, params)
+
+    # get rates (lambdas) for waiting distances
+    rates = get_fast_waiting_distance_to_topology_change_rates(
+        earr, barr, sarr, rarr, recomb)
+    # get logpdf of observed waiting distances given rates (lambdas)
+    logliks = stats.expon.logpdf(scale=1/rates, x=lengths)
+    return -np.sum(logliks)
 
 
 ################################################################
@@ -535,59 +515,80 @@ def get_tree_distance_loglik(
 
 if __name__ == "__main__":
 
-
-    ipcoal.set_log_level("WARNING")
+    import ipcoal
+    ipcoal.set_log_level("INFO")
     pd.options.display.max_columns = 20
     pd.options.display.width = 1000
 
-    # Setup a species tree with edge lengths in generations
-    SPTREE = toytree.tree("(((A,B),C),D);")
-    SPTREE.set_node_data("height", inplace=True, default=0, mapping={
-        4: 200_000, 5: 400_000, 6: 600_000,
-    })
+    RECOMB = 2e-9
+    SEED = 123
+    NEFF = 150_000
+    ROOT_HEIGHT = 1e6
+    NSPECIES = 2
+    NSAMPLES = 4
+    NSITES = 1e5
 
-    # Set constant or variable Ne on species tree edges
-    SPTREE.set_node_data("Ne", inplace=True, default=100_000)
+    sptree = toytree.rtree.baltree(NSPECIES).mod.edges_scale_to_root_height(ROOT_HEIGHT, include_stem=True)
+    model = ipcoal.Model(sptree, Ne=NEFF, nsamples=NSAMPLES, recomb=RECOMB, seed_trees=SEED)
+    model.sim_trees(1, NSITES)
+    imap = model.get_imap_dict()
 
-    # Setup a genealogy embedded in the species tree (see below to
-    # instead simulate one but here we just create it from newick.)
-    GTREE = toytree.tree("(((0,1),(2,(3,4))),(5,6));")
-    GTREE.set_node_data("height", inplace=True, default=0, mapping={
-        7: 100_000, 8: 120_000, 9: 300_000, 10: 450_000, 11: 650_000, 12: 800_000,
-    })
+    # genealogy topo change interval lengths
+    topo_lengths = ipcoal.smc.get_topology_interval_lengths(model)
 
-    # Setup a map of species names to a list sample names
-    IMAP = {
-        "A": ['0', '1', '2'],
-        "B": ['3', '4'],
-        "C": ['5',],
-        "D": ['6',],
-    }
+    # N and avg tree change length
+    print(f"{len(topo_lengths)} genealogy topologies w/ average length={np.mean(topo_lengths):.0f}")
 
-    # Select a branch to plot and get its relations
-    BIDX = 7
-    BRANCH = GTREE[BIDX]
-    SIDX = BRANCH.get_sisters()[0].idx
-    PIDX = BRANCH.up.idx
+    # load all genealogies as Toytrees
+    genealogies = toytree.mtree(model.df.genealogy)
 
-    # Get genealogy embedding table
-    ETABLE = get_genealogy_embedding_table(SPTREE, GTREE, IMAP)
-    print(f"Single genealogy embedding table\n{ETABLE}\n")
+    tdata = TopologyEmbedding(model.tree, genealogies, imap, nproc=4)
+    tdata.table[tdata.table.gindex == 10]
 
-    eee = get_concat_embedding_data([ETABLE, ETABLE, ETABLE])
-    print(f"Fast multiple genealogy embedding table\n{eee}\n")
+    g = tdata._get_genealogies()
 
-    EARR, BARR, SARR = get_data([ETABLE, ETABLE, ETABLE])
+    print([ipcoal.smc.get_probability_of_topology_change(model.tree, g[i], imap) for i in range(10)])
+    print(
+    [ipcoal.smc.likelihood.likelihood2._get_fast_probability_of_topology_change(
+        tdata.earr[tdata.earr[:, 6] == i],
+        tdata.barr[i],
+        tdata.sarr[i],
+        tdata.rarr[i],
+    ) for i in range(10)]
+    )
 
-    # for gidx, sumlen in enumerate(SARR):
-    #     garr = EARR[EARR[:, 6] == gidx]
-    #     barr = BARR[gidx]
-    #     sumlen = SARR[gidx]
-    #     prob_tree = get_fast_probability_of_tree_change(garr, barr, sumlen)
-    #     print(gidx, prob_tree)
+    # # Setup a species tree with edge lengths in generations
+    # SPTREE = toytree.tree("(((A,B),C),D);")
+    # SPTREE.set_node_data("height", inplace=True, default=0, mapping={
+    #     4: 200_000, 5: 400_000, 6: 600_000,
+    # })
 
+    # # Set constant or variable Ne on species tree edges
+    # SPTREE.set_node_data("Ne", inplace=True, default=100_000)
 
+    # # Setup a genealogy embedded in the species tree (see below to
+    # # instead simulate one but here we just create it from newick.)
+    # GTREE = toytree.tree("(((0,1),(2,(3,4))),(5,6));")
+    # GTREE.set_node_data("height", inplace=True, default=0, mapping={
+    #     7: 100_000, 8: 120_000, 9: 300_000, 10: 450_000, 11: 650_000, 12: 800_000,
+    # })
 
+    # # Setup a map of species names to a list sample names
+    # IMAP = {
+    #     "A": ['0', '1', '2'],
+    #     "B": ['3', '4'],
+    #     "C": ['5',],
+    #     "D": ['6',],
+    # }
+
+    # # embedding data
+    # tree_data = TreeEmbedding(SPTREE, [GTREE, GTREE], IMAP)
+    # topo_data = TreeEmbedding(SPTREE, [GTREE, GTREE], IMAP)
+
+    # # print
+    # earr, barr, sarr = tree_data.get_data()
+
+    # _get_fast_probability_of_tree_change()
 
     # p_topo = get_probability_of_topology_change(SPTREE, GTREE, IMAP)
     # print(f"Probability of no-change\n{p_no:.3f}\n")
@@ -609,7 +610,7 @@ if __name__ == "__main__":
     # print(MODEL.df.head())
     # IMAP = MODEL.get_imap_dict()
 
-    # # get lengths and embedding tables 
+    # # get lengths and embedding tables
     # lengths = MODEL.df.nbps.values
     # etables = [
     #     ipcoal.smc.get_genealogy_embedding_table(SPTREE, g, IMAP)
