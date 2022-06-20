@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-"""
+"""Deprecated: first attempt at faster implementation.
 
 This contains modified versions of the functions in ms_smc.py that
 are written to be faster (using jit compilation) and to reduce some

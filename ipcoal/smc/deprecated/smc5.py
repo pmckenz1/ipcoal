@@ -587,7 +587,7 @@ if __name__ == "__main__":
     SPTREE.set_node_data("height", inplace=True, default=0, mapping={
         4: 200_000, 5: 400_000, 6: 600_000,
     })
-    SPTREE.set_node_data("Ne", inplace=True, default=100_000);
+    SPTREE.set_node_data("Ne", inplace=True, default=1_000);
 
     GTREE = toytree.tree("(((0,1),(2,(3,4))),(5,6));")
     GTREE.set_node_data("height", inplace=True, default=0, mapping={
@@ -617,5 +617,6 @@ if __name__ == "__main__":
     # a.vlines(e2.stop, color='red')
     toytree.utils.show([c1, c2, c3]) 
 
+    print(e_table)
     print(f"Prob(tree-change) = {1 - get_tree_unchange_prob(SPTREE, GTREE, IMAP)}")
     print(f"Prob(topo-change) = {1 - get_topo_unchange_prob(SPTREE, GTREE, IMAP)}")    
