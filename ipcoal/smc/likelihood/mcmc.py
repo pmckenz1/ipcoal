@@ -228,6 +228,7 @@ def simulate_and_get_embeddings(
     recomb: float,
     seed: int,
     data_type: str,
+    nthreads: int,
     ) -> Tuple[np.ndarray, ipcoal.smc.likelihood.Embedding]:
     """Simulate a tree sequence, get embedding info, and return.
     """
@@ -253,18 +254,19 @@ def simulate_and_get_embeddings(
     logger.info(f"loading genealogy embedding table for {len(genealogies)} genealogies.")
 
     # get cached embedding tables
+    args = (model.tree, genealogies, imap, nthreads)
     if data_type == "tree":
         lengths = model.df.nbps.values
-        edata = ipcoal.smc.likelihood.TreeEmbedding(model.tree, genealogies, imap)
+        edata = ipcoal.smc.likelihood.TreeEmbedding(*args)
     elif data_type == "topology":
         lengths = ipcoal.smc.likelihood.get_topology_interval_lengths(model)
         logger.info(f"embedding includes {len(lengths)} sequential topology changes.")        
-        edata = ipcoal.smc.likelihood.TopologyEmbedding(model.tree, genealogies, imap)
+        edata = ipcoal.smc.likelihood.TopologyEmbedding(*args)
     elif data_type == "combined":
         lengths0 = model.df.nbps.values
-        edata0 = ipcoal.smc.likelihood.TreeEmbedding(model.tree, genealogies, imap)
+        edata0 = ipcoal.smc.likelihood.TreeEmbedding(*args)
         lengths1 = ipcoal.smc.likelihood.get_topology_interval_lengths(model)
-        edata1 = ipcoal.smc.likelihood.TopologyEmbedding(model.tree, genealogies, imap)
+        edata1 = ipcoal.smc.likelihood.TopologyEmbedding(*args)
         logger.info(f"embedding includes {len(lengths)} sequential topology changes.")                
         lengths = [lengths0, lengths1]
         edata = [edata0, edata1]
@@ -303,6 +305,7 @@ def main(
     # mcmc_jumpsize: int,
     force: bool,
     data_type: str,
+    nthreads: int,
     *args,
     **kwargs,
     ) -> None:
@@ -334,7 +337,7 @@ def main(
 
     # simulate genealogies under MSC topology and parameters
     # and get the ARG and embedding data.
-    args = (sptree, params_dict, nsamples, nsites, recomb, seed, data_type)
+    args = (sptree, params_dict, nsamples, nsites, recomb, seed, data_type, nthreads)
     lengths, edata = simulate_and_get_embeddings(*args)
 
     # initial random params
