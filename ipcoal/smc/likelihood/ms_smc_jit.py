@@ -549,7 +549,7 @@ if __name__ == "__main__":
 
     print([ipcoal.smc.get_probability_of_topology_change(model.tree, g[i], imap) for i in range(10)])
     print(
-    [ipcoal.smc.likelihood.likelihood2._get_fast_probability_of_topology_change(
+    [ipcoal.smc.likelihood.likelihood._get_fast_probability_of_topology_change(
         tdata.earr[tdata.earr[:, 6] == i],
         tdata.barr[i],
         tdata.sarr[i],

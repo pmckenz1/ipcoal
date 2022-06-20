@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import toytree
 
-from ipcoal.smc import get_genealogy_embedding_table
+from ipcoal.smc.ms_smc import get_genealogy_embedding_table
 from ipcoal.smc.likelihood.utils import iter_unique_topologies_from_genealogies
 
 
