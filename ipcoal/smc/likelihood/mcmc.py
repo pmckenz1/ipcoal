@@ -267,7 +267,7 @@ def simulate_and_get_embeddings(
         edata0 = ipcoal.smc.likelihood.TreeEmbedding(*args)
         lengths1 = ipcoal.smc.likelihood.get_topology_interval_lengths(model)
         edata1 = ipcoal.smc.likelihood.TopologyEmbedding(*args)
-        logger.info(f"embedding includes {len(lengths)} sequential topology changes.")                
+        logger.info(f"embedding includes {len(lengths1)} sequential topology changes.")                
         lengths = [lengths0, lengths1]
         edata = [edata0, edata1]
     else:
