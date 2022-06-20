@@ -68,7 +68,7 @@ class Mcmc(ABC):
 
     @abstractmethod
     def log_likelihood(self, params) -> float:
-        """Return log-likelihood of the data (lengths, edicts) given the params."""
+        """Return log-likelihood of the data given the params."""
 
     def prior_uniform(self, params: np.ndarray) -> float:
         """Return prior loglikelihood. Uniform priors return 1 if inside bounds, else inf."""
@@ -134,6 +134,8 @@ class Mcmc(ABC):
                     if (idx % sample_interval) == 0:
                         posterior[sidx] = list(self.params) + [new_loglik]
                         sidx += 1
+                        if sidx == 1:
+                            logger.info("---------------------------------")
 
                 # print on interval
                 if not idx % print_interval:
@@ -148,7 +150,9 @@ class Mcmc(ABC):
                     )
 
                 # save to disk and print summary every 1K sidx
-                if sidx and (not sidx % 100) and sidx != pidx:
+                if sidx and not sidx % 100:
+                    if sidx == pidx:
+                        continue
                     np.save(self.outpath, posterior[:sidx])
                     logger.info("checkpoint saved.")
                     logger.info(f"MCMC current posterior mean={posterior[:sidx].mean(axis=0).astype(int)}")
@@ -334,6 +338,7 @@ def main(
     # convert params to dict
     params = np.array(params)
     params_dict = {i: params[i] for i in range(sptree.nnodes)}
+    logger.info(f"true simulated parameters ({params}).")
 
     # simulate genealogies under MSC topology and parameters
     # and get the ARG and embedding data.
@@ -372,7 +377,7 @@ def main(
         seed=seed,
         outpath=outpath,
     )
-    logger.info(f"log-likelihood of true params ({params}): {mcmc.log_likelihood(params):.3f}")
+    logger.info(f"({params}) loglik {mcmc.log_likelihood(params)}.")
 
     # run MCMC chain
     posterior = mcmc.run(
@@ -426,15 +431,21 @@ def command_line():
     parser.add_argument(
         '--log-level', type=str, default="INFO", help='logger level (DEBUG, INFO, WARNING, ERROR)')
     parser.add_argument(
+        '--log-file', type=str, default=None, help='Log file')
+    parser.add_argument(
         '--data-type', type=str, default="tree", help='tree, topology, or combined')
     return parser.parse_args()
 
+
 def run():
+    """Main program."""
     # get command line args
     cli_args = command_line()
 
     # set logger
-    ipcoal.set_log_level(cli_args.log_level)
+    ipcoal.set_log_level(cli_args.log_level, log_file=cli_args.log_file)
+    if cli_args.log_file:
+        logger.info(vars(cli_args))
 
     # limit n threads
     if cli_args.threads:
