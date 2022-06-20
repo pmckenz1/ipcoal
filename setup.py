@@ -41,6 +41,7 @@ setup(
     author="Patrick McKenzie and Deren Eaton",
     author_email="p.mckenzie@columbia.edu",
     install_requires=install_requires,
+    entry_points={'console_scripts': ['ms-smc-mcmc = ipcoal.smc.likelihood.mcmc:run']},    
     license='GPL',
     classifiers=[
         'Programming Language :: Python',
