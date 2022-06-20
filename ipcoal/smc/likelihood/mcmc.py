@@ -38,7 +38,7 @@ class Mcmc(ABC):
         priors: Tuple[int, int],
         init_params: np.ndarray,
         seed: int,
-        # jumpsize: int,
+        jumpsize: int,
         outpath: Path,
         ):
         # store the inputs
@@ -48,7 +48,7 @@ class Mcmc(ABC):
         self.priors = np.array([priors[0]] * len(init_params)), np.array([priors[1]] * len(init_params))
         self.params = np.array(init_params)
         self.rng = np.random.default_rng(seed)
-        self.jumpsize = 20_000 #self.params * 0.125
+        self.jumpsize = jumpsize  # 20_000 #self.params * 0.125
         self.outpath = outpath
         assert self.prior_uniform(self.params), "starting values are outside priors."
 
@@ -302,7 +302,7 @@ def main(
     mcmc_sample_interval: int,
     mcmc_print_interval: int,
     mcmc_burnin: int,
-    # mcmc_jumpsize: int,
+    mcmc_jumpsize: int,
     force: bool,
     data_type: str,
     threads: int,
@@ -368,7 +368,7 @@ def main(
         embedding=edata,
         priors=(1e2, 2e6),
         init_params=init_params,
-        # jumpsize=mcmc_jumpsize,
+        jumpsize=mcmc_jumpsize,
         seed=seed,
         outpath=outpath,
     )
@@ -421,8 +421,8 @@ def command_line():
         '--threads', type=int, default=4, help='Max number of threads (0=all detected)')
     parser.add_argument(
         '--force', type=bool, default=True, help='Overwrite existing file w/ same name.')
-    # parser.add_argument(
-        # '--mcmc-jumpsize', type=float, default=[10_000, 20_000, 30_000], nargs="*", help='MCMC jump size.')
+    parser.add_argument(
+        '--mcmc-jumpsize', type=float, default=[20_000], nargs="*", help='MCMC jump size.')
     parser.add_argument(
         '--log-level', type=str, default="INFO", help='logger level (DEBUG, INFO, WARNING, ERROR)')
     parser.add_argument(
