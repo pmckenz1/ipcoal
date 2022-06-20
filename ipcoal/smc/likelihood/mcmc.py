@@ -131,7 +131,7 @@ class Mcmc(ABC):
 
                 # only store every Nth accepted result
                 if idx > burnin:
-                    if (idx % sample_interval) == 0:
+                    if not idx % sample_interval:
                         posterior[sidx] = list(self.params) + [new_loglik]
                         sidx += 1
                         if sidx == 1:
@@ -151,31 +151,21 @@ class Mcmc(ABC):
 
                 # save to disk and print summary every 1K sidx
                 if sidx and not sidx % 100:
-                    if sidx == pidx:
-                        continue
-                    np.save(self.outpath, posterior[:sidx])
-                    logger.info("checkpoint saved.")
-                    logger.info(f"MCMC current posterior mean={posterior[:sidx].mean(axis=0).astype(int)}")
-                    logger.info(f"MCMC current posterior std ={posterior[:sidx].std(axis=0).astype(int)}")
+                    if sidx != pidx:
+                        np.save(self.outpath, posterior[:sidx])
+                        logger.info("checkpoint saved.")
+                        logger.info(f"MCMC current posterior mean={posterior[:sidx].mean(axis=0).astype(int)}")
+                        logger.info(f"MCMC current posterior std ={posterior[:sidx].std(axis=0).astype(int)}")
 
-                    # print mcmc if optional pkg arviz is installed.
-                    if sys.modules.get("arviz"):
-                        ess_vals = []
-                        for col in range(posterior.shape[1]):
-                            azdata = az.convert_to_dataset(posterior[:sidx, col])
-                            ess = az.ess(azdata).x.values
-                            ess_vals.append(int(ess))
-                        logger.info(f"MCMC current posterior ESS ={ess_vals}\n")
-                    pidx = sidx
-
-                # adjust tuning of the jumpsize during burnin
-                #if idx < burnin:
-                #    self.jumpsize = self.params * 0.2
-                #     if not idx % 100:
-                #         if acc/its < 44:
-                #             self.jumpsize += 1000
-                #         if acc/its > 44:
-                #             self.jumpsize -= 1000
+                        # print mcmc if optional pkg arviz is installed.
+                        if sys.modules.get("arviz"):
+                            ess_vals = []
+                            for col in range(posterior.shape[1]):
+                                azdata = az.convert_to_dataset(posterior[:sidx, col])
+                                ess = az.ess(azdata).x.values
+                                ess_vals.append(int(ess))
+                            logger.info(f"MCMC current posterior ESS ={ess_vals}\n")
+                        pidx = sidx
 
                 # advance counter and break when nsamples reached
                 idx += 1
@@ -327,10 +317,20 @@ def main(
 
     The posterior is saved to file as a numpy array.
     """
-    outpath = Path(name).expanduser().absolute().with_suffix(".npy")
+    outbase = Path(name).expanduser().absolute()
+    outpath = outbase.with_suffix(".npy")
+    outlog = outbase.with_suffix(".log")
     outpath.parent.mkdir(exist_ok=True)
     if force and outpath.exists():
         outpath.unlink()
+
+    # copy command to the logger
+    logfile = None if not kwargs['log_file'] else outlog
+    ipcoal.set_log_level(log_level=kwargs["log_level"], log_file=logfile)
+    logger.info(f"CMD: {sys.argv[0].rsplit('/')[-1]} {' '.join(sys.argv[1:])}")
+
+    # limit parallelism
+    set_num_threads(threads)
 
     # get species tree topology
     sptree = get_species_tree(ntips, root_height)
@@ -394,8 +394,8 @@ def main(
     logger.info(f"saved posterior w/ {posterior.shape[0]} samples to {outpath}.")
 
 
-def command_line():
-    """Parse command line arguments and return."""
+def cli():
+    """Parse command line arguments and run main()."""
     parser = argparse.ArgumentParser(
         description="MCMC model fit for MS-SMC'")
     parser.add_argument(
@@ -425,35 +425,19 @@ def command_line():
     parser.add_argument(
         '--threads', type=int, default=4, help='Max number of threads (0=all detected)')
     parser.add_argument(
-        '--force', type=bool, default=True, help='Overwrite existing file w/ same name.')
-    parser.add_argument(
         '--mcmc-jumpsize', type=float, default=[20_000], nargs="*", help='MCMC jump size.')
     parser.add_argument(
         '--log-level', type=str, default="INFO", help='logger level (DEBUG, INFO, WARNING, ERROR)')
     parser.add_argument(
-        '--log-file', type=str, default=None, help='Log file')
+        '--log-file', action='store_true', help='save a log file to [name].log')
+    parser.add_argument(
+        '--force', action='store_true', help='Overwrite existing file w/ same name.')
     parser.add_argument(
         '--data-type', type=str, default="tree", help='tree, topology, or combined')
-    return parser.parse_args()
 
-
-def run():
-    """Main program."""
-    # get command line args
-    cli_args = command_line()
-
-    # set logger
-    ipcoal.set_log_level(cli_args.log_level, log_file=cli_args.log_file)
-    if cli_args.log_file:
-        logger.info(vars(cli_args))
-
-    # limit n threads
-    if cli_args.threads:
-        set_num_threads(cli_args.threads)
-
-    # run main
+    cli_args = parser.parse_args()
     main(**vars(cli_args))
 
 
 if __name__ == "__main__":
-    run()
+    cli()
