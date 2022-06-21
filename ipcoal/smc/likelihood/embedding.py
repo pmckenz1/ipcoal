@@ -172,7 +172,8 @@ def _parallel_get_multigenealogy_embedding_table(
     with ProcessPoolExecutor(max_workers=nproc) as pool:
         for gidx, gtree in enumerate(genealogies):
             args = (species_tree, gtree, imap)
-            rasyncs[gidx] = pool.submit(get_genealogy_embedding_table, *args)
+            # rasyncs[gidx] = pool.submit(get_genealogy_embedding_table, *args)
+            rasyncs[gidx] = get_genealogy_embedding_table(*args)
 
     etables = []
     for key in sorted(rasyncs):
