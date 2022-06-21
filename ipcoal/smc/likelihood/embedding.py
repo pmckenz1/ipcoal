@@ -173,7 +173,15 @@ def _parallel_get_multigenealogy_embedding_table(
         for gidx, gtree in enumerate(genealogies):
             args = (species_tree, gtree, imap)
             rasyncs[gidx] = pool.submit(get_genealogy_embedding_table, *args)
-    etables = [rasyncs[gidx].result() for gidx in sorted(rasyncs)]
+
+    etables = []
+    for key in sorted(rasyncs):
+        rasync = rasyncs[key]
+        if rasync.successful():
+            etables[key] = rasync.result()
+        else:
+            logger.error(f"bad embedding {key}")
+            rasync.result()
 
     # concatenate etables
     etable = _concat_embedding_tables(etables)
@@ -206,7 +214,7 @@ def _concat_embedding_tables(etables: Sequence[pd.DataFrame]) -> pd.DataFrame:
         btable = btable.drop(columns=["coal", "edges"])
         btable.iloc[-1, [1, 5]] = int(1e12)
         btables.append(btable)
-        if not gidx % 100:
+        if not gidx % 1000:
             logger.debug(f'concat genealogy index: {gidx}')
     return pd.concat(btables, ignore_index=True)
 
