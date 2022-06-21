@@ -11,10 +11,11 @@ from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import pandas as pd
 import toytree
-
+from loguru import logger
 from ipcoal.smc.ms_smc import get_genealogy_embedding_table
 from ipcoal.smc.likelihood.utils import iter_unique_topologies_from_genealogies
 
+logger = logger.bind(name="ipcoal")
 
 ################################################################
 ################################################################
@@ -205,6 +206,8 @@ def _concat_embedding_tables(etables: Sequence[pd.DataFrame]) -> pd.DataFrame:
         btable = btable.drop(columns=["coal", "edges"])
         btable.iloc[-1, [1, 5]] = int(1e12)
         btables.append(btable)
+        if not gidx % 100:
+            logger.debug(f'concat genealogy index: {gidx}')
     return pd.concat(btables, ignore_index=True)
 
 
