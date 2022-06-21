@@ -174,6 +174,7 @@ def _parallel_get_multigenealogy_embedding_table(
             args = (species_tree, gtree, imap)
             # rasyncs[gidx] = pool.submit(get_genealogy_embedding_table, *args)
             rasyncs[gidx] = get_genealogy_embedding_table(*args)
+            logger.debug(f"\n{rasyncs[gidx]}\n\n")
 
     etables = []
     for key in sorted(rasyncs):
