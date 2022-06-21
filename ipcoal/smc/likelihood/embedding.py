@@ -179,7 +179,7 @@ def _parallel_get_multigenealogy_embedding_table(
     etables = []
     for key in sorted(rasyncs):
         rasync = rasyncs[key]
-        etables[key] = rasync    
+        etables.append(rasync)
         # if rasync.successful():
             # etables[key] = rasync.result()
         # else:
