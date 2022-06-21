@@ -4,7 +4,7 @@
 
 """
 
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Sequence, Any
 from abc import ABC, abstractmethod
 import argparse
 import time
@@ -16,6 +16,7 @@ import numpy as np
 import toytree
 from numba import set_num_threads
 from loguru import logger
+from scipy import stats
 import ipcoal
 
 # optional. If installed the ESS will be printed.
@@ -24,18 +25,69 @@ try:
 except ImportError:
     pass
 
-
+# pylint: disable=too-many-nested-blocks, too-many-statements
 logger = logger.bind(name="ipcoal")
 
 
+#########################################################################
+#########################################################################
+#########################################################################
+
+class Prior(ABC):
+    def __init__(self, *params: float):
+        self.params = np.array(params, dtype=float)
+        self.dist = self.get_dist_rv()
+
+    def log_likelihood(self, params: np.ndarray) -> np.ndarray:
+        """Return loglik of the params given the prior."""
+        return self.dist.logpdf(params).sum()
+
+    @abstractmethod
+    def get_dist_rv(self) -> stats._distn_infrastructure.rv_frozen:
+        """Return loglik of the params given the prior."""
+
+class PriorUniform(Prior):
+    """A uniform prior..."""
+
+    def get_dist_rv(self) -> stats._distn_infrastructure.rv_frozen:
+        """Return loglik of the params given the prior."""
+        return stats.uniform.freeze(*self.params)
+
+class PriorGamma(Prior):
+    """A gamma prior."""
+    def get_dist_rv(self) -> stats._distn_infrastructure.rv_frozen:
+        """Return loglik of the params given the prior."""
+        return stats.gamma.freeze(a=self.params[0], scale=self.params[1])
+
+def get_prior(distribution: str, *params: float) -> Prior:
+    """Return a Prior distribution object for the specified distribution."""
+    params = [float(i) for i in params]
+    if distribution.startswith("u"):
+        return PriorUniform(*params)
+    return PriorGamma(*params)
+
+#########################################################################
+#########################################################################
+#########################################################################
+
 class Mcmc(ABC):
-    """A custom Metropolis-Hastings sampler."""
+    """A custom Metropolis-Hastings sampler.
+
+    Example
+    -------
+    >>> mcmc = Mcmc(recomb=2e-9, lengths=lengths, embedding=edata, 
+    >>>     priors=[['g', (3, 0.01)] * 3],
+    >>>     init_params=[500_000] * 3,
+    >>>     seed=123, jumpsize=20_000, outpath="/tmp/test"
+    >>> )
+    >>> mcmc.run()
+    """
     def __init__(
         self,
         recomb: float,
         lengths: np.ndarray,
         embedding: ipcoal.smc.likelihood.Embedding,
-        priors: Tuple[int, int],
+        prior: Tuple[str, Sequence[float]],
         init_params: np.ndarray,
         seed: int,
         jumpsize: int,
@@ -45,36 +97,34 @@ class Mcmc(ABC):
         self.recomb = recomb
         self.lengths = lengths
         self.embedding = embedding
-        self.priors = np.array([priors[0]] * len(init_params)), np.array([priors[1]] * len(init_params))
+        # self.priors = np.array([priors[0]] * len(init_params)), np.array([priors[1]] * len(init_params))
+        self.prior = get_prior(prior[0], *prior[1:])
         self.params = np.array(init_params)
         self.rng = np.random.default_rng(seed)
         self.jumpsize = jumpsize  # 20_000 #self.params * 0.125
         self.outpath = outpath
-        assert self.prior_uniform(self.params), "starting values are outside priors."
 
     def transition(self) -> np.ndarray:
         """Jitters the current params to new proposal values."""
         return self.rng.normal(self.params, scale=self.jumpsize)
 
     @classmethod
-    def acceptance(cls, old: float, new: float) -> bool:
-        """Return boolean for whether to accept new proposal params."""
-        if np.isnan(new):
-            accepted = 0
-        else:
-            accepted = 1 if new < old else np.exp(old - new)
-        logger.debug(f"old={old:.2f}, new={new:.2f}, accepted={accepted:.2f}")
-        return accepted
+    def acceptance_ratio(cls, old_d: float, new_d: float, old_p: float, new_p) -> float:
+        """Return MH ratio for accept new proposal params."""
+        aratio = np.exp((old_d + old_p) - (new_d + new_p))
+        # prior_ratio = np.exp(old_p - new_p)
+        # prior_ll = np.exp(new_p - old_p)
+        return min(1, aratio)
+        # return min(1, ((new_d / old_d) * (new_p / old_p)))
+        # logger.debug(f"old={old:.2f}, new={new:.2f}, accepted={accepted:.2f}")
 
     @abstractmethod
     def log_likelihood(self, params) -> float:
         """Return log-likelihood of the data given the params."""
 
-    def prior_uniform(self, params: np.ndarray) -> float:
-        """Return prior loglikelihood. Uniform priors return 1 if inside bounds, else inf."""
-        low = np.all(params >= self.priors[0])
-        high = np.all(params <= self.priors[1])
-        return 1 if float(low & high) else 0
+    def prior_log_likelihood(self, params: np.ndarray) -> np.ndarray:
+        """Return log-likelihood of the data given the params."""
+        return self.prior.log_likelihood(params)
 
     def run(self, nsamples: int=1000, burnin=2000, sample_interval=5, print_interval=25):
         """Run to sample from the posterior distribution.
@@ -100,39 +150,49 @@ class Mcmc(ABC):
         start = time.time()
 
         posterior = np.zeros(shape=(nsamples, len(self.params) + 1))
-        loglik = self.log_likelihood(self.params) * self.prior_uniform(self.params)
+        old_loglik_data = self.log_likelihood(self.params)
+        old_loglik_prior = self.prior_log_likelihood(self.params)
 
         idx = 0
         sidx = 0
         its = 0
         acc = 0
         pidx = 0
+
         while 1:
 
             # propose new params
             new_params = self.transition()
 
             # get likelihood
-            prior_lik = self.prior_uniform(new_params)
-            if prior_lik:
-                new_loglik = self.log_likelihood(new_params) * prior_lik
+            new_loglik_prior = self.prior_log_likelihood(new_params)
+            if np.isinf(new_loglik_prior):
+                aratio = 0
             else:
-                new_loglik = np.inf
+                new_loglik_data = self.log_likelihood(new_params)
+                args = (old_loglik_data, new_loglik_data, old_loglik_prior, new_loglik_prior)
+                aratio = self.acceptance_ratio(*args)
 
             # accept or reject
-            aratio = self.acceptance(loglik, new_loglik)
+            rand = self.rng.random()
+            accept = aratio > rand
+            logger.debug(
+                f"loglik={new_loglik_data:.1f}/{old_loglik_data:.1f}, "
+                f"aratio={aratio:.2f}, params={new_params.astype(int)}, {accept}")
             acc += aratio
             its += 1
-            if aratio > self.rng.random():
+            if accept: 
 
                 # proposal accepted
                 self.params = new_params
-                loglik = new_loglik
+                old_loglik_data = new_loglik_data
+                old_loglik_prior = new_loglik_prior
+                # new_loglik = new_loglik_data * new_loglik_prior
 
                 # only store every Nth accepted result
                 if idx > burnin:
                     if not idx % sample_interval:
-                        posterior[sidx] = list(self.params) + [new_loglik]
+                        posterior[sidx] = list(self.params) + [new_loglik_data]
                         sidx += 1
                         if sidx == 1:
                             logger.info("---------------------------------")
@@ -143,7 +203,7 @@ class Mcmc(ABC):
                     stype = "sample" if idx > burnin else "burnin"
                     logger.info(
                         f"{idx:>4}\t{sidx:>4}\t"
-                        f"{new_loglik:.3f}\t"
+                        f"{new_loglik_data:.3f}\t"
                         f"{self.params.astype(int)}\t"
                         f"{acc/its:.2f}\t"
                         f"{elapsed}\t{stype}"
@@ -300,6 +360,7 @@ def main(
     force: bool,
     data_type: str,
     threads: int,
+    prior: Sequence[Any],
     *args,
     **kwargs,
     ) -> None:
@@ -367,17 +428,21 @@ def main(
     else:
         mcmc_tool = McmcCombined
 
+    # init priors object
+    # prior = [get_prior('g', 3, 0.001) for param in init_params]
+
+    # init
     mcmc = mcmc_tool(
         recomb=recomb,
         lengths=lengths,
         embedding=edata,
-        priors=(1e2, 2e6),
+        prior=prior,
         init_params=init_params,
         jumpsize=mcmc_jumpsize,
         seed=seed,
         outpath=outpath,
     )
-    logger.info(f"({params}) loglik {mcmc.log_likelihood(params)}.")
+    logger.info(f"({params}) loglik {mcmc.log_likelihood(params):.3f}.")
 
     # run MCMC chain
     posterior = mcmc.run(
@@ -434,6 +499,8 @@ def cli():
         '--force', action='store_true', help='Overwrite existing file w/ same name.')
     parser.add_argument(
         '--data-type', type=str, default="tree", help='tree, topology, or combined')
+    parser.add_argument(
+        '--prior', type=str, nargs="*", default=['u', 10, 5e6], help='prior on Ne')
 
     cli_args = parser.parse_args()
     main(**vars(cli_args))

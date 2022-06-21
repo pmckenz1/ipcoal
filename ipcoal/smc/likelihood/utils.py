@@ -103,5 +103,5 @@ if __name__ == "__main__":
     print(ivals, ivals.sum())
 
     GENEALOGIES = toytree.mtree(MODEL.df.genealogy)
-    for g in iter_unique_topologies_from_genealogies(GENEALOGIES, 0):
+    for g in iter_unique_topologies_from_genealogies(GENEALOGIES):
         print(g.get_topology_id(exclude_root=0), g.get_node_data("height"))

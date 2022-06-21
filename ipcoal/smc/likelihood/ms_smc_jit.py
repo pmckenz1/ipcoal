@@ -529,12 +529,14 @@ if __name__ == "__main__":
     NSITES = 1e5
 
     sptree = toytree.rtree.baltree(NSPECIES).mod.edges_scale_to_root_height(ROOT_HEIGHT, include_stem=True)
-    model = ipcoal.Model(sptree, Ne=NEFF, nsamples=NSAMPLES, recomb=RECOMB, seed_trees=SEED)
+
+    sptree.set_node_data("Ne", {0: 2e5, 1: 3e5, 2: 4e5}, inplace=True)
+    model = ipcoal.Model(sptree, nsamples=NSAMPLES, recomb=RECOMB, seed_trees=SEED)
     model.sim_trees(1, NSITES)
     imap = model.get_imap_dict()
 
     # genealogy topo change interval lengths
-    topo_lengths = ipcoal.smc.get_topology_interval_lengths(model)
+    topo_lengths = ipcoal.smc.likelihood.get_topology_interval_lengths(model)
 
     # N and avg tree change length
     print(f"{len(topo_lengths)} genealogy topologies w/ average length={np.mean(topo_lengths):.0f}")
@@ -549,7 +551,7 @@ if __name__ == "__main__":
 
     print([ipcoal.smc.get_probability_of_topology_change(model.tree, g[i], imap) for i in range(10)])
     print(
-    [ipcoal.smc.likelihood.likelihood._get_fast_probability_of_topology_change(
+    [ipcoal.smc.likelihood.ms_smc_jit._get_fast_probability_of_topology_change(
         tdata.earr[tdata.earr[:, 6] == i],
         tdata.barr[i],
         tdata.sarr[i],
