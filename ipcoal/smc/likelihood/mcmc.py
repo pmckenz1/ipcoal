@@ -85,8 +85,8 @@ class Mcmc(ABC):
     def __init__(
         self,
         recomb: float,
-        lengths: np.ndarray,
-        embedding: ipcoal.smc.likelihood.Embedding,
+        lengths: Sequence[np.ndarray],
+        embedding: Sequence[ipcoal.smc.likelihood.Embedding],
         prior: Tuple[str, Sequence[float]],
         init_params: np.ndarray,
         seed: int,
@@ -97,7 +97,6 @@ class Mcmc(ABC):
         self.recomb = recomb
         self.lengths = lengths
         self.embedding = embedding
-        # self.priors = np.array([priors[0]] * len(init_params)), np.array([priors[1]] * len(init_params))
         self.prior = get_prior(prior[0], *prior[1:])
         self.params = np.array(init_params)
         self.rng = np.random.default_rng(seed)
@@ -168,6 +167,7 @@ class Mcmc(ABC):
             new_loglik_prior = self.prior_log_likelihood(new_params)
             if np.isinf(new_loglik_prior):
                 aratio = 0
+                new_loglik_data = np.inf
             else:
                 new_loglik_data = self.log_likelihood(new_params)
                 args = (old_loglik_data, new_loglik_data, old_loglik_prior, new_loglik_prior)
@@ -237,41 +237,48 @@ class Mcmc(ABC):
 
 class McmcTree(Mcmc):
     def log_likelihood(self, params) -> float:
-        """Return log-likelihood of the data (lengths, edicts) given the params."""    
-        return ipcoal.smc.likelihood.get_tree_distance_loglik(
-            embedding=self.embedding,
-            params=params,
-            recomb=self.recomb,
-            lengths=self.lengths
-        )
+        """Return log-likelihood of the data (lengths, edicts) given the params."""
+        loglik = 0
+        for (edata, lengths) in zip(self.embedding, self.lengths):
+            loglik += ipcoal.smc.likelihood.get_tree_distance_loglik(
+                embedding=edata,
+                params=params,
+                recomb=self.recomb,
+                lengths=lengths
+            )
+        return loglik
 
 class McmcTopology(Mcmc):
     def log_likelihood(self, params) -> float:
         """Return log-likelihood of the data (lengths, edicts) given the params."""
-        return ipcoal.smc.likelihood.get_topology_distance_loglik(
-            embedding=self.embedding,
-            params=params,
-            recomb=self.recomb,
-            lengths=self.lengths
-        )
+        loglik = 0
+        for (edata, lengths) in zip(self.embedding, self.lengths):
+            loglik += ipcoal.smc.likelihood.get_topology_distance_loglik(
+                embedding=edata,
+                params=params,
+                recomb=self.recomb,
+                lengths=lengths
+            )
+        return loglik
 
 class McmcCombined(Mcmc):
     def log_likelihood(self, params) -> float:
-        """Return log-likelihood of the data (lengths, edicts) given the params."""    
-        loglik0 = ipcoal.smc.likelihood.get_tree_distance_loglik(
-            embedding=self.embedding[0],
-            params=params,
-            recomb=self.recomb,
-            lengths=self.lengths[0],
-        )
-        loglik1 = ipcoal.smc.likelihood.get_topology_distance_loglik(
-            embedding=self.embedding[1],
-            params=params,
-            recomb=self.recomb,
-            lengths=self.lengths[1],
-        )
-        return loglik0 + loglik1
-
+        """Return log-likelihood of the data (lengths, edicts) given the params."""
+        loglik = 0
+        for (edata, lengths) in zip(self.embedding, self.lengths):
+            loglik += ipcoal.smc.likelihood.get_tree_distance_loglik(
+                embedding=edata[0],
+                params=params,
+                recomb=self.recomb,
+                lengths=lengths[0],
+            )
+            loglik += ipcoal.smc.likelihood.get_topology_distance_loglik(
+                embedding=edata[1],
+                params=params,
+                recomb=self.recomb,
+                lengths=lengths[1],
+            )
+        return loglik
 
 
 def simulate_and_get_embeddings(
@@ -283,6 +290,7 @@ def simulate_and_get_embeddings(
     seed: int,
     data_type: str,
     threads: int,
+    nloci: int,
     ) -> Tuple[np.ndarray, ipcoal.smc.likelihood.Embedding]:
     """Simulate a tree sequence, get embedding info, and return.
     """
@@ -296,38 +304,50 @@ def simulate_and_get_embeddings(
     imap = model.get_imap_dict()
 
     # print some details
-    logger.info(f"simulating tree sequence for {nsites:.2g} sites w/ recomb={recomb:.2g}.")
+    logger.info(f"simulating {nloci} tree sequences for {nsites:.2g} sites w/ recomb={recomb:.2g}.")
 
     # generate a tree sequence and store to a table
-    model.sim_trees(nloci=1, nsites=nsites)
+    model.sim_trees(nloci=nloci, nsites=nsites)
 
     # load genealogies
-    genealogies = toytree.mtree(model.df.genealogy)
+    genealogies = []
+    for lidx in range(nloci):
+        mtree = toytree.mtree(model.df[model.df.locus == lidx].genealogy)
+        genealogies.append(mtree)
 
     # print some details
-    logger.info(f"loading genealogy embedding table for {len(genealogies)} genealogies.")
+    logger.info(f"loading genealogy embedding table for {[len(i) for i in genealogies]} genealogies.")
 
     # get cached embedding tables
-    args = (model.tree, genealogies, imap, threads)
-    if data_type == "tree":
-        lengths = model.df.nbps.values
-        edata = ipcoal.smc.likelihood.TreeEmbedding(*args)
-    elif data_type == "topology":
-        lengths = ipcoal.smc.likelihood.get_topology_interval_lengths(model)
-        logger.info(f"embedding includes {len(lengths)} sequential topology changes.")        
-        edata = ipcoal.smc.likelihood.TopologyEmbedding(*args)
-    elif data_type == "combined":
-        lengths0 = model.df.nbps.values
-        edata0 = ipcoal.smc.likelihood.TreeEmbedding(*args)
-        lengths1 = ipcoal.smc.likelihood.get_topology_interval_lengths(model)
-        edata1 = ipcoal.smc.likelihood.TopologyEmbedding(*args)
-        logger.info(f"embedding includes {len(lengths1)} sequential topology changes.")                
-        lengths = [lengths0, lengths1]
-        edata = [edata0, edata1]
-    else:
-        raise TypeError(f"data_type {data_type} arg not recognized: should be tree, topology, or combined.")
-    # return all data
-    return lengths, edata
+    multi_lengths = []
+    multi_embeddings = []
+
+    for lidx in range(nloci):
+        args = (model.tree, genealogies[lidx], imap, threads)
+        glengths = model.df[model.df.locus == lidx].nbps.values
+
+        if data_type == "tree":
+            edata = ipcoal.smc.likelihood.TreeEmbedding(*args)
+
+        elif data_type == "topology":
+            glengths = ipcoal.smc.likelihood.get_topology_interval_lengths(model, lidx)
+            edata = ipcoal.smc.likelihood.TopologyEmbedding(*args)
+
+        elif data_type == "combined":
+            edata0 = ipcoal.smc.likelihood.TreeEmbedding(*args)
+            edata1 = ipcoal.smc.likelihood.TopologyEmbedding(*args)
+            edata = [edata0, edata1]
+            tlengths = ipcoal.smc.likelihood.get_topology_interval_lengths(model, lidx)
+            glengths = [glengths, tlengths]
+        else:
+            raise TypeError(f"data_type {data_type} arg not recognized: should be tree, topology, or combined.")
+
+        # store results across loci
+        multi_lengths.append(glengths)
+        multi_embeddings.append(edata)
+
+    # logger.info(f"embedding includes {[len(i) for i in lengths1)} sequential topology changes.")                
+    return multi_lengths, multi_embeddings
 
 
 def get_species_tree(
@@ -361,6 +381,7 @@ def main(
     data_type: str,
     threads: int,
     prior: Sequence[Any],
+    nloci: int,
     *args,
     **kwargs,
     ) -> None:
@@ -403,7 +424,7 @@ def main(
 
     # simulate genealogies under MSC topology and parameters
     # and get the ARG and embedding data.
-    args = (sptree, params_dict, nsamples, nsites, recomb, seed, data_type, threads)
+    args = (sptree, params_dict, nsamples, nsites, recomb, seed, data_type, threads, nloci)
     lengths, edata = simulate_and_get_embeddings(*args)
 
     # initial random params
@@ -468,27 +489,27 @@ def cli():
     parser.add_argument(
         '--root-height', type=float, default=1e6, help='Root height of species tree.')
     parser.add_argument(
-        '--params', type=float, default=[200_000, 200_000, 200_000], nargs="*", help='True Ne values used for simulated data.')
+        '--params', type=float, default=[200_000, 300_000, 400_000], nargs="*", help='True Ne values used for simulated data.')
     parser.add_argument(
         '--recomb', type=float, default=2e-9, help='Recombination rate.')
     parser.add_argument(
-        '--nsites', type=float, default=5e6, help='length of simulated tree sequence')
+        '--nsites', type=float, default=1e5, help='length of simulated tree sequence')
     parser.add_argument(
         '--nsamples', type=int, default=4, help='Number of samples per species lineage')
     parser.add_argument(
         '--seed', type=int, default=666, help='Random number generator seed')
     parser.add_argument(
-        '--name', type=str, default='smc', help='Prefix path for output files')
+        '--name', type=str, default='multilocus', help='Prefix path for output files')
     parser.add_argument(
         '--mcmc-nsamples', type=int, default=1000, help='Number of samples in posterior')
     parser.add_argument(
-        '--mcmc-sample-interval', type=int, default=10, help='N accepted iterations between samples')
+        '--mcmc-sample-interval', type=int, default=5, help='N accepted iterations between samples')
     parser.add_argument(
-        '--mcmc-print-interval', type=int, default=10, help='N accepted iterations between printing progress')
+        '--mcmc-print-interval', type=int, default=50, help='N accepted iterations between printing progress')
     parser.add_argument(
-        '--mcmc-burnin', type=int, default=100, help='N accepted iterations before starting sampling')
+        '--mcmc-burnin', type=int, default=200, help='N accepted iterations before starting sampling')
     parser.add_argument(
-        '--threads', type=int, default=4, help='Max number of threads (0=all detected)')
+        '--threads', type=int, default=7, help='Max number of threads (0=all detected)')
     parser.add_argument(
         '--mcmc-jumpsize', type=float, default=[20_000], nargs="*", help='MCMC jump size.')
     parser.add_argument(
@@ -498,9 +519,11 @@ def cli():
     parser.add_argument(
         '--force', action='store_true', help='Overwrite existing file w/ same name.')
     parser.add_argument(
-        '--data-type', type=str, default="tree", help='tree, topology, or combined')
+        '--data-type', type=str, default="combined", help='tree, topology, or combined')
     parser.add_argument(
         '--prior', type=str, nargs="*", default=['u', 10, 5e6], help='prior on Ne')
+    parser.add_argument(
+        '--nloci', type=int, default=50, help='Number of independent loci (chromosomes)')
 
     cli_args = parser.parse_args()
     main(**vars(cli_args))

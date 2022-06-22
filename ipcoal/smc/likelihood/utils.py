@@ -2,19 +2,20 @@
 
 """Utility functions for SMC subpackage."""
 
-from typing import Iterator, Tuple, Sequence
+from typing import Iterator, Tuple, Sequence, Optional
 import toytree
 import numpy as np
 import ipcoal
 
 
-def iter_spans_and_trees(model: ipcoal.Model) -> Iterator[Tuple[int, toytree.ToyTree]]:
+def iter_spans_and_trees(model: ipcoal.Model, locus: Optional[int]=None) -> Iterator[Tuple[int, toytree.ToyTree]]:
     """Yield ToyTree objects parsed from newick strings."""
-    for span, newick in model.df[["nbps", "genealogy"]].values:
+    data = model.df[model.df.locus == locus] if locus is not None else model.df
+    for span, newick in data[["nbps", "genealogy"]].values:
         yield (span, toytree.tree(newick))
 
 
-def iter_spans_and_topologies(model: ipcoal.Model) -> Iterator[int]:
+def iter_spans_and_topologies(model: ipcoal.Model, locus: Optional[int]=None) -> Iterator[int]:
     """Return an array of genealogical topology lengths.
 
     Parameters
@@ -26,7 +27,7 @@ def iter_spans_and_topologies(model: ipcoal.Model) -> Iterator[int]:
     """
     current = None
     interval = 0
-    for span, gtree in iter_spans_and_trees(model):
+    for span, gtree in iter_spans_and_trees(model, locus=locus):
         interval += span
         if current:
             new = gtree.get_topology_id(exclude_root=False)
@@ -76,7 +77,7 @@ def iter_unique_topologies_from_genealogies(
             tree_bunch.append(gtree)
 
 
-def get_topology_interval_lengths(model: ipcoal.Model) -> np.ndarray:
+def get_topology_interval_lengths(model: ipcoal.Model, locus: Optional[int]=None) -> np.ndarray:
     """Return an array of genealogical topology lengths.
 
     Parameters
@@ -86,7 +87,7 @@ def get_topology_interval_lengths(model: ipcoal.Model) -> np.ndarray:
         such as `sim_trees`, `sim_loci`, etc. such that it has data
         in its `.df` attribute.
     """
-    return np.array([i[0] for i in iter_spans_and_topologies(model)])
+    return np.array([i[0] for i in iter_spans_and_topologies(model, locus=locus)])        
 
 
 if __name__ == "__main__":
