@@ -68,7 +68,7 @@ def write_and_submit_sbatch_script(
     """Submit an sbatch job to the cluster with these params."""
     # build parameter name string
     params = (
-        f"neff{neff}-root{root_height:.2e}-"
+        f"neff{neff}-root{int(root_height)}-"
         f"recomb{int(bool(recomb))}-rep{rep}-"
         f"nloci{max(nloci)}-nsites{nsites}"
     )
@@ -203,7 +203,7 @@ if __name__ == "__main__":
 
                         # skip submitting job if all outfiles exist.
                         params_ = (
-                            f"neff{neff_}-root{root_:.2e}-"
+                            f"neff{neff_}-root{int(root_)}-"
                             f"recomb{int(bool(recomb_))}-rep{rep_}-"
                             f"nloci{max(args.nloci)}-nsites{nsites_}"
                         )

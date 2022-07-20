@@ -77,7 +77,7 @@ def run_sim_loci_inference(
     # chunk result exists and skips it if it does exist, until all
     # gene trees are inferred. Then it proceeds and uses these gene
     # trees in the astral inference.
-    for lidx in range(0, nloci, CHUNKSIZE):
+    for lidx in range(0, max(nloci), CHUNKSIZE):
 
         # skip the chunk if its csv already exists
         outname = jobdir / f"rep-{lidx}-gene_trees.csv"
