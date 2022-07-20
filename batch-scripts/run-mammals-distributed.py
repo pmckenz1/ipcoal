@@ -152,6 +152,10 @@ def distributed_command_line_parser():
         '--account', type=str, default="free", help='Account name for SLURM job submission')
     parser.add_argument(
         '--ncores', type=int, default=2, help='Number of cores per job (recommended=2)')
+    # parser.add_argument(
+        # '--dry-run', action='store_true', help='Write sbatch scripts but do not submit them.')
+    # parser.add_argument(
+        # '--delay', type=float, default=0.5, help='Number of seconds delay between SLURM job submissions.')
     return parser.parse_args()
 
 
