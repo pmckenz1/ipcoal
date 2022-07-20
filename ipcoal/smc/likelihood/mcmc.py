@@ -499,9 +499,9 @@ def cli():
     parser.add_argument(
         '--seed', type=int, default=666, help='Random number generator seed')
     parser.add_argument(
-        '--name', type=str, default='multilocus', help='Prefix path for output files')
+        '--name', type=str, default='combined-50loci-1e5sites', help='Prefix path for output files')
     parser.add_argument(
-        '--mcmc-nsamples', type=int, default=1000, help='Number of samples in posterior')
+        '--mcmc-nsamples', type=int, default=10000, help='Number of samples in posterior')
     parser.add_argument(
         '--mcmc-sample-interval', type=int, default=5, help='N accepted iterations between samples')
     parser.add_argument(

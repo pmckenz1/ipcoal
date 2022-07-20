@@ -68,7 +68,7 @@ def infer_raxml_ng_tree_from_alignment(
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng from a phylip string."""
     tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
-    with tempfile.NamedTemporaryFile(dir=tmpdir) as tmp:
+    with tempfile.NamedTemporaryFile(dir=tmpdir, suffix=f"_{os.getpid()}") as tmp:
 
         # write phylip data to the tmpfile
         fname = Path(tmp.name).with_suffix(".phy")
@@ -165,7 +165,7 @@ def infer_raxml_ng_tree(
     nthreads: int
         Number of threads used for parallelization.
     binary_path: None, str, or Path
-        Path to the ASTRAL binary that is called by `java -jar binary`.
+        Path to the raxa binary.
 
     Examples
     --------
@@ -193,6 +193,7 @@ def infer_raxml_ng_tree(
 
 def infer_raxml_ng_trees(
     model: ipcoal.Model,
+    idxs: Union[Sequence[int], None]=None,
     nboots: int=0,
     nproc: int=1,
     seed: int=None,
@@ -230,7 +231,7 @@ def infer_raxml_ng_trees(
     subst_model: str
         ...
     binary_path: None, str, or Path
-        Path to the ASTRAL binary that is called by `java -jar binary`.
+        Path to the raxml binary.
     nworkers: int
         ...
     tmpdir: Path or None
@@ -255,9 +256,22 @@ def infer_raxml_ng_trees(
     empty = 0
     rasyncs = {}
 
+    # loci for which trees can be inferred
+    pidxs = set(model.df.locus.unique())
+
+    # which loci to do
+    if idxs is None:
+        idxs = sorted(pidxs)
+    if isinstance(idxs, int):
+        idxs = [idxs]
+    if not isinstance(idxs, list):
+        idxs = list(idxs)
+
     # TODO: asynchrony so that writing and processing are not limited.
     with ProcessPoolExecutor(max_workers=nproc) as pool:
-        for lidx in model.df.locus.unique():
+        for lidx in idxs:
+            if lidx not in pidxs:
+                continue
             locus = model.df[model.df.locus == lidx]
 
             # if no data then return a star tree.
@@ -274,7 +288,7 @@ def infer_raxml_ng_trees(
                 # rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
                 # rasyncs[lidx] = rasync
 
-                # disk-friendly mode
+                # disk-friendly mode, but higher memory-usage.
                 ali = model.write_concat_to_phylip(idxs=int(lidx), diploid=diploid, quiet=True)
                 kwargs['alignment'] = ali
                 kwargs['seed'] = rng.integers(1e12)
@@ -288,7 +302,8 @@ def infer_raxml_ng_trees(
             "contain 0 SNPs and were returned as star trees.")
 
     # create results as a dataframe
-    data = (model.df
+    data = model.df[model.df.locus.isin(idxs)]
+    data = (data
         .groupby("locus")
         .agg({"start": "min", "end": "max", "nbps": "sum", "nsnps": "sum"})
         .reset_index()
