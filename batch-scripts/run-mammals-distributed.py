@@ -13,7 +13,6 @@ good idea to use HPC to run this.
 
 """
 
-from typing import List
 import sys
 import time
 import argparse
@@ -43,7 +42,7 @@ python {root}/run-mammals.py \
 --seed {seed} \
 --outdir {outdir} \
 --ncores {ncores} \
---root-height {..._heights} \
+--root-height {root_height} \
 --raxml-bin {raxml_bin} \
 --astral-bin {astral_bin} \
 --outdir {outdir}
@@ -53,7 +52,6 @@ python {root}/run-mammals.py \
 
 def write_and_submit_sbatch_script(
     neff: int, 
-    ctime: int, 
     mut: float,
     recomb: float, 
     rep: int,
@@ -63,14 +61,14 @@ def write_and_submit_sbatch_script(
     ncores: int,
     outdir: Path,
     account: str,
-    node_heights: List[float],
+    root_height: float,
     raxml_bin: Path,
     astral_bin: Path,    
     ):
     """Submit an sbatch job to the cluster with these params."""
     # build parameter name string
     params = (
-        f"neff{neff}-ctime{ctime}-"
+        f"neff{neff}-root{root_height:.2e}-"
         f"recomb{int(bool(recomb))}-rep{rep}-"
         f"nloci{max(nloci)}-nsites{nsites}"
     )
@@ -87,14 +85,13 @@ def write_and_submit_sbatch_script(
         jobname=params,
         ncores=ncores,
         neff=neff,
-        ctime=ctime,
         mut=mut,
         recomb=recomb,
         nsites=nsites,
         nloci=" ".join([str(i) for i in nloci]),
         rep=rep,
         seed=seed,
-        node_heights=" ".join([str(i) for i in node_heights]),
+        root_height=root_height,
         raxml_bin=raxml_bin,
         astral_bin=astral_bin,
         outdir=outdir,
@@ -117,6 +114,9 @@ def write_and_submit_sbatch_script(
 def distributed_command_line_parser():
     """Parse command line arguments and return.
 
+    The fixed mammal tree will be scaled to the root_height arg in
+    units of generations.
+
     Example
     -------
     >>> python run-sim-loci-inference-distributed.py  \
@@ -124,7 +124,6 @@ def distributed_command_line_parser():
     >>>     --nreps 100 \
     >>>     --nsites 2000 10000 \
     >>>     --neff 1e4 1e5 \
-    >>>     --ctimes 0.1 0.2 0.3 0.4 0.5 0.75 1.0 1.25 \
     >>>     --mut 5e-8 \
     >>>     --recomb 0 5e-9 \
     >>>     --node-heights 0.01 0.05 0.06 1 \
@@ -133,8 +132,6 @@ def distributed_command_line_parser():
     """
     parser = argparse.ArgumentParser(
         description='Coalescent simulation and tree inference w/ recombination')
-    # parser.add_argument(
-        # '--tree', type=str, help='Species tree topology w/ relative edge lengths')
     parser.add_argument(
         '--root-height', default=[66_371_836], nargs="*", type=float, help='Scale relative sptree edges so root height is at this.')
     parser.add_argument(
@@ -161,12 +158,24 @@ def distributed_command_line_parser():
 if __name__ == "__main__":
 
     # parse command line args
+    # sys.argv = """
+    # python run-mammals-distributed.py  \
+    #      --ncores 2 \
+    #      --nreps 100 \
+    #      --root-height 66e6 \
+    #      --neff 1e4 1e5 \
+    #      --nsites 2_000 10_000 \
+    #      --nloci 20_000 \
+    #      --mut 5e-8 \
+    #      --recomb 0 5e-9 \
+    #      --outdir /scratch/recomb/ \
+    #      --account eaton \
+    # """
     args = distributed_command_line_parser()
 
     # build grid of all jobs
     nlen = len(args.neff)
     rlen = len(args.recomb)
-    # clen = len(args.ctime)
     ilen = args.nreps
     slen = len(args.nsites)
     njobs = nlen * rlen * slen * ilen
@@ -182,40 +191,39 @@ if __name__ == "__main__":
 
     # distribute jobs over all params except NLOCI (pass whole list).
     SEEDS = np.random.default_rng(123).integers(1e12, size=args.nreps)
-    for nsites in args.nsites:
-        for neff in args.neff:
-            for ctime in args.ctime:
-                for recomb in args.recomb:                
-                    for rep in range(args.nreps):
+    for nsites_ in args.nsites:
+        for neff_ in args.neff:
+            for root_ in args.root_height:
+                for recomb_ in args.recomb:                
+                    for rep_ in range(args.nreps):
 
                         # skip submitting job if all outfiles exist.
-                        params = (
-                            f"neff{neff}-ctime{ctime}-"
-                            f"recomb{int(bool(recomb))}-rep{rep}-"
-                            f"nloci{max(args.nloci)}-nsites{nsites}"
+                        params_ = (
+                            f"neff{neff_}-root{root_:.2e}-"
+                            f"recomb{int(bool(recomb_))}-rep{rep_}-"
+                            f"nloci{max(args.nloci)}-nsites{nsites_}"
                         )
 
                         # check for existing output files and skip this job if present
-                        paths = [args.outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in args.nloci]
+                        paths = [args.outdir / (params_ + f"-astral-genetree-subloci{i}.nwk") for i in args.nloci]
                         if all(i.exists() for i in paths):
                             njobs -= 1
-                            print(f"skipping job {params}, result files exist.")
+                            print(f"skipping job {params_}, result files exist.")
                             continue
 
                         # gtime = int(ctime * 4 * neff)
                         write_and_submit_sbatch_script(
-                            neff=neff,
-                            ctime=ctime, 
+                            neff=neff_,
                             mut=args.mut,
-                            recomb=recomb, 
+                            recomb=recomb_, 
                             nloci=args.nloci,
-                            nsites=nsites,
-                            rep=rep,
-                            seed=SEEDS[rep],
+                            nsites=nsites_,
+                            rep=rep_,
+                            seed=SEEDS[rep_],
                             ncores=args.ncores,
                             outdir=args.outdir,
                             account=args.account,
-                            node_heights=args.node_heights,
+                            root_height=root_,
                             raxml_bin=RAXML_BIN,
                             astral_bin=ASTRAL_BIN,                            
                         )

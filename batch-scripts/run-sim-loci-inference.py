@@ -10,11 +10,12 @@ import sys
 from typing import List
 import argparse
 from pathlib import Path
+import pandas as pd
 import toytree
 import ipcoal
 
 
-def run_sim_loci_inference(
+def run_sim_loci_and_infer_gene_trees(
     tree: toytree.ToyTree,
     ctime: int,
     recomb: float,
@@ -28,6 +29,31 @@ def run_sim_loci_inference(
     nloci: List[int],
     raxml_bin: Path,
     astral_bin: Path,
+    chunksize: int=1000,
+    ):
+    """Simulate N loci and infer gene trees.
+    
+    If we requested 20K gene trees for rep 0 then this will represent
+    a chunk of loci from a unique seed...
+
+    """
+
+
+def run_post_gene_tree_inference(
+    tree: toytree.ToyTree,
+    ctime: int,
+    recomb: float,
+    mut: float,
+    neff: int,
+    rep: int,
+    seed: int,
+    nsites: int,
+    outdir: Path,
+    ncores: int,
+    nloci: List[int],
+    raxml_bin: Path,
+    astral_bin: Path,
+    chunksize: int=1000,
     ):
     """Writes simulated genealogies and inference results to WORKDIR.
 
@@ -60,17 +86,34 @@ def run_sim_loci_inference(
     model.sim_loci(nloci=max(nloci), nsites=nsites)
     # model.df.to_csv(locpath)  # uncomment to save genealogies
 
-    # infer gene trees for every locus and write to CSV
-    raxdf = ipcoal.phylo.infer_raxml_ng_trees(
-        model,
-        nproc=ncores,
-        nworkers=1,
-        nthreads=1,
-        seed=seed,
-        binary_path=raxml_bin,
-        tmpdir=jobdir,
-    )
-    # raxdf.to_csv(gtpath)  # uncomment to save gene trees
+    # break up gene tree inference into 1000 at a time, in case the 
+    # it takes a long time to finish. This checks whether a saved 
+    # chunk result exists and skips it if it does exist, until all
+    # gene trees are inferred. Then it proceeds and uses these gene
+    # trees in the astral inference.
+    for lidx in range(0, nloci, chunksize):
+
+        # skip the chunk if its csv already exists
+        outname = jobdir / f"rep-{lidx}-gene_trees.csv"
+        if outname.exists():
+            continue
+
+        # infer gene trees for every locus and write to CSV
+        raxdf = ipcoal.phylo.infer_raxml_ng_trees(
+            model,
+            idxs=range(lidx, lidx + chunksize),
+            nproc=ncores,
+            nworkers=1,
+            nthreads=1,
+            seed=seed,
+            binary_path=raxml_bin,
+            tmpdir=jobdir,
+        )
+        raxdf.to_csv(outname)
+
+    # load and concatenate gene tree dataframes
+    raxdfs = sorted(jobdir.glob(f"rep-*-gene_trees.csv"))
+    raxdf = pd.concat(raxdfs, ignore_index=True)
 
     # iterate over subsample sizes of NLOCI
     for numloci in sorted(nloci):

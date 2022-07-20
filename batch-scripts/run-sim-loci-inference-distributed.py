@@ -126,9 +126,12 @@ def distributed_command_line_parser():
     >>>     --node-heights 0.01 0.05 0.06 1 \
     >>>     --outdir /scratch/recomb/ \
     >>>     --account eaton \
+    >>>     --step 1
     """
     parser = argparse.ArgumentParser(
         description='Coalescent simulation and tree inference w/ recombination')
+    parser.add_argument(
+        '--step', type=int, default=1, help='Analysis step: 1=gene tree inference, 2=species tree inference.')
     parser.add_argument(
         '--neff', type=int, default=[10000, 100000], nargs="*", help='Effective population size')
     parser.add_argument(
@@ -189,19 +192,26 @@ def main():
             for ctime in args.ctime:
                 for recomb in args.recomb:
                     for neff in args.neff:
-                        # skip submitting job if all outfiles exist.
-                        params = (
-                            f"neff{neff}-ctime{ctime}-"
-                            f"recomb{int(bool(recomb))}-rep{rep}-"
+                        
+                        # the folder name where this job will output
+                        paramdir = (
+                            f"neff{int(neff)}-ctime{ctime}-"
+                            f"recomb{int(bool(recomb))}-"
                             f"nloci{max(args.nloci)}-nsites{nsites}"
-                        )
+                        )                        
 
-                        # check for existing output files and skip this job if present
-                        paths = [args.outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in args.nloci]
-                        if all(i.exists() for i in paths):
-                            njobs -= 1
-                            print(f"skipping job {params}, result files exist.")
-                            continue
+                        # if step 1 then skip if `...gene_trees.csv` exists
+                        path = args.outdir / params / TODO
+
+                        # if step 2 then skip if `...astral-genetree...nwk` exists
+
+                        # TODO
+                        # check if this rep's result already exist
+                        # paths = [args.outdir / (params + f"-astral-genetree-subloci{i}.nwk") for i in args.nloci]
+                        # if all(i.exists() for i in paths):
+                        #     njobs -= 1
+                        #     print(f"skipping job {params}, result files exist.")
+                        #     continue
 
                         # gtime = int(ctime * 4 * neff)
                         write_and_submit_sbatch_script(
