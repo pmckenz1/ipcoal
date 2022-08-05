@@ -6,7 +6,7 @@ Draw a sequence array.
 
 import numpy as np
 import toyplot
-from toytree.utils.utils import ScrollableCanvas
+from toytree.utils import ScrollableCanvas
 
 
 def draw_seqview(

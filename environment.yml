@@ -9,7 +9,7 @@ dependencies:
 	- numpy
 	- pandas
 	- scipy
-	- toytree
-	- msprime
 	- numba
 	- loguru
+	- toytree>=3.0
+	- msprime>=1.0

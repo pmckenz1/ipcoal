@@ -3,9 +3,8 @@
 """
 Summary
 -------
-The ipcoal module includes the ipcoal.model.Model class object
-that is the primary interface by which users interact with the
-ipcoal library.
+The primary interface for `ipcoal` is the `ipcoal.Model` class 
+which is used to setup, perform, and analyze simulations.
 
 Example
 -------
@@ -15,10 +14,10 @@ Example
 >>> model.draw_seqview()
 """
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 __author__ = "Patrick McKenzie and Deren Eaton"
 
 from ipcoal.model import Model
 from ipcoal.utils import utils
-from ipcoal.utils.logger_setup import set_loglevel
-set_loglevel("WARNING")
+from ipcoal.utils.logger_setup import set_log_level
+set_log_level("WARNING")

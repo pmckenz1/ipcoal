@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
-"""
-Write SNPs to VCF format.
+"""Write SNPs to VCF format.
+
 """
 
+from typing import Sequence, Dict
 import datetime
 import numpy as np
 import pandas as pd
@@ -13,7 +14,7 @@ from ipcoal.utils.utils import convert_intarr_to_bytearr
 import ipcoal
 
 
-# TODO add an attribution of the ipcoal version and list sim parameters.
+# TODO: add ipcoal sim params to the header, or msprime schema...
 VCFHEADER = """\
 ##fileformat=VCFv4.2
 ##fileDate={date}
@@ -26,15 +27,18 @@ VCFHEADER = """\
 
 
 class VCF:
-    """
-    Write SNPs in VCF format. Note: we use the true ancestral sequence to
-    represent the reference such that matching the reference of not 
-    is the same as ancestral vs. derived. However, we only include sites
-    that are variable among the samples, i.e., a SNP is not defined if 
-    all samples are derived relative to the reference (ancestral seq).
+    """Write SNPs data in VCF format.
+
+    Notes
+    -----
+    We use the true ancestral sequence to represent the reference
+    such that matching the reference of not is the same as ancestral
+    vs. derived. However, we only include sites that are variable among
+    the samples, i.e., a SNP is not defined if all samples are derived
+    relative to the reference (ancestral seq).
 
     Parameters
-    ==========
+    ----------
     seqs: ndarray
         int array (nloci, nsamples, nsites).
     names: ndarray
@@ -46,7 +50,16 @@ class VCF:
     fill_missing_alleles: bool
         Write diploids with missing alleles (0|.) as (0|0).
     """
-    def __init__(self, seqs, names, diploid, ancestral, fill_missing_alleles):
+    def __init__(
+        self,
+        seqs: np.ndarray,
+        names: Sequence[str],
+        diploid: bool,
+        ancestral: np.ndarray,
+        fill_missing_alleles: bool,
+        alleles: Dict[str, int],
+        ):
+
         self.names = names
         self.seqs = seqs
         self.aseqs_ints = ancestral
@@ -54,45 +67,38 @@ class VCF:
         self.fill_missing_alleles = fill_missing_alleles
 
         # do not combine for ambiguity codes, but get diploid_map and names.
-        txf = Transformer(self.seqs, self.names, diploid)
+        txf = Transformer(self.seqs, self.names, alleles, diploid)
         self.dindex_map = txf.dindex_map
         self.dnames = txf.names
 
-
     def get_header(self):
-        """
-        Called AFTER the .df vcf is built.
-        """
+        """Called AFTER the .df vcf is built."""
         # build the header
         contig_lines = []
         for loc in range(self.seqs.shape[0]):
             arr = self.seqs[loc]
             if np.any(arr != arr[0], axis=0).sum():
                 contig_lines.append(
-                    "##contig=<ID={},length={}>".format(loc, arr.shape[1])) 
+                    "##contig=<ID={},length={}>".format(loc, arr.shape[1]))
 
         header = VCFHEADER.format(**{
             "date": datetime.datetime.now(),
-            "version": ipcoal.__version__, 
+            "version": ipcoal.__version__,
             "reference": "true_simulated_ancestral_sequence",
             "contig_lines": "\n".join(contig_lines)
         })
         header = "{}{}\n".format(header, "\t".join(self.dnames))
         return header
 
-
-
     def vcf_chunk_generator(self):
-        """
-        Build a DF of genotypes and metadata.
-        """
+        """Yield chunks of VCF DF w/ genotypes and metadata."""
         # iterate over loci building vcf dataframes
         for lidx in range(self.seqs.shape[0]):
 
             # get array of sequence data
             arr = self.seqs[lidx]
 
-            # get indices of variable sites while allowing for missing data       
+            # get indices of variable sites while allowing for missing data
             marr = np.ma.array(data=arr, mask=(arr == 9))
             common = marr.mean(axis=0).round().astype(int)
             varsites = np.where(np.any(marr != common, axis=0).data)[0]
@@ -103,7 +109,7 @@ class VCF:
                 "CHROM": np.repeat(0, nsites),
                 "POS": np.repeat(1, nsites),
                 "ID": np.repeat(".", nsites),
-                "REF": "N", 
+                "REF": "N",
                 "ALT": "A,C,G",
                 "QUAL": 99,
                 "FILTER": "PASS",
@@ -114,11 +120,11 @@ class VCF:
             # fill in the reference allele using the known ancestral seq
             vdf.loc[:, "REF"] = self.aseqs_bytes[lidx][varsites].astype(str)
 
-            # get genos and alts            
+            # get genos and alts
             genos = Genos(
-                arr, 
+                arr,
                 self.aseqs_ints[lidx],
-                varsites, 
+                varsites,
                 self.dindex_map,
                 self.fill_missing_alleles,
             )
@@ -133,3 +139,32 @@ class VCF:
 
             # yield result to act as a generator of chunks
             yield vdf
+
+
+if __name__ == "__main__":
+
+    import toytree
+    import ipcoal
+
+    TRE = toytree.rtree.unittree(4, treeheight=1e6, seed=123)
+    MOD = ipcoal.Model(TRE, Ne=10000, nsamples=2)
+    MOD.sim_loci(1, 100)
+    V = VCF(
+        MOD.seqs, MOD.alpha_ordered_names,
+        diploid=False, ancestral=MOD.ancestral_seq,
+        fill_missing_alleles=True, alleles=MOD.alleles,
+    )
+    print(V.dnames, V.dindex_map, "\n")
+
+
+    TRE = toytree.rtree.unittree(4, treeheight=1e6, seed=123)
+    MOD = ipcoal.Model(TRE, Ne=10000, nsamples=3)
+    MOD.sim_loci(1, 100)
+    V = VCF(
+        MOD.seqs, MOD.alpha_ordered_names,
+        diploid=False, ancestral=MOD.ancestral_seq,
+        fill_missing_alleles=True, alleles=MOD.alleles,
+    )
+    print(V.dnames, V.dindex_map)
+
+    print(list(V.vcf_chunk_generator()))
