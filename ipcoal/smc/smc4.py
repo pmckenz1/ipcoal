@@ -357,7 +357,7 @@ def get_prob_gene_tree_is_unchanged_by_recomb_on_edge(
     # return as branch sum weighted by its total length
     # FIXME: PROBLEM TO FIX HERE.
     if table.dist.sum() == 0:
-        logger.error(f"{idx}: {gene_tree.get_node_data()}")
+        logger.error(f"error at idx={idx}:\n{gene_tree.get_node_data()}")
 
     return full_branch_sum / table.dist.sum()
 
@@ -557,24 +557,24 @@ if __name__ == "__main__":
     logger.info("One embedded gene tree table:\n"
         f"{get_embedded_gene_tree_table(SPTREE, GTREE, IMAP)}")
     EDIST = get_expected_dist_until_gene_tree_changes(SPTREE, GTREE, IMAP, 1e-8)
-    logger.warning(EDIST)
+    logger.info(f"expected waiting distance: {EDIST:.4f} bp\n")
 
     # simulate a long chromosome with many genealogies
     NSITES = 1e4
     logger.info(f"simulating {NSITES} bp")
     MODEL.sim_loci(nloci=1, nsites=NSITES)
     logger.info(f"simulated {MODEL.df.shape[0]} genealogies")
-    logger.info(f"simulated:\n{MODEL.df}\n")    
+    logger.info(f"simulated table summary:\n{MODEL.df}\n")
 
     # compare sim distances to predicted distances
-    logger.info("computing expected waiting distances")
-    CDATA = compare_to_ipcoal(ipcoal_model=MODEL, recombination_rate=RECOMB, cores=7)
-    logger.info(
-        "expected waiting distances\n"
-        "--------------------------\n"
-        f"{CDATA.head(15)}\n"
-        "...\n"
-        "--------------------------"
-    )
-    # compare_to_ipcoal_plot(CDATA)
-    # logger.info(f"\n{CDATA.describe().T[['mean', 'std', 'min', 'max']]}")
+    # logger.info("computing expected waiting distances")
+    # CDATA = compare_to_ipcoal(ipcoal_model=MODEL, recombination_rate=RECOMB, cores=7)
+    # logger.info(
+    #     "expected waiting distances\n"
+    #     "--------------------------\n"
+    #     f"{CDATA.head(15)}\n"
+    #     "...\n"
+    #     "--------------------------"
+    # )
+    #compare_to_ipcoal_plot(CDATA)
+    #logger.info(f"\n{CDATA.describe().T[['mean', 'std', 'min', 'max']]}")

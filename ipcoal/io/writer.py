@@ -6,8 +6,8 @@ Formats include VCF, PHY, NEXUS, or HDF5, while also optionally
 combining haplotypes into diploid base calls.
 """
 
-import os
-from typing import Optional, Iterable, List, Dict
+from typing import Optional, Iterable, List, Dict, Union, Sequence
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from loguru import logger
@@ -39,8 +39,13 @@ class Writer:
     model: ipcoal.Model
     """
     def __init__(self, model: 'ipcoal.Model', alt_seqs: np.ndarray=None):
+        # warn if no sequences present. Will cause errors when writing.
+        if not model.seqs.size:
+            raise IpcoalError(
+                "No sequences present. First run .sim_loci() or sim.snps()")
+
         # both are already ordered alphanumerically
-        # creates copies b/c can be modified. TODO: reduce copying where we can.
+        # creates copies b/c can be modified.
         self.seqs = model.seqs.copy()
         self.names = model.alpha_ordered_names.copy()
         self.alleles = model.alleles.copy()
@@ -51,10 +56,6 @@ class Writer:
         self.outfile: str = None
         self.idxs: List[int] = None
         self.sampling: Dict[str,int] = None
-
-        if self.seqs.ndim < 2:
-            raise IpcoalError(
-                "No sequences present. First run .sim_loci() or sim.snps()")
 
         # fill sampling
         sample_sizes = [i.num_samples for i in model.samples]
@@ -73,9 +74,7 @@ class Writer:
             # check that idxs exist
             for loc in np.array(self.idxs):
                 if loc not in range(self.seqs.shape[0]):
-                    raise IpcoalError(
-                        "idx {} is not in the data set".format(loc))
-
+                    raise IpcoalError(f"idx {loc} is not in the data set")
             # subset self.seqs to selected loci
             idxs = np.array(sorted(self.idxs))
             self.seqs = self.seqs[idxs]
@@ -118,13 +117,13 @@ class Writer:
 
     def write_loci_to_phylip(
         self,
-        outdir,
-        idxs=None,
-        name_prefix=None,
-        name_suffix=None,
-        diploid=False,
-        quiet=False,
-        ):
+        outdir: Union[str, Path],
+        idxs: Union[int, Sequence[int], None]=None,
+        name_prefix: Optional[str]=None,
+        name_suffix: Optional[str]=None,
+        diploid: bool=False,
+        quiet: bool=False,
+        ) -> None:
         """Write seq data for each locus to a separate phylip file.
 
         Files are written to a shared directory with each locus named
@@ -149,9 +148,8 @@ class Writer:
             raise IpcoalError("cannot write 'loci' for sim_snps() result.")
 
         # make outdir if it does not yet exist
-        self.outdir = os.path.realpath(os.path.expanduser(outdir))
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
+        self.outdir = Path(outdir).expanduser().absolute()
+        self.outdir.mkdir(exist_ok=True)
 
         # set names parts to empty string if None
         name_suffix = ("" if name_suffix is None else name_suffix)
@@ -170,36 +168,33 @@ class Writer:
             arr = self.seqs[loc]
 
             # open file handle numbered unless user
-            fhandle = os.path.join(
-                self.outdir,
-                "{}{}{}.phy".format(name_prefix, loc, name_suffix),
-            )
+            fhandle = self.outdir / f"{name_prefix}{loc}{name_suffix}"
+            fhandle = fhandle.with_suffix(".phy")
 
             # build list of line strings
             phystring = self.build_phystring_from_loc(arr)
 
             # write to file
-            with open(fhandle, 'w') as out:
+            with open(fhandle, 'w', encoding="utf-8") as out:
                 out.write(phystring)
 
         # report
         if not quiet:
-            print("wrote {} loci ({} x {}bp) to {}/[...].phy".format(
-                len(self.idxs), self.seqs.shape[1], self.seqs.shape[2],
-                self.outdir.rstrip("/")
-                ),
+            print(
+                f"wrote {len(self.idxs)} loci "
+                f"({self.seqs.shape[1]} x {self.seqs.shape[2]}bp) "
+                f"to {self.outdir}/[...].phy"
             )
 
     def write_concat_to_phylip(
         self,
-        outdir: Optional[str]="./",
+        outdir: Union[str, Path, None]="./",
         name: Optional[str]=None,
-        idxs: Optional[Iterable[int]]=None,
+        idxs: Optional[Sequence[int]]=None,
         diploid: bool=False,
         quiet: bool=False,
         ):
-        """
-        Write seq data concatenated to a single phylip file.
+        """Write seq data concatenated to a single phylip file.
 
         If you want to write only a subset of loci to file you can
         select by their indices.
@@ -218,6 +213,7 @@ class Writer:
                 self.seqs.shape[1], self.seqs.shape[0], 1)
 
         # subset selected loci
+        idxs = [idxs] if isinstance(idxs, int) else idxs
         self._subset_loci(idxs)
 
         # transform data to string type and ploidy
@@ -234,10 +230,9 @@ class Writer:
             return phystring
 
         # create a directory if it doesn't exist
-        outdir = os.path.realpath(os.path.expanduser(outdir))
-        if not os.path.exists(outdir):
-            os.makedirs(outdir)
-        outfile = os.path.join(outdir, name.rstrip(".phy") + ".phy")
+        self.outdir = Path(outdir).expanduser().absolute()
+        self.outdir.mkdir(exist_ok=True)
+        outfile = (self.outdir / name).with_suffix(".phy")
 
         # write to file
         with open(outfile, 'w', encoding="utf-8") as out:
@@ -245,8 +240,8 @@ class Writer:
 
         # report
         if not quiet:
-            print("wrote concat locus ({} x {}bp) to {}"
-                  .format(arr.shape[0], arr.shape[1], outfile))
+            print("wrote concat locus "
+                f"({arr.shape[0]} x {arr.shape[1]}bp) to {outfile}")
         return None
 
     def write_concat_to_nexus(
@@ -290,19 +285,18 @@ class Writer:
             return nexstring
 
         # create a directory if it doesn't exist
-        outdir = os.path.realpath(os.path.expanduser(outdir))
-        if not os.path.exists(outdir):
-            os.makedirs(outdir)
-        outfile = os.path.join(outdir, name.rstrip(".nex") + ".nex")
+        self.outdir = Path(outdir).expanduser().absolute()
+        self.outdir.mkdir(exist_ok=True)
+        outfile = (self.outdir / name).with_suffix(".nex")
 
         # write to file
-        with open(outfile, 'w') as out:
+        with open(outfile, 'w', encoding="utf-8") as out:
             out.write(nexstring)
 
         # report
         if not quiet:
-            print("wrote concat locus ({} x {}bp) to {}"
-                  .format(arr.shape[0], arr.shape[1], outfile))
+            print("wrote concat locus "
+                f"({arr.shape[0]} x {arr.shape[1]}bp) to {outfile}")
         return None
 
     def write_loci_to_hdf5(
@@ -346,12 +340,11 @@ class Writer:
         # txf.transform_seqs()
 
         # open h5py database handle
-        if name is None:
-            name = "test"
-        if outdir is None:
-            outdir = "."
-        outdir = os.path.realpath(os.path.expanduser(outdir))
-        h5file = os.path.join(outdir, name + ".seqs.hdf5")
+        name = name if name is not None else "test"
+        outdir = outdir if outdir is not None else "."
+        outdir = Path(outdir).expanduser().absolute()
+        outdir.mkdir(exist_ok=True)
+        h5file = (outdir / name).with_suffix(".seqs.hdf5")
         with h5py.File(h5file, 'w') as io5:
 
             # write the concatenated seqs bytes array to 'seqs'
@@ -372,8 +365,8 @@ class Writer:
 
             # placeholders for now
             io5.create_dataset("scaffold_lengths", data=np.repeat(loclen, nloci))
-            io5.create_dataset("scaffold_names", data=(
-                ['loc-{}'.format(i).encode() for i in range(1, nloci + 1)]))
+            io5.create_dataset("scaffold_names",
+                data=[f'loc-{i}' for i in range(1, nloci + 1)])
 
             # meta info stored to phymap
             phymap.attrs["columns"] = ['chroms', 'phy0', 'phy1', 'pos0', 'pos1']
@@ -382,7 +375,7 @@ class Writer:
 
         # report
         if not quiet:
-            print("wrote {} loci to {}".format(nloci, h5file))
+            print(f"wrote {nloci} loci to {h5file}")
 
     def write_snps_to_hdf5(self, name, outdir, diploid, quiet):
         """Writes SNP data to the ipyrad snps HDF5 database format.
@@ -461,12 +454,10 @@ class Writer:
                 gidx += 1
 
         # open h5py database handle
-        if name is None:
-            name = "test"
-        if outdir is None:
-            outdir = "."
-        outdir = os.path.realpath(os.path.expanduser(outdir))
-        h5file = os.path.join(outdir, name + ".snps.hdf5")
+        name = "test" if name is None else name
+        outdir = "." if outdir is None else outdir
+        outdir = Path(outdir).expanduser().absolute()
+        h5file = (outdir / name).with_suffix(".snps.hdf5")
 
         # write datasets to database
         tarr = np.concatenate(txf.seqs, axis=1)
@@ -493,7 +484,7 @@ class Writer:
 
         # report
         if not quiet:
-            print("wrote {} SNPs to {}".format(nsites, h5file))
+            print(f"wrote {nsites} SNPs to {h5file}")
 
     def write_vcf(
         self,
@@ -549,13 +540,10 @@ class Writer:
             return fullv
 
         # create a directory if it doesn't exist
-        outdir = (outdir if outdir else "./")
-        outdir = os.path.realpath(os.path.expanduser(outdir))
-        if not os.path.exists(outdir):
-            os.makedirs(outdir)
-
-        # get output filepath
-        outfile = os.path.join(outdir, name.rstrip(".vcf") + ".vcf")
+        outdir = outdir if outdir else "./"
+        outdir = Path(outdir).expanduser().absolute()
+        outdir.mkdir(exist_ok=True)
+        outfile = (outdir / name).with_suffix(".vcf")
 
         # write to filepath and record stats while doing it.
         nchroms = 0
@@ -570,21 +558,24 @@ class Writer:
         # call bgzip from tabix so that bcftools can be used on VCF.
         # this will not work with normal gzip compression.
         if bgzip:
-            import subprocess, sys
-            bgzip = os.path.join(sys.prefix, "bin", "bgzip")
-            if not os.path.exists(bgzip):
-                logger.error("bgzip not found. Install with `conda install tabix -c conda-forge -c bioconda`.")
+            import sys
+            from subprocess import Popen, PIPE, STDOUT
+            bins = Path(sys.prefix) / "bin"
+            bgzip = bins / "bgzip"
+            if not bgzip.exists():
+                logger.error(
+                    "bgzip not found. Install with:\n"
+                    "`>>>conda install tabix -c conda-forge -c bioconda`.")
             cmd = [bgzip, "-f", outfile]
-            with subprocess.Popen(args=cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as proc:
+            with Popen(args=cmd, text=True, stdout=PIPE, stderr=STDOUT) as proc:
                 out = proc.communicate()
                 if proc.returncode:
-                    logger.error(f"error in bgzip: {out}")
-                outfile = outfile.rstrip(".gz") + ".gz"
+                    logger.error(f"error in bgzip: {out.decode()}")
+                outfile = outfile.with_suffix(".vcf.gz")
 
         # report
         if not quiet:
-            print("wrote {} SNPs across {} linkage blocks to {}"
-                .format(nsnps, nchroms, outfile))
+            print(f"wrote {nsnps} SNPs across {nchroms} linkage blocks to {outfile}")
         return None
 
     def build_phystring_from_loc(self, arr):
