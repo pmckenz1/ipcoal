@@ -20,6 +20,7 @@ __author__ = "Patrick McKenzie and Deren Eaton"
 
 from ipcoal.model import Model
 from ipcoal.utils import utils
+from ipcoal.core.utils import *
 import ipcoal.phylo
 import ipcoal.smc
 

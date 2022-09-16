@@ -204,7 +204,7 @@ def infer_raxml_ng_trees(
     nthreads: int=4,
     nworkers: int=4,
     ) -> pd.DataFrame:
-    """Return a DataFrame w/ inferred gene trees at every locus.
+    r"""Return a DataFrame w/ inferred gene trees at every locus.
 
     Sequence data is extracted from the model.seqs array and written
     as concatenated data to a phylip file, either for individual
@@ -243,6 +243,7 @@ def infer_raxml_ng_trees(
     inference jobs take less than one second or so to run, since the
     setup of writing/organizing files takes time as well.
     """
+    assert model.seqs is not None, "must first call Model.sim_loci."
     assert model.seqs.ndim == 3, "must first call Model.sim_loci."
 
     # store arguments to infer method
