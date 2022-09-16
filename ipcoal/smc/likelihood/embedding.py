@@ -7,6 +7,7 @@ This allows for faster jit-compiled calculation of E[waiting distances].
 
 
 from typing import Mapping, Sequence, Optional, Tuple
+from abc import ABC
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import pandas as pd
@@ -23,7 +24,7 @@ logger = logger.bind(name="ipcoal")
 ################################################################
 ################################################################
 
-class Embedding:
+class Embedding(ABC):
     """Container class for storing genealogy embedding data as arrays.
 
     The embedding table is accessible from the `.table` attribute
@@ -77,7 +78,9 @@ class Embedding:
         ):
         # store inputs
         self.species_tree = species_tree
-        self.genealogies = genealogies
+        self.genealogies = (
+            [genealogies] if isinstance(genealogies, toytree.ToyTree) 
+            else genealogies)
         self.imap = imap
         self.nproc = nproc
 
@@ -93,11 +96,8 @@ class Embedding:
         self.rarr: np.ndarray = None
         self.run()
 
-    def _get_genealogies(self):
-        return self.genealogies
-
     def run(self):
-        """..."""
+        """Fill the arrays with data for MS-SMC calculations."""
         # TopologyEmbedding subclass selects subset here.
         genealogies = self._get_genealogies()
 
@@ -116,6 +116,9 @@ class Embedding:
         # store Node relationships
         self.rarr = _get_relationship_table(genealogies)
 
+    def _get_genealogies(self):
+        return self.genealogies
+
     def get_data(self) -> Tuple:
         """Return tuples of array data for waiting distance computations."""
         return (self.earr, self.barr, self.sarr)
@@ -123,6 +126,8 @@ class Embedding:
 
 class TreeEmbedding(Embedding):
     """Container for genealogy embedding data."""
+    def _get_genealogies(self):
+        return self.genealogies
 
 class TopologyEmbedding(Embedding):
     """Container for genealogy topology embedding data."""
