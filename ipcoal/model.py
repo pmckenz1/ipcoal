@@ -107,10 +107,10 @@ class Model:
         generic seed is used for trees and mutations. Default=None
     store_tree_sequences: bool
         If True the TreeSequence objects are stored in `Model.ts_dict`.
-        If you do not plan to access and use these objects then 
+        If you do not plan to access and use these objects then
         setting this to False can greatly reduce memory usage.
     record_full_arg: bool
-        If True then "invisible recombination" events which have no 
+        If True then "invisible recombination" events which have no
         effect on the genealogy are also recorded.
 
     Attributes
@@ -689,7 +689,7 @@ class Model:
 
     def draw_demography(self, idx=None, spacer=0.25, ymax=None, **kwargs):
         """Return drawing of parameterized demographic model.
-        
+
         A genealogy can also be embedded in the demographic model by
         selecting a genealogy index (idx).
 
@@ -766,12 +766,21 @@ class Model:
         return mutated_ts
 
     def _get_tree_sequence_generator(
-        self, nsites: int=1, snp: bool=False,
+        self,
+        # seed: int,
+        nsites: int=1,
+        snp: bool=False,
         ) -> Iterator['tskit.trees.TreeSequence']:
         """Return a TreeSequence generator from `ms.sim_ancestry`.
 
         This function is used internally in `sim_trees`, `sim_loci`
         and `sim_snps` to sample genealogies for N unlinked regions.
+
+        Parameters
+        ----------
+        seed: int
+            This requires a seed, and the internal functions that
+            use this function should pre-generate the seeds
         """
         # snp flag to ensure a single genealogy is returned
         if snp and nsites != 1:
@@ -869,7 +878,7 @@ class Model:
         max_mutations: Optional[int] = None,
         repeat_on_trees: bool = False,
         precision: int = 14,
-        # exclude_fixed: bool = False,        
+        # exclude_fixed: bool = False,
         ) -> None:
         """Simulate N *unlinked* variable sites (SNPs).
 
@@ -928,7 +937,7 @@ class Model:
         >>> model.draw_seqview()
         """
         sim_snps(
-            model=self, nsnps=nsnps, 
+            model=self, nsnps=nsnps,
             min_alleles=min_alleles, max_alleles=max_alleles,
             min_mutations=min_mutations, max_mutations=max_mutations,
             repeat_on_trees=repeat_on_trees, precision=precision,
@@ -1324,7 +1333,7 @@ if __name__ == "__main__":
     print(TREE.get_feature_dict("idx", "height"))
 
     MODEL = ipcoal.Model(TREE, Ne=10000, nsamples=2)
-    MODEL = ipcoal.Model(TREE, nsamples=2)    
+    MODEL = ipcoal.Model(TREE, nsamples=2)
 
     MODEL.sim_trees(5)
     print(MODEL.df)
