@@ -50,6 +50,12 @@ def get_genealogy_embedding_table(
         units of generations.
     imap: Dict
         A dict mapping species tree tip names to gene tree tip names.
+
+    Example
+    -------
+    >>> stree = toytree.rtree.unittree(ntips=8, treeheight=1e6, seed=12345)
+    >>> model = ipcoal.Model(stree, nsamples=2, seed_trees=12345)
+    >>> model.sim_trees(1)
     """
     # store temporary results in a dict
     split_data = []
@@ -293,8 +299,23 @@ def _get_sum_pb2(btab: pd.DataFrame, ptab: pd.DataFrame, mtab: pd.DataFrame) -> 
 # Get prob. tree- or topo-change given branch and time
 ###################################################################
 
-def get_probability_tree_unchanged_given_b_and_tr(table: pd.DataFrame, branch: int, time: float) -> float:
+def get_probability_tree_unchanged_given_b_and_tr(
+    species_tree: ToyTree, genealogy: ToyTree, imap: Dict[str,Sequence[str]], 
+    branch: int, time: float) -> float:
+    """Return probability of tree-unchanged given species tree, genealogy, 
+    and the branch and timing on which recombination occurs.
+
+    $P(tree-unchanged | S,G,b,tr)$
+    """
+    etable = get_genealogy_embedding_table(species_tree, genealogy, imap)
+    return get_probability_tree_unchanged_given_b_and_tr_from_table(etable, branch, time)
+
+def get_probability_tree_unchanged_given_b_and_tr_from_table(
+    table: pd.DataFrame, branch: int, time: float) -> float:
     """Return prob tree-change does not occur given recomb on branch b at time t.
+
+    This is a faster version of `get_probability_tree_unchanged_given_b_and_tr`
+    for when the genealogy embedding table has already been calculated.
 
     Parameters
     ----------
@@ -314,7 +335,10 @@ def get_probability_tree_unchanged_given_b_and_tr(table: pd.DataFrame, branch: i
     btab = table[table.edges.apply(lambda x: branch in x)]
 
     # get interval containing time tr
-    idx = btab[(time >= btab.start) & (time <= btab.stop)].index[0]
+    stab = btab[(time >= btab.start) & (time <= btab.stop)]
+    if not stab.size:
+        raise ipcoal.utils.IpcoalError(f"No interval exists on branch {branch} at time {time}.")
+    idx = stab.index[0]
 
     # get two terms and return the sum
     inner = (btab.nedges[idx] / btab.neff[idx]) * time
@@ -328,6 +352,20 @@ def get_probability_tree_unchanged_given_b_and_tr(table: pd.DataFrame, branch: i
     return term1 + term2
 
 def get_probability_topology_unchanged_given_b_and_tr(
+    species_tree: ToyTree, genealogy: ToyTree, imap: Dict[str,Sequence[str]], 
+    branch: int, time: float) -> float:
+    """Return prob topology-change does not occur given recomb on branch b at time t.
+
+    """
+    etable = get_genealogy_embedding_table(species_tree, genealogy, imap)
+    return get_probability_topology_unchanged_given_b_and_tr_from_table(
+        etable, 
+        branch, 
+        genealogy[branch].get_sisters()[0].idx, 
+        genealogy[branch].up.idx, 
+        time)
+
+def get_probability_topology_unchanged_given_b_and_tr_from_table(    
     table: pd.DataFrame,
     branch: int,
     sibling: int,
@@ -401,7 +439,24 @@ def get_probability_topology_unchanged_given_b_and_tr(
 # Get prob. topology-change given branch
 ###################################################################
 
-def get_probability_tree_unchanged_given_b(table: pd.DataFrame, branch: int) -> float:
+def get_probability_tree_unchanged_given_b(
+    species_tree: ToyTree, genealogy: ToyTree, imap: Dict[str,Sequence[str]], 
+    branch: int) -> float:
+    """Return prob tree-change does not occur given recomb on branch b.
+
+    Parameters
+    ----------
+    species_tree:
+    genealogy:
+    imap:
+    branch:
+        An integer index (idx) label to select a genealogy branch.
+    """
+    etable = get_genealogy_embedding_table(species_tree, genealogy, imap)
+    return get_probability_tree_unchanged_given_b_from_table(etable, branch)
+
+def get_probability_tree_unchanged_given_b_from_table(
+    table: pd.DataFrame, branch: int) -> float:
     """Return prob tree-change does not occur given recomb on branch b.
 
     Parameters
@@ -437,6 +492,27 @@ def get_probability_tree_unchanged_given_b(table: pd.DataFrame, branch: int) -> 
     return (1 / (tbu - tbl)) * prob
 
 def get_probability_topology_unchanged_given_b(
+    species_tree: ToyTree, genealogy: ToyTree, imap: Dict[str,Sequence[str]], 
+    branch: int) -> float:
+    """Return prob topology-change does not occur given recomb on branch b.
+
+    Parameters
+    ----------
+    species_tree:
+    genealogy:
+    imap:
+    branch: int
+
+    Example
+    -------
+    >>> ...
+    """
+    table = get_genealogy_embedding_table(species_tree, genealogy, imap)
+    parent = genealogy[branch].up.idx
+    sibling = genealogy[branch].get_sisters()[0].idx
+    return get_probability_topology_unchanged_given_b_from_table(table, branch, sibling, parent)
+
+def get_probability_topology_unchanged_given_b_from_table(
     table: pd.DataFrame,
     branch: int,
     sibling: int,
@@ -485,7 +561,7 @@ def get_probability_topology_unchanged_given_b(
 # Get probability given genealogy
 ###################################################################
 
-def get_probability_of_no_change(
+def get_probability_tree_unchanged(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
@@ -502,7 +578,8 @@ def get_probability_of_no_change(
     Note
     ----
     This probability is 1 - P(tree-change | S,G), where S is the
-    species tree and G is the genealogy.
+    species tree and G is the genealogy. This is a synonym of the
+    function `get_probability_no_change`.
 
     Parameters
     ----------
@@ -514,9 +591,41 @@ def get_probability_of_no_change(
         A dictionary mapping species tree tip names to a list of
         genealogy tip names to map samples to species.
     """
-    return 1 - get_probability_of_tree_change(species_tree, genealogy, imap)
+    return 1 - get_probability_tree_change(species_tree, genealogy, imap)
 
-def get_probability_of_tree_change(
+def get_probability_no_change(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    ) -> float:
+    """Return probability that recombination causes no-change.
+
+    Returns the probability under the MS-SMC' that recombination
+    occurring on this genealogy embedded in this parameterized species
+    tree causes no change to the genealogy. This occurs when the
+    detached branch re-coalesces with the same lineage it was descended
+    from before its previous MRCA, and is an "invisible recombination"
+    event.
+
+    Note
+    ----
+    This probability is 1 - P(tree-change | S,G), where S is the
+    species tree and G is the genealogy. This is a synonym of the
+    function `get_probability_tree_unchanged`.
+
+    Parameters
+    ----------
+    species_tree: ToyTree
+        A species tree as a ToyTree object with 'Ne' data on each Node.
+    genealogy: ToyTree
+        A genealogy as a ToyTree object.
+    imap: Dict
+        A dictionary mapping species tree tip names to a list of
+        genealogy tip names to map samples to species.
+    """
+    return 1 - get_probability_tree_change(species_tree, genealogy, imap)
+
+def get_probability_tree_change(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
@@ -559,13 +668,48 @@ def get_probability_of_tree_change(
         if not gnode.is_root():
 
             # get P(tree-unchanged | S, G, b)
-            prob = get_probability_tree_unchanged_given_b(etable, gnode.idx)
+            prob = get_probability_tree_unchanged_given_b_from_table(etable, gnode.idx)
 
             # contribute to total probability normalized by prop edge len
             total_prob += (gnode.dist / sumlen) * prob
     return 1 - total_prob
 
-def get_probability_of_topology_change(
+def get_probability_topology_change(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    ) -> float:
+    """Return probability that recombination causes a tree-change.
+
+    Returns the probability under the MS-SMC' that recombination
+    occurring on this genealogy embedded in this parameterized species
+    tree causes a topology change. A topology-change is defined
+    as a subset of the possible tree-change events, where the detached
+    branch re-coalesces with a branch on the genealogy that results
+    in a different topology (different relationships, not just
+    coalescent times). This occurs if it re-coalesces with a branch
+    other than itself, its sibling, or its parent.
+
+    Note
+    ----
+    This probability is a subset of the P(tree-change | S,G) where
+    S is the species tree and G is the genealogy.
+
+    Parameters
+    ----------
+    species_tree: ToyTree
+        A species tree as a ToyTree object with 'Ne' data on each Node.
+    genealogy: ToyTree
+        A genealogy as a ToyTree object.
+    imap: Dict
+        A dictionary mapping species tree tip names to a list of
+        genealogy tip names to map samples to species.
+    """
+    # get full genealogy information
+    total_prob = get_probability_topology_unchanged(species_tree, genealogy, imap)
+    return 1 - total_prob
+
+def get_probability_topology_unchanged(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
@@ -614,13 +758,14 @@ def get_probability_of_topology_change(
             pnode = gnode.up
             snode = gnode.get_sisters()[0]
 
-            topo_unchanged_prob = get_probability_topology_unchanged_given_b(
+            topo_unchanged_prob = get_probability_topology_unchanged_given_b_from_table(
                 etable, gnode.idx, snode.idx, pnode.idx)
 
             # contribute to total probability of unchanged topology as
             # the proportion of total edge len represented by this branch.
             total_prob += (gnode.dist / sumlen) * topo_unchanged_prob
-    return 1 - total_prob
+    return total_prob    
+
 
 ###################################################################
 # Get waiting distances
@@ -749,7 +894,7 @@ def get_waiting_distance_to_no_change_rv(
         A per-site per-generation recombination rate.
     """
     sumlen = sum(i.dist for i in genealogy if not i.is_root())
-    prob_tree = 1 - get_probability_of_tree_change(species_tree, genealogy, imap)
+    prob_tree = get_probability_tree_unchanged(species_tree, genealogy, imap)
     lambda_ = sumlen * prob_tree * recombination_rate
     return stats.expon.freeze(scale=1/lambda_)
 
@@ -786,7 +931,7 @@ def get_waiting_distance_to_tree_change_rv(
         A per-site per-generation recombination rate.
     """
     sumlen = sum(i.dist for i in genealogy if not i.is_root())
-    prob_tree = get_probability_of_tree_change(species_tree, genealogy, imap)
+    prob_tree = get_probability_tree_change(species_tree, genealogy, imap)
     lambda_ = sumlen * prob_tree * recombination_rate
     return stats.expon.freeze(scale=1/lambda_)
 
@@ -807,7 +952,7 @@ def get_waiting_distance_to_topology_change_rv(
     ...
     """
     sumlen = sum(i.dist for i in genealogy if not i.is_root())
-    prob_topo = get_probability_of_topology_change(species_tree, genealogy, imap)
+    prob_topo = get_probability_topology_change(species_tree, genealogy, imap)
     lambda_ = sumlen * prob_topo * recombination_rate
     return stats.expon.freeze(scale=1/lambda_)
 
@@ -815,25 +960,76 @@ def get_waiting_distance_to_topology_change_rv(
 # Plotting
 ###################################################################
 
+def plot_waiting_distance_distributions(
+    species_tree: ToyTree,
+    genealogy: ToyTree,
+    imap: Dict[str, Sequence[str]],
+    recombination_rate: float,
+    **kwargs,
+    ) -> toyplot.canvas.Canvas:
+    """Return a toyplot canvas with waiting distance distributions.
+    """
+    canvas = toyplot.Canvas(
+        height=kwargs.get("height", 300),
+        width=kwargs.get("width", 450),
+    )
+    axes = canvas.cartesian(margin=65)
+    axes.x.ticks.show = axes.y.ticks.show = True
+    axes.y.domain.show = False
+    axes.x.ticks.near = axes.y.ticks.near = 7.5
+    axes.x.ticks.far = axes.y.ticks.far = 0
+    axes.x.ticks.labels.offset = axes.y.ticks.labels.offset = 15
+    axes.x.label.text = "Distance to next event"
+    axes.y.label.text = "Probability"
+    axes.x.label.offset = axes.y.label.offset = 35
+    axes.x.spine.style['stroke-width'] = axes.y.spine.style['stroke-width'] = 1.5
+    axes.x.ticks.style['stroke-width'] = axes.y.ticks.style['stroke-width'] = 1.5
+    axes.label.offset = 20
+
+    rv_recomb = ipcoal.smc.get_waiting_distance_to_recombination_event_rv(genealogy, recombination_rate)
+    rv_tree = ipcoal.smc.get_waiting_distance_to_tree_change_rv(species_tree, genealogy, imap, recombination_rate)
+    rv_topo = ipcoal.smc.get_waiting_distance_to_topology_change_rv(species_tree, genealogy, imap, recombination_rate)
+
+    for dist in [rv_recomb, rv_tree, rv_topo]:
+        xs_ = np.linspace(dist.ppf(0.025), dist.ppf(0.975), 100)
+        ys_ = dist.pdf(xs_)
+        axes.plot(xs_, ys_, stroke_width=4)
+        axes.fill(xs_, ys_, opacity=1/3)
+    return canvas
+
+
+
 def plot_edge_probabilities(
     species_tree: ToyTree,
     genealogy: ToyTree,
     imap: Dict[str, Sequence[str]],
     branch: int,
+    stack: int=1,
     **kwargs,
     ) -> toyplot.canvas.Canvas:
     """Return a toyplot canvas with probabilities along an edge.
 
     """
     # setup the canvas and axes
-    canvas = toyplot.Canvas(
-        height=kwargs.get("height", 750),
-        width=kwargs.get("width", 300),
-    )
-    axstyle = dict(ymin=0, ymax=1, margin=65)
-    ax0 = canvas.cartesian(grid=(3, 1, 0), label="Prob(no-change)", **axstyle)
-    ax1 = canvas.cartesian(grid=(3, 1, 1), label="Prob(tree-change)", **axstyle)
-    ax2 = canvas.cartesian(grid=(3, 1, 2), label="Prob(topo-change)", **axstyle)
+    if not stack:
+        canvas = toyplot.Canvas(
+            height=kwargs.get("height", 250),
+            width=kwargs.get("width", 800),
+        )
+        axstyle = dict(ymin=0, ymax=1, margin=65)
+        ax0 = canvas.cartesian(grid=(1, 3, 0), label="Prob(no-change)", **axstyle)
+        ax1 = canvas.cartesian(grid=(1, 3, 1), label="Prob(tree-change)", **axstyle)
+        ax2 = canvas.cartesian(grid=(1, 3, 2), label="Prob(topo-change)", **axstyle)
+
+    else:
+        canvas = toyplot.Canvas(
+            height=kwargs.get("height", 750),
+            width=kwargs.get("width", 300),
+        )
+        axstyle = dict(ymin=0, ymax=1, margin=65)
+        ax0 = canvas.cartesian(grid=(3, 1, 0), label="Prob(no-change)", **axstyle)
+        ax1 = canvas.cartesian(grid=(3, 1, 1), label="Prob(tree-change)", **axstyle)
+        ax2 = canvas.cartesian(grid=(3, 1, 2), label="Prob(topo-change)", **axstyle)
 
     # Select a branch to plot and get its relations
     branch = genealogy[branch]
@@ -849,11 +1045,11 @@ def plot_edge_probabilities(
     # Note these are 'unchange' probs and so we plot 1 - Prob here.
     times = np.linspace(branch.height, branch.up.height, 200, endpoint=False)
     pt_nochange_tree = [
-        get_probability_tree_unchanged_given_b_and_tr(
+        get_probability_tree_unchanged_given_b_and_tr_from_table(
         etable, bidx, itime) for itime in times
     ]
     pt_nochange_topo = [
-        get_probability_topology_unchanged_given_b_and_tr(
+        get_probability_topology_unchanged_given_b_and_tr_from_table(
         etable, bidx, sidx, pidx, itime) for itime in times
     ]
 
@@ -869,8 +1065,8 @@ def plot_edge_probabilities(
     style = {"stroke": "black", "stroke-width": 2, "stroke-dasharray": "4,2"}
     intervals = [btable.start.iloc[0]] + list(btable.stop - 0.001)
     for itime in intervals:
-        iprob_tree = get_probability_tree_unchanged_given_b_and_tr(etable, bidx, itime)
-        iprob_topo = get_probability_topology_unchanged_given_b_and_tr(etable, bidx, sidx, pidx, itime)
+        iprob_tree = get_probability_tree_unchanged_given_b_and_tr_from_table(etable, bidx, itime)
+        iprob_topo = get_probability_topology_unchanged_given_b_and_tr_from_table(etable, bidx, sidx, pidx, itime)
         ax0.plot([itime, itime], [0, iprob_tree], style=style)
         ax1.plot([itime, itime], [0, 1 - iprob_tree], style=style)
         ax2.plot([itime, itime], [0, 1 - iprob_topo], style=style)
@@ -937,9 +1133,9 @@ if __name__ == "__main__":
     print(f"Path of branch {BIDX} in genealogy embedding table\n{BTABLE}\n")
 
     # Get probabilities integrated over the genealogy
-    p_no = get_probability_of_no_change(SPTREE, GTREE, IMAP)
-    p_tree = get_probability_of_tree_change(SPTREE, GTREE, IMAP)
-    p_topo = get_probability_of_topology_change(SPTREE, GTREE, IMAP)
+    p_no = get_probability_no_change(SPTREE, GTREE, IMAP)
+    p_tree = get_probability_tree_change(SPTREE, GTREE, IMAP)
+    p_topo = get_probability_topology_change(SPTREE, GTREE, IMAP)
     print(f"Probability of no-change\n{p_no:.3f}\n")
     print(f"Probability of tree-change\n{p_tree:.3f}\n")
     print(f"Probability of topology-change\n{p_topo:.3f}\n")

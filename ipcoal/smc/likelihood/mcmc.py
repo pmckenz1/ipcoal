@@ -75,7 +75,7 @@ class Mcmc(ABC):
 
     Example
     -------
-    >>> mcmc = Mcmc(recomb=2e-9, lengths=lengths, embedding=edata, 
+    >>> mcmc = Mcmc(recomb=2e-9, lengths=lengths, embedding=edata,
     >>>     priors=[['g', (3, 0.01)] * 3],
     >>>     init_params=[500_000] * 3,
     >>>     seed=123, jumpsize=20_000, outpath="/tmp/test"
@@ -181,7 +181,7 @@ class Mcmc(ABC):
                 f"aratio={aratio:.2f}, params={new_params.astype(int)}, {accept}")
             acc += aratio
             its += 1
-            if accept: 
+            if accept:
 
                 # proposal accepted
                 self.params = new_params
@@ -346,7 +346,7 @@ def simulate_and_get_embeddings(
         multi_lengths.append(glengths)
         multi_embeddings.append(edata)
 
-    # logger.info(f"embedding includes {[len(i) for i in lengths1)} sequential topology changes.")                
+    # logger.info(f"embedding includes {[len(i) for i in lengths1)} sequential topology changes.")
     return multi_lengths, multi_embeddings
 
 
