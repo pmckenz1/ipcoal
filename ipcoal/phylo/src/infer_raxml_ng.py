@@ -297,7 +297,7 @@ def infer_raxml_ng_trees(
                 rasyncs[lidx] = rasync
 
     # check for failures
-    for job, rasync in rasyncs:
+    for job, rasync in rasyncs.items():
         if not rasync.successful():
             result = rasync.result()
             logger.warning(f"fail: {result} locus {job}")
