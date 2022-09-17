@@ -296,6 +296,12 @@ def infer_raxml_ng_trees(
                 rasync = pool.submit(infer_raxml_ng_tree_from_alignment, **kwargs)
                 rasyncs[lidx] = rasync
 
+    # check for failures
+    for job, rasync in rasyncs:
+        if not rasync.successful():
+            result = rasync.result()
+            logger.warning(f"fail: {result} locus {job}")
+
     # log report of empty windows.
     if empty:
         logger.warning(
