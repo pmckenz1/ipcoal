@@ -119,6 +119,7 @@ def infer_raxml_ng_tree_from_phylip(
         "--threads", str(nthreads),
         "--workers", str(nworkers) if nworkers else 'auto',
         "--nofiles", "interim",
+        "--log", "ERROR"
     ]
     if seed:
         cmd.extend(["--seed", str(seed)])
@@ -129,13 +130,9 @@ def infer_raxml_ng_tree_from_phylip(
     with Popen(cmd, stderr=STDOUT, stdout=PIPE) as proc:
         out, _ = proc.communicate()
 
-        # raxml seems to return code 1 on warnings sometimes which
-        # we do not actually want to raise as an error.
-        if proc.returncode:
-            logger.error(out.decode())
-
         # raise an error
         if proc.returncode:
+            logger.error(out.decode())            
             raise IpcoalError(out.decode())
 
     # raxml bestTree has randomly resolved nodes when no info exists
