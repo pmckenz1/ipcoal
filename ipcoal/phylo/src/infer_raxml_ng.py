@@ -68,7 +68,7 @@ def infer_raxml_ng_tree_from_alignment(
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng from a phylip string.
     
-    This avoids the need to write a named temporary file ...
+    This avoids the need to write a named temporary file.
     """
     tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
     with tempfile.NamedTemporaryFile(dir=tmpdir, suffix=f"_{os.getpid()}") as tmp:
@@ -96,11 +96,19 @@ def infer_raxml_ng_tree_from_phylip(
     binary_path: Union[str, Path]=None,
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng.
+
+    This is a convenience function for inferring gene trees for loci
+    simulated ipcoal using raxml-ng. It is not intended as a generic
+    wrapper around raxml-ng to support its many capabilities.
     """
     binary_path = binary_path if binary_path else RAXML
     assert Path(binary_path).exists(), BINARY_MISSING.format(binary_path)
     fpath = Path(alignment)
     assert fpath.exists(), f"{fpath} alignment input file does not exist"
+
+    # remove any fpath.raxml.* existing result files.
+    for tmp in fpath.parent.glob(f"{fpath.name}.*"):
+        tmp.unlink()
 
     # run `raxml-ng [search|all] ...`
     cmd = [
@@ -116,31 +124,34 @@ def infer_raxml_ng_tree_from_phylip(
         cmd.extend(["--seed", str(seed)])
     if nboots:
         cmd.extend(["--all", "--bs-trees", str(nboots)])
-        treefile = fpath.with_suffix(".phy.raxml.support")
-    else:
-        treefile = fpath.with_suffix(".phy.raxml.bestTree")
 
+    # 
     with Popen(cmd, stderr=STDOUT, stdout=PIPE) as proc:
         out, _ = proc.communicate()
 
         # raxml seems to return code 1 on warnings sometimes which
         # we do not actually want to raise as an error.
-        # TESTING: print these warnings
         if proc.returncode:
-            logger.warning(out.decode())
+            logger.error(out.decode())
 
-        # raise an error if the treefiles does not exist
-        if not treefile.exists():
-            if proc.returncode:
-                raise IpcoalError(out.decode())
+        # raise an error
+        if proc.returncode:
+            raise IpcoalError(out.decode())
 
-    # parse result from treefile and cleanup
+    # raxml bestTree has randomly resolved nodes when no info exists
+    # but we instead want unresolved info for unresolved nodes which,
+    # if any exist, it writes to the Collapsed output file. 
+    if nboots:
+        treefile = fpath.with_suffix(".phy.raxml.support")
+    else:
+        if fpath.with_suffix(".phy.raxml.bestTreeCollapsed").exists():
+            treefile = fpath.with_suffix(".phy.raxml.bestTreeCollapsed")
+        else:
+            treefile = fpath.with_suffix(".phy.raxml.bestTree")
+
+    # parse result from treefile and return
     tree = toytree.tree(treefile)
-    tmpfiles = fpath.parent.glob(fpath.name + ".*")
-    for tmp in tmpfiles:
-        tmp.unlink()
     return tree
-
 
 def infer_raxml_ng_tree(
     model: ipcoal.Model,
@@ -153,8 +164,9 @@ def infer_raxml_ng_tree(
     subst_model: str="GTR+G",
     binary_path: Union[str, Path]=None,
     tmpdir: Optional[Path]=None,
+    remove_tmp_files: bool=True,
     ) -> toytree.ToyTree:
-    """Return a single ML tree inferred by raxml-ng.
+    """Return a gene tree inferred by raxml-ng for one or more loci.
 
     Sequence data is extracted from the model.seqs array and written
     as concatenated data to a phylip file, either for individual
@@ -163,6 +175,13 @@ def infer_raxml_ng_tree(
     be selected to be concatenated.
 
     CMD: raxml-ng --all --msa {phy} --subst_model {GTR+G} --redo
+
+    Note
+    ----
+    This function will return a ToyTree object parsed from the results
+    and then remove all temporary files. The tree is parsed from either
+    the .support, .bestTree.Collapsed, or .bestTree files, in that
+    order.
 
     Parameters
     ----------
@@ -176,6 +195,10 @@ def infer_raxml_ng_tree(
         Number of bootstrap replicates to run.
     nthreads: int
         Number of threads used for parallelization.
+    diploid: bool
+        If True then pairs of samples belonging to the same lineage 
+        are grouped to create diploid genotype calls in the phylip
+        file. This will raise an error if nsamples is not even.
     binary_path: None, str, or Path
         Path to the raxa binary.
 
@@ -187,14 +210,23 @@ def infer_raxml_ng_tree(
     >>> tree = ipcoal.phylo.infer_raxml_ng_tree(model.seqs, 0)
     >>> tree.draw();
     """
-    fname = _write_tmp_phylip_file(model, idxs, diploid, tmpdir)
+    # write selected loci to a concatenated phylip TMP file.
+    fpath = _write_tmp_phylip_file(model, idxs, diploid, tmpdir)
+
+    # dict w/ TMP file path and params args.
     kwargs = dict(
-        alignment=fname, nboots=nboots, nthreads=nthreads,
+        alignment=fpath, nboots=nboots, nthreads=nthreads,
         nworkers=nworkers, seed=seed, subst_model=subst_model,
         binary_path=binary_path)
+
+    # get result as ToyTree and remove all tmp files.
     tree = infer_raxml_ng_tree_from_phylip(**kwargs)
-    for tmp in fname.parent.glob(fname.name + "*"):
-        tmp.unlink()
+
+    # cleanup
+    if remove_tmp_files:
+        for tmp in fpath.parent.glob(f"{fpath.name}.*"):
+            tmp.unlink()
+        fpath.unlink()
     return tree
 
 # def infer_raxml_ng_tree_from_window():
