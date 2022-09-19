@@ -66,7 +66,10 @@ def infer_raxml_ng_tree_from_alignment(
     binary_path: Union[str, Path]=None,
     tmpdir: Optional[Path]=None,
     ) -> toytree.ToyTree:
-    """Return a single ML tree inferred by raxml-ng from a phylip string."""
+    """Return a single ML tree inferred by raxml-ng from a phylip string.
+    
+    This avoids the need to write a named temporary file ...
+    """
     tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
     with tempfile.NamedTemporaryFile(dir=tmpdir, suffix=f"_{os.getpid()}") as tmp:
 
@@ -119,8 +122,17 @@ def infer_raxml_ng_tree_from_phylip(
 
     with Popen(cmd, stderr=STDOUT, stdout=PIPE) as proc:
         out, _ = proc.communicate()
+
+        # raxml seems to return code 1 on warnings sometimes which
+        # we do not actually want to raise as an error.
+        # TESTING: print these warnings
         if proc.returncode:
-            raise IpcoalError(out.decode())
+            logger.warning(out.decode())
+
+        # raise an error if the treefiles does not exist
+        if not treefile.exists():
+            if proc.returncode:
+                raise IpcoalError(out.decode())
 
     # parse result from treefile and cleanup
     tree = toytree.tree(treefile)
