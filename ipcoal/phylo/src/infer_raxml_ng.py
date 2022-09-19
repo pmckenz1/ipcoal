@@ -130,10 +130,14 @@ def infer_raxml_ng_tree_from_phylip(
     with Popen(cmd, stderr=STDOUT, stdout=PIPE) as proc:
         out, _ = proc.communicate()
 
-        # raise an error
+        # raise an error. raxml-ng uses returncode 1 even for warnings
+        # which is really annoying. We asked it only to log errors, so
+        # we will only raise an exception if the 'out' variable contains
+        # any logged errors.
         if proc.returncode:
-            logger.error(out.decode())            
-            raise IpcoalError(out.decode())
+            error = out.decode()
+            if error:
+                raise IpcoalError(error)
 
     # raxml bestTree has randomly resolved nodes when no info exists
     # but we instead want unresolved info for unresolved nodes which,
