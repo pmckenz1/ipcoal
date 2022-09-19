@@ -221,9 +221,8 @@ def infer_raxml_ng_tree(
 
     # cleanup
     if remove_tmp_files:
-        for tmp in fpath.parent.glob(f"{fpath.name}.*"):
+        for tmp in fpath.parent.glob(f"{fpath.name}*"):
             tmp.unlink()
-        fpath.unlink()
     return tree
 
 # def infer_raxml_ng_tree_from_window():
