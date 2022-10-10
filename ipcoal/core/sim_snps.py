@@ -31,6 +31,9 @@ def sim_snps(
     # allow scientific notation, e.g., 1e6
     nsnps = int(nsnps)
 
+    # clear any existing stored tree sequences
+    model.ts_dict = {}
+
     # get min and set max_mutations minimum to 1
     max_mutations = (max_mutations if max_mutations else 100000)
     max_alleles = (max_alleles if max_alleles else 100000)

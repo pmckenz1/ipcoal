@@ -27,6 +27,9 @@ def sim_loci(model: Model, nloci: int=1, nsites: int=1, precision: int=14) -> No
                 "specify nsites=None.")
         nsites = model.recomb.sequence_length
 
+    # clear any existing stored tree sequences
+    model.ts_dict = {}
+
     # allow scientific notation, e.g., 1e6
     nsites = int(nsites)
     nloci = int(nloci)

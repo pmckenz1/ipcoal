@@ -7,7 +7,6 @@
 from typing import TypeVar
 import numpy as np
 import pandas as pd
-import msprime as ms
 from ipcoal.utils.utils import IpcoalError
 
 Model = TypeVar("Model")
@@ -26,6 +25,9 @@ def sim_trees(model: Model, nloci: int, nsites: int, precision: int=14) -> None:
                 "the recomb_map also specifies nsites. To use a recomb_map"
                 "specify nsites=None.")
         nsites = model.recomb.sequence_length
+
+    # clear any existing stored tree sequences
+    model.ts_dict = {}
 
     datalist = []
     for lidx in range(nloci):
