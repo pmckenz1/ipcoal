@@ -18,7 +18,7 @@ from loguru import logger
 
 from ipcoal.io.writer import Writer
 from ipcoal.io.transformer import Transformer
-from ipcoal.draw.seqview import draw_seqview
+from ipcoal.draw import draw_seqview, draw_genealogy
 from ipcoal.core import sim_trees, sim_loci, sim_snps
 # from ipcoal.utils.utils import calculate_pairwise_dist
 # from ipcoal.phylo.TreeInfer import TreeInfer
@@ -645,18 +645,28 @@ class Model:
             **kwargs)
         return canvas, table
 
-    def draw_genealogy(self, idx: Optional[int]=None, **kwargs):
+    def draw_genealogy(
+        self, 
+        idx: Optional[int]=None, 
+        show_substitutions: bool=False, 
+        **kwargs,
+        ):
         """Return a toytree drawing of the genealogy.
 
         Parameters
         ----------
         idx: int
             index of the genealogy to draw from the (Model.df) dataframe.
+        show_substitutions: bool
+            If True then substitutions are shown on the branches of the
+            genealogy. For this you must have initialized the Model 
+            with `store_tree_sequences=True` to retain substitutions.
         """
-        idx = idx if idx else 0
-        tree = toytree.tree(self.df.genealogy[idx])
-        canvas, axes, mark = tree.draw(ts='c', tip_labels=True, **kwargs)
-        return canvas, axes, mark
+        return draw_genealogy(self, idx, show_substitutions, **kwargs)
+        # idx = idx if idx else 0
+        # tree = toytree.tree(self.df.genealogy[idx])
+        # canvas, axes, mark = tree.draw(ts='c', tip_labels=True, **kwargs)
+        # return canvas, axes, mark
 
     def draw_genealogies(self, idxs: Optional[List[int]]=None, **kwargs):
         """Returns a toytree multitree drawing of several genealogies.
