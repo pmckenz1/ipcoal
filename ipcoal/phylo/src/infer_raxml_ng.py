@@ -136,6 +136,7 @@ def infer_raxml_ng_tree_from_phylip(
         # any logged errors.
         if proc.returncode:
             error = out.decode()
+            logger.error(f"ERROR:\n{error}\n\n{' '.join(cmd)}")
             if error:
                 raise IpcoalError(error)
 
