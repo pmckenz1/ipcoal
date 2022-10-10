@@ -46,10 +46,11 @@ def draw_seqview(
     arr = arr[:, start:end]
 
     # auto set a good looking height and width based on arr dims
+    margin = kwargs.get("margin", 50)
     if not height:
         height = 16 * arr.shape[0]
     if not width:
-        width = (16 * arr.shape[1])
+        width = max(16 * arr.shape[1], margin)
         width += width * .2
 
     # add margin space
