@@ -124,12 +124,12 @@ class FiveTipImbTreeAnalyzer:
         theta = 2 * self.neff * self.mut
         rho = 2 * self.neff * self.recomb
         logger.info("sptree "
-            f"root_tc={self.ctime}, "
-            f"root_tg={root_in_gens}, "
-            f"neff={self.neff}, "
-            f"theta={theta}, "
-            f"rho={rho}, "
-            f"theta/rho={theta / rho}"
+            f"root_tc={self.ctime:.12g}, "
+            f"root_tg={root_in_gens:.12g}, "
+            f"neff={self.neff:.12g}, "
+            f"theta={theta:.12g}, "
+            f"rho={rho:.12g}, "
+            f"theta/rho={theta / rho:.12g}"
         )
 
     def get_raxdf(self) -> pd.DataFrame:
