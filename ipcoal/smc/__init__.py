@@ -34,4 +34,11 @@ from ipcoal.smc.ms_smc import (
 	get_waiting_distance_to_no_change_rv,	
 	get_waiting_distance_to_tree_change_rv,
 	get_waiting_distance_to_topology_change_rv,
+
+	# methods to simulate many genealogies to get empirical and 
+	# MS-SMC waiting distances for many embedded genealogies 
+	# given a species tree (similar to those in the MS-SMC manuscript)
+
+	# simulate_expected_waiting_distance_
+	# 
 )
