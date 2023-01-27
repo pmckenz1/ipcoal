@@ -75,7 +75,10 @@ def infer_astral_tree(
     >>> astree.draw();
     """
     tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
+    binary_path = binary_path if binary_path else "NO PATH PROVIDED"
     assert Path(binary_path).exists(), BINARY_MISSING.format(binary_path)
+
+    # write trees input as a newline separated file
     with tempfile.NamedTemporaryFile(dir=tmpdir) as tmpfile:
         fname = Path(tmpfile.name)
 

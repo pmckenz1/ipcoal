@@ -65,10 +65,13 @@ def infer_raxml_ng_tree_from_alignment(
     subst_model: str="GTR+G",
     binary_path: Union[str, Path]=None,
     tmpdir: Optional[Path]=None,
+    cleanup: bool=True,
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng from a phylip string.
     
-    This avoids the need to write a named temporary file.
+    This takes an alignment string and creates a temporary phylip file
+    that is automatically cleaned up afterwards. The other tmp and result
+    files created by raxml-ng can also be cleaned up automatically.
     """
     tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
     with tempfile.NamedTemporaryFile(dir=tmpdir, suffix=f"_{os.getpid()}") as tmp:
@@ -83,7 +86,11 @@ def infer_raxml_ng_tree_from_alignment(
             nworkers=nworkers, seed=seed, subst_model=subst_model, 
             binary_path=binary_path,
         )
-    fname.unlink()
+    if cleanup:
+        for tmpf in fname.parent.glob(fname.name + "*"):
+            tmpf.unlink()
+    else:
+        fname.unlink()
     return tree
 
 def infer_raxml_ng_tree_from_phylip(
@@ -236,7 +243,7 @@ def infer_raxml_ng_tree(
 # def infer_raxml_ng_trees_from_sliding_windows():
 #     pass
 
-def infer_raxml_ng_trees(
+def  infer_raxml_ng_trees(
     model: ipcoal.Model,
     idxs: Union[Sequence[int], None]=None,
     nboots: int=0,
@@ -248,6 +255,7 @@ def infer_raxml_ng_trees(
     tmpdir: Optional[Path]=None,
     nthreads: int=4,
     nworkers: int=4,
+    cleanup: bool=True,
     ) -> pd.DataFrame:
     r"""Return a DataFrame w/ inferred gene trees at every locus.
 
@@ -281,6 +289,9 @@ def infer_raxml_ng_trees(
         ...
     tmpdir: Path or None
         Path to store temporary files. Default is tempdir (/tmp).
+    cleanup: bool
+        If True then each tmpfile is removed immediately after use and
+        the tmpdir is removed at the end.
 
     Note
     ----
@@ -295,7 +306,7 @@ def infer_raxml_ng_trees(
     kwargs = dict(
         nboots=nboots, nthreads=nthreads, nworkers=nworkers,
         seed=seed, subst_model=subst_model, 
-        binary_path=binary_path, tmpdir=tmpdir)
+        binary_path=binary_path, tmpdir=tmpdir, cleanup=cleanup)
 
     # distribute jobs in parallel
     rng = np.random.default_rng(seed)
@@ -323,8 +334,8 @@ def infer_raxml_ng_trees(
             # if no data then return a star tree.
             if not locus.nsnps.sum():
                 tree = toytree.tree(locus.genealogy.iloc[0])
-                tree = tree.mod.collapse_nodes(*range(tree.ntips, tree.nnodes))
-                rasyncs[lidx] = tree.write(None)
+                # tree = tree.mod.collapse_nodes(*range(tree.ntips, tree.nnodes))
+                rasyncs[lidx] = pool.submit(tree.mod.collapse_nodes, **{'min_support': 1000})
                 empty += 1
             else:
                 # disk-crushing mode.
@@ -343,7 +354,7 @@ def infer_raxml_ng_trees(
 
     # check for failures
     for job, rasync in rasyncs.items():
-        if not rasync.successful():
+        if rasync.exception():
             result = rasync.result()
             logger.warning(f"fail: {result} locus {job}")
 
@@ -372,8 +383,9 @@ if __name__ == "__main__":
     BIN = "/home/deren/miniconda3/envs/ipyrad/bin/raxml-ng"
     TREE = toytree.rtree.unittree(ntips=5, seed=123, treeheight=1e6)
     MODEL = ipcoal.Model(TREE, Ne=5e4, subst_model="jc69")
-    MODEL.sim_loci(nloci=10, nsites=20)
-    TREES = infer_raxml_ng_trees(MODEL, binary_path=BIN, nthreads=2, nboots=10, seed=1)
+    MODEL.sim_loci(nloci=10, nsites=200)
+    TREES = infer_raxml_ng_trees(MODEL, binary_path=BIN, nthreads=2, nworkers=2, nboots=10, seed=1)
     print(TREES)
+
     # print({i: j.result().write(None) for (i, j) in TREES.items()})
     # TREE._draw_browser(ts='s', node_labels="support")
