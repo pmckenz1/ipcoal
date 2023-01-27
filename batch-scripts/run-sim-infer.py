@@ -12,6 +12,23 @@ theta is 2 * Ne * mu.
 
 To increase the genetic diversity we incrase neff, to increase the
 ...
+
+Example CLI
+-----------
+python run-sim-infer.py \
+    --neff 1e5 \
+    --ctime 1.0 \
+    --recomb 5e-9 \
+    --mut 5e-8 \
+    --nsites 1000 \
+    --nloci 100 \
+    --rep 0 \
+    --seed 123 \
+    --outdir /tmp/test \
+    --ncores 4 \
+    --node-heights 0.1 0.5 0.6 1.0 \
+    --astral-bin ... \
+    --raxml-bin ... 
 """
 
 from typing import List, Dict, Any
