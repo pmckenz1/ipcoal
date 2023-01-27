@@ -311,5 +311,5 @@ def interactive_test() -> None:
 
 if __name__ == "__main__":
 
-    # command_line_tool()
-    interactive_test()
+    command_line_tool()
+    # interactive_test()
