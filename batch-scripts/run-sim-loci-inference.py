@@ -2,8 +2,15 @@
 
 """Recombination effects on MSC inference.
 
+This script can be used to run a simulation and inference pipeline
+for a single set of parameters from the command line.
 
 Authors: Deren Eaton and Patrick McKenzie
+
+Example
+-------
+>>> python run-sim-loci-inference.py --neff 100000 \
+>>> --ctime 1.5 --recomb 5e-08 --nsites 2000 --nloci 20000 --rep 81
 """
 
 import sys
@@ -14,6 +21,7 @@ import pandas as pd
 import toytree
 import ipcoal
 
+CHUNKSIZE = 1_000
 
 def run_sim_loci_and_infer_gene_trees(
     tree: toytree.ToyTree,
@@ -29,14 +37,71 @@ def run_sim_loci_and_infer_gene_trees(
     nloci: List[int],
     raxml_bin: Path,
     astral_bin: Path,
-    chunksize: int=1000,
+    chunksize: int=CHUNKSIZE,
     ):
     """Simulate N loci and infer gene trees.
     
     If we requested 20K gene trees for rep 0 then this will represent
     a chunk of loci from a unique seed...
-
     """
+    # create name for this job based on params
+    params = (
+        f"neff{int(neff)}-ctime{ctime}-"
+        f"recomb{int(bool(recomb))}-"
+        f"nloci{max(nloci)}-nsites{nsites}"
+    )
+
+    # create a subdir in the outdir for this param set, all reps.
+    jobdir = outdir / f"res-{params}"
+    jobdir.mkdir(exist_ok=True)
+
+    # create a tmpdir in the outdir for this param set, this rep.
+    tmpdir = outdir / f"tmp-{rep}-{params}"
+    tmpdir.mkdir(exist_ok=True)
+
+    # transform species tree from units of coal time (2 * diploid Ne)
+    # into units of generations.
+    root_in_gens = ctime * 2 * neff
+    sptree = tree.mod.edges_scale_to_root_height(root_in_gens)
+
+    # init coal Model
+    model = ipcoal.Model(
+        sptree,
+        Ne=neff,
+        seed_trees=seed,
+        seed_mutations=seed,
+        mut=mut,
+        recomb=recomb
+    )
+
+    # simulate the largest size dataset of NLOCI (in memory for now.)
+    model.sim_loci(nloci=max(nloci), nsites=nsites)
+
+    # break up gene tree inference into 1000 at a time, in case the 
+    # it takes a long time to finish. This checks whether a saved 
+    # chunk result exists and skips it if it does exist, until all
+    # gene trees are inferred. Then it proceeds and uses these gene
+    # trees in the astral inference.
+    for lidx in range(0, max(nloci), chunksize):
+
+        # skip the chunk if its csv already exists
+        outname = jobdir / f"chunk-{lidx}-gene_trees.csv"
+        if outname.exists():
+            continue
+
+        # infer gene trees for every locus and write to CSV.
+        raxdf = ipcoal.phylo.infer_raxml_ng_trees(
+            model,
+            idxs=range(lidx, lidx + chunksize),
+            nproc=ncores,
+            nworkers=1,
+            nthreads=1,
+            seed=seed,
+            binary_path=raxml_bin,
+            tmpdir=tmpdir,
+            cleanup=True,
+        )
+        raxdf.to_csv(outname)
 
 
 def run_post_gene_tree_inference(
@@ -53,7 +118,7 @@ def run_post_gene_tree_inference(
     nloci: List[int],
     raxml_bin: Path,
     astral_bin: Path,
-    chunksize: int=1000,
+    chunksize: int=CHUNKSIZE,
     ):
     """Writes simulated genealogies and inference results to WORKDIR.
 
@@ -65,61 +130,25 @@ def run_post_gene_tree_inference(
         f"recomb{int(bool(recomb))}-"
         f"nloci{max(nloci)}-nsites{nsites}"
     )
-    jobdir = outdir / params
+
+    # create a subdir in the outdir for this param set, all reps.
+    jobdir = outdir / "res-" + params
     jobdir.mkdir(exist_ok=True)
 
-    # scale species tree to a new root height in generations
-    root_in_gens = ctime * 4 * neff
-    sptree = tree.mod.edges_scale_to_root_height(root_in_gens)
-
-    # init coal Model
-    model = ipcoal.Model(
-        sptree,
-        Ne=neff,
-        seed_trees=seed,
-        seed_mutations=seed,
-        mut=mut,
-        recomb=recomb
-    )
-
-    # simulate the largest size dataset of NLOCI
-    model.sim_loci(nloci=max(nloci), nsites=nsites)
-    # model.df.to_csv(locpath)  # uncomment to save genealogies
-
-    # break up gene tree inference into 1000 at a time, in case the 
-    # it takes a long time to finish. This checks whether a saved 
-    # chunk result exists and skips it if it does exist, until all
-    # gene trees are inferred. Then it proceeds and uses these gene
-    # trees in the astral inference.
-    for lidx in range(0, nloci, chunksize):
-
-        # skip the chunk if its csv already exists
-        outname = jobdir / f"rep-{lidx}-gene_trees.csv"
-        if outname.exists():
-            continue
-
-        # infer gene trees for every locus and write to CSV
-        raxdf = ipcoal.phylo.infer_raxml_ng_trees(
-            model,
-            idxs=range(lidx, lidx + chunksize),
-            nproc=ncores,
-            nworkers=1,
-            nthreads=1,
-            seed=seed,
-            binary_path=raxml_bin,
-            tmpdir=jobdir,
-        )
-        raxdf.to_csv(outname)
+    # create a tmpdir in the outdir for this param set, this rep.
+    tmpdir = outdir / f"tmp-{rep}-" + params
+    tmpdir.mkdir(exist_ok=True)
 
     # load and concatenate gene tree dataframes
-    raxdfs = sorted(jobdir.glob(f"rep-*-gene_trees.csv"))
-    raxdf = pd.concat(raxdfs, ignore_index=True)
+    chunks = tmpdir.glob("chunk-*-gene_trees.csv")
+    raxdfs = sorted(chunks, key=lambda x: int(x.name.split("-")[1]))
+    raxdf = pd.concat((pd.read_csv(i) for i in raxdfs), ignore_index=True)
 
     # iterate over subsample sizes of NLOCI
     for numloci in sorted(nloci):
         numloci = int(numloci)
 
-        # infer a concatenation tree
+        # infer a concatenation tree for loci 0-Nloci
         ctree = ipcoal.phylo.infer_raxml_ng_tree(
             model,
             idxs=list(range(0, numloci)),
@@ -127,7 +156,7 @@ def run_post_gene_tree_inference(
             nthreads=ncores,
             seed=seed,
             binary_path=raxml_bin,
-            tmpdir=jobdir,
+            tmpdir=tmpdir,
         )
         ctree.write(jobdir / f"rep{rep}-concat-subloci{numloci}.nwk")
 
@@ -138,16 +167,17 @@ def run_post_gene_tree_inference(
             toytree.mtree(genealogies),
             binary_path=astral_bin,
             seed=seed,
-            tmpdir=jobdir,
+            tmpdir=tmpdir,
         )
         atree1.write(jobdir / f"rep{rep}-astral-genealogy-subloci{numloci}.nwk")
 
         # infer astral species tree from inferred gene trees.
+        genetrees = toytree.mtree(raxdf.gene_tree)[:numloci]
         atree2 = ipcoal.phylo.infer_astral_tree(
-            toytree.mtree(raxdf.gene_tree),
+            genetrees,
             binary_path=astral_bin,
             seed=seed,
-            tmpdir=jobdir,
+            tmpdir=tmpdir,
         )
         atree2.write(jobdir / f"rep{rep}-astral-genetree-subloci{numloci}.nwk")
 
@@ -167,8 +197,11 @@ def run_post_gene_tree_inference(
         out_file.unlink()
     sh_file.unlink()
 
+    # remove directory for ...
+    tmpdir.rmdir()
 
-def single_command_line_parser():
+
+def _single_command_line_parser():
     """Parse command line arguments and return.
 
     Example
@@ -199,7 +232,7 @@ def single_command_line_parser():
     parser.add_argument(
         '--ncores', type=int, required=True, help='number of cores.')
     parser.add_argument(
-        '--node-heights', type=float, nargs=4, required=True, help='imbalanced species tree relative node heights.')
+        '--node-heights', type=float, nargs=4, required=True, help='imbalanced species tree RELATIVE node heights.')
     parser.add_argument(
         '--raxml-bin', type=Path, help='path to raxml-ng binary')
     parser.add_argument(
@@ -211,27 +244,36 @@ def single_command_line_parser():
 
 def main():
     """Parse command line args and start an inference job."""
-    args = single_command_line_parser()
+    args = _single_command_line_parser()
 
+    # set node heights on a fixed 5-taxon imbalanced species tree.
+    # first scale node heights to be RELATIVE, scaled by largest=1.
+    # `ctime` is used to scale all branches so that root is larger 
+    # than 1 coal unit. That happens in `run_sim_loci_inference()`
     imbtree = toytree.rtree.imbtree(ntips=5)
-    sptree = imbtree.set_node_data(
-        "height", dict(zip(range(5, 9), args.node_heights)))
+    max_height = max(args.node_heights)
+    heights = [float(i) / max_height for i in args.node_heights]
+    sptree = imbtree.set_node_data("height", dict(zip(range(5, 9), heights)))
 
-    args.raxml_bin = (
-        Path(args.raxml_bin) if args.raxml_bin
-        else Path(sys.prefix) / "bin" /  "raxml-ng")
+    # find path to raxml-ng binary
+    user_bin = Path(args.raxml_bin) if args.raxml_bin else None
+    conda_bin = Path(sys.prefix) / "bin" /  "raxml-ng"
+    args.raxml_bin = (user_bin if args.raxml_bin else conda_bin)
     assert args.raxml_bin.exists(), (
         f"Cannot find {args.raxml_bin}. Use conda instructions.")
 
-    args.astral_bin = (
-        Path(args.astral_bin) if args.astral_bin
-        else Path(sys.prefix) / "bin" /  "astral.5.7.1.jar")
+    # find path to the astral binary
+    user_bin = Path(args.astral_bin) if args.astral_bin else None
+    conda_bin = Path(sys.prefix) / "bin" /  "astral.5.7.1.jar"
+    args.astral_bin = (user_bin if args.astral_bin else conda_bin)
     assert args.astral_bin.exists(), (
         f"Cannot find {args.astral_bin}. Use conda instructions.")
 
+    # ensure outdir exists
     Path(args.outdir).mkdir(exist_ok=True)
 
-    run_sim_loci_inference(
+    # run main function
+    run_sim_loci_and_infer_gene_trees(
         tree=sptree,
         ctime=args.ctime,
         recomb=args.recomb,
