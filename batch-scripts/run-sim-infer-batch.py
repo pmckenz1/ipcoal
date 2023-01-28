@@ -67,8 +67,8 @@ SBATCH = """\
 
 #SBATCH --account={account}
 #SBATCH --job-name={jobname}
-#SBATCH --output=log-{outpath}.out
-#SBATCH --error=log-{outpath}.err
+#SBATCH --output={outpath}.out
+#SBATCH --error={outpath}.err
 #SBATCH --time=11:59:00
 #SBATCH --ntasks={ncores}
 #SBATCH --mem=12G
@@ -153,8 +153,8 @@ class SlurmDistribute:
             for rep in range(self.nreps):
 
                 # get name of this job
-                jobname = f"{params_basename}-rep{rep}"
-                outpath = self.outdir / jobname # for .err and .out files
+                jobname = f"res-{params_basename}-rep{rep}"
+                outpath = self.outdir / jobname # for .sh, .err, .out files
 
                 # submit job to run...
                 kwargs = dict(
