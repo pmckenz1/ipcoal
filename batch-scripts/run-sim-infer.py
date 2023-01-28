@@ -133,7 +133,7 @@ class FiveTipImbTreeAnalyzer:
             f"neff={self.neff:.12g}, "
             f"theta={theta:.12g}, "
             f"rho={rho:.12g}, "
-            f"theta/rho={rho / theta:.12g}"
+            f"rho/theta={(rho / theta):.12g}"
         )
 
     def get_raxdf(self) -> pd.DataFrame:
