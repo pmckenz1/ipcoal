@@ -34,6 +34,7 @@ python run-sim-infer.py \
 from typing import List, Dict, Any
 from dataclasses import dataclass
 import argparse
+import sys
 from pathlib import Path
 import pandas as pd
 from loguru import logger
@@ -84,7 +85,6 @@ class FiveTipImbTreeAnalyzer:
             f"nloci{max(self.nloci)}-nsites{self.nsites}-"
             f"rep{self.rep}"
         )
-        logger.info(f"initiating: {self.params}")
 
         # create a subdir in the outdir for this param set, all reps.
         self.outdir.mkdir(exist_ok=True)
@@ -95,6 +95,10 @@ class FiveTipImbTreeAnalyzer:
         # create a tmpdir in the outdir for this param set, this rep.
         self.tmpdir = self.outdir / f"tmp-{self.params}"
         self.tmpdir.mkdir(exist_ok=True)
+
+        # logging file
+        # self.logfile = self.outdir / f"res-{self.params}.log"
+        # logger.info(f"initiating: {self.params}")
 
         # create a 5-tip imbalanced tree
         imbtree = toytree.rtree.imbtree(ntips=5)
@@ -299,8 +303,8 @@ def single_command_line_parser() -> Dict[str, Any]:
 
 
 def command_line_tool() -> None:
-    """Runs the command line tool to ..."""
-    ipcoal.set_log_level("INFO")    
+    """Runs the command line tool with logging to STDOUT."""
+    ipcoal.set_log_level("INFO", sys.stdout)
     kwargs = single_command_line_parser()
     tool = FiveTipImbTreeAnalyzer(**kwargs)
     tool.run()
