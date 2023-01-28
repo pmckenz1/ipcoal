@@ -22,7 +22,7 @@ Example
 >>>   --mut 5e-8 \
 >>>   --recomb 0 5e-9 \
 >>>   --node-heights 0.01 0.05 0.06 1 \
->>>   --ncores 2 \
+>>>   --ncores 12 \
 >>>   --outdir /moto/eaton/users/de2356/recomb-response/data5 \
 >>>   --account eaton \
 >>>   --delay 1
@@ -30,14 +30,14 @@ Example
 Description
 -----------
 The job above implements a fixed imbalanced 5-taxon species tree
-with divergence times described by the `node-heights` parameter. 
+with divergence times described by the `node-heights` parameter.
 It will simulate 10000 loci (the largest `nloci` param) of length
-2000 and 10000. This will be done in one case with recombination, 
-and in another case without. These sims are also each repeated 
-for 10 replicates from random seeds. For each dataset true genealogies 
-will be saved, and also empirical gene trees will be inferred for 
-each locus using raxml-ng. A species tree will then be inferred 
-from each distribution of genealogies or gene trees. 
+2000 and 10000. This will be done in one case with recombination,
+and in another case without. These sims are also each repeated
+for 10 replicates from random seeds. For each dataset true genealogies
+will be saved, and also empirical gene trees will be inferred for
+each locus using raxml-ng. A species tree will then be inferred
+from each distribution of genealogies or gene trees.
 
 Outputs
 --------
@@ -131,7 +131,7 @@ class SlurmDistribute:
 
     def iter_jobs(self) -> Iterator[Tuple[str, List[Any]]]:
         """Yield Tuples iterating over parameters combinations."""
-        combs = product(self.nsites, self.ctime, self.recomb, self.neff)    
+        combs = product(self.nsites, self.ctime, self.recomb, self.neff)
         for nsi, cti, rec, nef in combs:
             # basename of the params used across a set of replicates.
             params_basename = (
@@ -155,7 +155,7 @@ class SlurmDistribute:
                 # get name of this job
                 jobname = f"{params_basename}-rep{rep}"
                 outpath = self.outdir / jobname # for .err and .out files
-    
+
                 # submit job to run...
                 kwargs = dict(
                     account=self.account,
@@ -168,7 +168,7 @@ class SlurmDistribute:
                     mut=self.mut,
                     recomb=rec,
                     nsites=nsi,
-                    nloci=" ".join([str(i) for i in self.nloci]),                    
+                    nloci=" ".join([str(i) for i in self.nloci]),
                     rep=rep,
                     seed=seeds[rep],
                     outdir=self.outdir,
@@ -180,7 +180,7 @@ class SlurmDistribute:
                 yield kwargs
 
     def iter_slurm_scripts(self) -> Iterator[Tuple[str, str]]:
-        """Yield SLURM scripts (bash w/ #HEADER) for all job params."""        
+        """Yield SLURM scripts (bash w/ #HEADER) for all job params."""
         for params in self.iter_params():
             yield params['jobname'], SBATCH.format(**params)
 
@@ -205,26 +205,32 @@ class SlurmDistribute:
         rlen = len(self.recomb)
         clen = len(self.ctime)
         slen = len(self.nsites)
-        ilen = self.nreps        
+        ilen = self.nreps
         njobs = nlen * rlen * clen * slen * ilen
         return njobs
 
     def run(self, cmd: str="sbatch", resume: bool=False, force: bool=False) -> None:
-        """..."""
+        """Calls submit_subprocess() on jobs in iter_slurm_script().
 
+        This command also enforces the resume/force options to continue
+        or restart a set of jobs, and ensures the outdir exists.
+        """
         # if outdir exists an error is raised unless the user specified
         # either resume or force. The former will resume the run, the
         # latter will remove any files and restart the run.
         if self.outdir.exists():
             if not (resume or force):
-                raise IOError(f"Output directory {self.outdir} exists. Use --force or --resume.")
+                raise IOError(f"Output directory {self.outdir} exists.\n"
+                    "Use --resume to continue running remaining jobs without existing results.\n"
+                    "Or use --force to clear the output directory and restart."
+                )
         if force and resume:
             raise ValueError("You must select --force or --resume, not both.")
 
         # outdir must exist.
         self.outdir.mkdir(exist_ok=True)
 
-        # force removes all files in outdir
+        # force removes everything inside the outdir.
         if force:
             for path in self.outdir.glob("*-neff*-ctime*-recomb*-nloci*"):
                 if path.is_dir():
@@ -232,7 +238,7 @@ class SlurmDistribute:
                 else:
                     path.unlink()
 
-        # resume removes only half finished files
+        # resume removes .sh files and tmpdirs/ but leaves .csv
         if resume:
             for path in self.outdir.glob("*-neff*-ctime*-recomb*-nloci*"):
                 if not path.suffix == ".csv":
@@ -251,11 +257,11 @@ class SlurmDistribute:
             # skip if results exist for this rep
             resfile = self.outdir / f"res-{name}.csv"
             if resfile.exists():
-                logger.warning(f"skipping {name}.")
+                logger.info(f"skipping {name}.")
                 continue
 
             # submit job to run
-            logger.warning(f"starting job {name}")
+            logger.info(f"starting job {name}")
             self.submit_subprocess(name, script, cmd)
             time.sleep(self.delay)
 
@@ -349,7 +355,7 @@ def distributed_command_line_parser():
 
 def main():
     """Command line utility to accept arguments.
-    
+
     """
     args = distributed_command_line_parser()
     kwargs = vars(args)
