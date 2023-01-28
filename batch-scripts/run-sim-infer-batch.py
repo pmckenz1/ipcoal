@@ -265,7 +265,7 @@ class SlurmDistribute:
             self.submit_subprocess(name, script, cmd)
 
             # .out file contains log, .err file is errors; remove if empty.
-            logfile = self.outdir / f"log-{name}.err"
+            logfile = self.outdir / f"res-{name}.err"
             if logfile.exists():
                 if not logfile.stat().st_size():
                     logfile.unlink()
