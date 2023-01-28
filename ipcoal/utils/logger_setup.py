@@ -76,8 +76,12 @@ def set_log_level(
             diagnose=True,
         )
     if log_out:
+        if not isinstance(log_out, io.TextIOBase):
+            raise TypeError(
+                "'log_out' arg must be of type io.TextIOBase, "
+                "e.g., sys.stdout or sys.stderr.")
         idx = logger.add(
-            sink=sys.stderr,
+            sink=log_out,
             level=log_level,
             colorize=colorize(),
             format=LOGFORMAT,
