@@ -67,8 +67,8 @@ SBATCH = """\
 
 #SBATCH --account={account}
 #SBATCH --job-name={jobname}
-#SBATCH --output={outpath}.out
-#SBATCH --error={outpath}.err
+#SBATCH --output=log-{outpath}.out
+#SBATCH --error=log-{outpath}.err
 #SBATCH --time=11:59:00
 #SBATCH --ntasks={ncores}
 #SBATCH --mem=12G
@@ -260,9 +260,17 @@ class SlurmDistribute:
                 logger.info(f"skipping {name}.")
                 continue
 
-            # submit job to run
+            # submit job to run and remove .sh file when done.
             logger.info(f"starting job {name}")
             self.submit_subprocess(name, script, cmd)
+
+            # .out file contains log, .err file is errors; remove if empty.
+            logfile = self.outdir / f"log-{name}.err"
+            if logfile.exists():
+                if not logfile.stat().st_size():
+                    logfile.unlink()
+
+            # use short delay between job submissions to be nice.
             time.sleep(self.delay)
 
     # def combine(self) -> None:
