@@ -57,7 +57,7 @@ from pathlib import Path
 from subprocess import Popen, STDOUT, PIPE
 from loguru import logger
 import numpy as np
-# import pandas as pd
+import pandas as pd
 import ipcoal
 
 logger = logger.bind(name="ipcoal")
@@ -189,7 +189,7 @@ class SlurmDistribute:
             yield params['jobname'], SBATCH.format(**params)
 
     def submit_subprocess(self, name: str, script: str, cmd: str="sbatch") -> None:
-        """..."""
+        """Start sh script with bash or sbatch."""
         # b/c the params string name has a '.' in it for decimal ctime.
         tmpfile = self.outdir / f"job-{name}.sh"
         with open(tmpfile, 'w', encoding='utf-8') as out:
@@ -242,18 +242,6 @@ class SlurmDistribute:
                 else:
                     path.unlink()
 
-        # resume removes .sh files but keeps tmpdirs/ and .csvs
-        if resume:
-            pass
-            # for path in self.outdir.glob("*-neff*-ctime*-recomb*-nloci*"):
-                # if path.suffix == ".sh":
-                    # path.unlink()
-                # if not path.suffix == ".csv":
-                #     if path.is_dir():
-                #         shutil.rmtree(path)
-                #     else:
-                #         path.unlink()
-
         # iterate over all jobs to submit
         nfin = len(list(self.outdir.glob("*-neff*-ctime*-recomb*-nloci*.csv")))
         njobs = self._count_njobs()
@@ -281,32 +269,11 @@ class SlurmDistribute:
             # use short delay between job submissions to be nice.
             time.sleep(self.delay)
 
-    # def combine(self) -> None:
-    #     # # if it is the final rep then perform concatenation on CSVs
-    #     base, rep = name.rsplit("-rep", 1)
-    #     logger.info(f"REP-{rep}")
-    #     if int(rep) == self.nreps - 1:
-    #         print(f"*{base}-rep*.csv")
-    #         chunks = self.outdir.glob(f"*{base}-rep*.csv")
-    #         print(list(chunks))
-    #         dfs = sorted(chunks, key=lambda x: int(x.name.rsplit("-rep", 1)[-1]))
-    #         cdf = pd.concat((pd.read_csv(i) for i in dfs), ignore_index=True)
-    #         logger.info(f"concatenated FINAL\n{cdf}")
-    #     #     # unlink...
-
-    # def null(self):
-    #     # print summary of jobs that will be started.
-    #     nlen = len(self.neff)
-    #     rlen = len(self.recomb)
-    #     clen = len(self.ctime)
-    #     ilen = self.nreps
-    #     slen = len(self.nsites)
-    #     njobs = nlen * rlen * clen * slen * ilen
-    #     print(f"Submitting {njobs} sbatch jobs at {self.delay} second intervals.")
-
-    #     # check whether the summary file for this paramjob exists
-    #     result = self.outdir / paramdir / 'result.csv'
-
+    def combine(self) -> None:
+        """Concatenate all CSVs into a one large file."""
+        iter_csvs = self.outdir.glob("*.csv")
+        iter_dfs = (pd.read_csv(i, index_col=0) for i in iter_csvs)
+        data = pd.concat(iter_dfs, ignore_index=True)
 
 def distributed_command_line_parser():
     """Parse command line arguments and return.
@@ -369,7 +336,6 @@ def distributed_command_line_parser():
     parser.add_argument(
         '--raxml-bin', type=Path, default=None, help="Full path to raxml-ng binary.")
     return parser.parse_args()
-
 
 def main():
     """Command line utility to accept arguments.
