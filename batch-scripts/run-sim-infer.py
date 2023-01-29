@@ -3,12 +3,12 @@
 """Simulate genealogies and infer gene trees on a 5-tip species tree.
 
 This simulation is setup so that the user can modify species tree
-parameters that affect genealogical variation while keeping the 
+parameters that affect genealogical variation while keeping the
 genetic diversity constant. In other words, the user can change
 the height of the species tree in coalescent units, and can set
 the effective population size, and we will automatically scale the
-species tree edge lengths in units of generations so that that 
-theta is 2 * Ne * mu. 
+species tree edge lengths in units of generations so that that
+theta is 2 * Ne * mu.
 
 To increase the genetic diversity we incrase neff, to increase the
 ...
@@ -28,7 +28,7 @@ python run-sim-infer.py \
     --ncores 4 \
     --node-heights 0.1 0.5 0.6 1.0 \
     --astral-bin ... \
-    --raxml-bin ... 
+    --raxml-bin ...
 """
 
 from typing import List, Dict, Any
@@ -62,13 +62,14 @@ class FiveTipImbTreeAnalyzer:
     outdir: Path
     """: dir for all replicate jobs of this param setting."""
     ncores: int
+    nthreads: int
     raxml_bin: Path
     astral_bin: Path
     chunksize: int=CHUNKSIZE
 
     # attrs to be filled
     params: str = None
-    """: basename for folder, does not include rep number."""    
+    """: basename for folder, does not include rep number."""
     outfile: Path = None
     """: CSV result file written to outdir."""
     tmpdir: Path = None
@@ -106,7 +107,7 @@ class FiveTipImbTreeAnalyzer:
         # create a species tree with special attr 'height' set
         sptree = imbtree.set_node_data("height", dict(zip(range(5, 9), heights)))
 
-        # transform all edges so that root height in generations 
+        # transform all edges so that root height in generations
         # scales to ctime coal units (2 * diploid Ne)
         root_in_gens = self.ctime * 2 * self.neff
         self.sptree = sptree.mod.edges_scale_to_root_height(root_in_gens)
@@ -154,8 +155,8 @@ class FiveTipImbTreeAnalyzer:
     def _infer_raxml_gene_trees(self) -> None:
         """Infer gene tree for every locus and write to a CSV in jobdir."""
 
-        # break up gene tree inference into 1000 at a time, in case the 
-        # it takes a long time to finish. TODO: This checks whether a saved 
+        # break up gene tree inference into 1000 at a time, in case the
+        # it takes a long time to finish. TODO: This checks whether a saved
         # chunk result exists and skips it if it does exist, until all
         # gene trees are inferred. Then it proceeds and uses these gene
         # trees in the astral inference.
@@ -173,7 +174,7 @@ class FiveTipImbTreeAnalyzer:
                 idxs=range(lidx, lidx + self.chunksize),
                 nproc=self.ncores,
                 nworkers=1,
-                nthreads=1,
+                nthreads=self.nthreads,
                 seed=self.seed,
                 binary_path=self.raxml_bin,
                 tmpdir=self.tmpdir,
@@ -194,7 +195,7 @@ class FiveTipImbTreeAnalyzer:
                 self.model,
                 idxs=list(range(0, numloci)),
                 nworkers=1,
-                nthreads=self.ncores,
+                nthreads=self.nthreads, #self.ncores, # limit to 1 so we can use ntasks=12
                 seed=self.seed,
                 binary_path=self.raxml_bin,
                 tmpdir=self.tmpdir,
@@ -292,6 +293,8 @@ def single_command_line_parser() -> Dict[str, Any]:
     parser.add_argument(
         '--ncores', type=int, required=True, help='number of cores.')
     parser.add_argument(
+        '--nthreads', type=int, required=True, help='number of threads.')
+    parser.add_argument(
         '--node-heights', type=float, nargs=4, required=True, help='imbalanced species tree RELATIVE node heights.')
     parser.add_argument(
         '--raxml-bin', type=Path, help='path to raxml-ng binary')
@@ -312,17 +315,18 @@ def interactive_test() -> None:
     ipcoal.set_log_level("INFO")
     tool = FiveTipImbTreeAnalyzer(
         nloci=[20, 50, 100],
-        neff=20_000, 
+        neff=20_000,
         node_heights=[0.01, 0.05, 0.06, 1.0],
-        ctime=1.0, 
-        recomb=5e-9, 
+        ctime=1.0,
+        recomb=5e-9,
         mut=5e-8,
         rep=1,
         seed=123,
-        nsites=2000, 
-        outdir=Path("/tmp/itest2"), 
-        ncores=4, 
-        raxml_bin=None, 
+        nsites=2000,
+        outdir=Path("/tmp/itest2"),
+        ncores=2,
+        nthreads=4,
+        raxml_bin=None,
         astral_bin="/home/deren/miniconda3/envs/ipyrad/bin/astral.5.7.1.jar",
     )
     tool.run()

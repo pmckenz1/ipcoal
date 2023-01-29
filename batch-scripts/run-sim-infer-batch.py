@@ -71,6 +71,7 @@ SBATCH = """\
 #SBATCH --error={outpath}.err
 #SBATCH --time=11:59:00
 #SBATCH --ntasks={ncores}
+#SBATCH --cpus-per-task={nthreads}
 #SBATCH --mem=12G
 
 # run the command to write and submit a shell script
@@ -85,6 +86,7 @@ SBATCH = """\
   --seed {seed} \
   --outdir {outdir} \
   --ncores {ncores} \
+  --nthreads {nthreads} \
   --node-heights {node_heights} \
   --raxml-bin {raxml_bin} \
   --astral-bin {astral_bin}
@@ -105,6 +107,7 @@ class SlurmDistribute:
     nreps: int
     seed: int
     ncores: int
+    nthreads: int
     outdir: Path
     account: str
     node_heights: List[float]
@@ -162,6 +165,7 @@ class SlurmDistribute:
                     jobname=jobname,
                     outpath=outpath,
                     ncores=self.ncores,
+                    nthreads=self.nthreads,
                     root=ROOT,
                     neff=nef,
                     ctime=cti,
@@ -259,7 +263,7 @@ class SlurmDistribute:
 
             # skip if results exist for this rep
             resfile = self.outdir / f"{name}.csv"
-            logger.info(f"{resfile.exists()}, {resfile}")
+            # logger.info(f"{resfile.exists()}, {resfile}")
             if resfile.exists():
                 logger.info(f"skipping {name}.")
                 continue
@@ -345,7 +349,9 @@ def distributed_command_line_parser():
     parser.add_argument(
         '--account', type=str, default="free", help='Account name for SLURM job submission')
     parser.add_argument(
-        '--ncores', type=int, default=2, help='Number of cores per job (recommended=2)')
+        '--ncores', type=int, default=3, help='Number of cores per task')
+    parser.add_argument(
+        '--nthreads', type=int, default=4, help='Number of threads per task')
     parser.add_argument(
         '--resume', action='store_true', help='Resume an interrupted run with some existing results.')
     parser.add_argument(
@@ -393,7 +399,8 @@ def interactive():
         nreps=3,
         outdir=Path("/tmp/tester"),
         account="free",
-        ncores=6,
+        ncores=2,
+        nthreads=4,
         seed=123,
         delay=0.1,
     )
