@@ -271,7 +271,7 @@ class SlurmDistribute:
             # .out file contains log, .err file is errors; remove if empty.
             logfile = self.outdir / f"{name}.err"
             if logfile.exists():
-                if not logfile.stat().st_size():
+                if not logfile.stat().st_size:
                     logfile.unlink()
 
             # use short delay between job submissions to be nice.
