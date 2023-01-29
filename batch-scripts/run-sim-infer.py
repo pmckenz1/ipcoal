@@ -216,7 +216,7 @@ class FiveTipImbTreeAnalyzer:
             # genealogy at each locus, since subsequent trees are linked.
             genealogies = self.model.df.loc[self.model.df.tidx == 0].genealogy
             atree1 = ipcoal.phylo.infer_astral_tree(
-                toytree.mtree(genealogies),
+                toytree.mtree(genealogies[:numloci]),
                 binary_path=self.astral_bin,
                 seed=self.seed,
                 tmpdir=self.tmpdir,
