@@ -280,7 +280,7 @@ class SlurmDistribute:
         """Concatenate all CSVs into a one large file."""
         iter_csvs = self.outdir.glob("*.csv")
         iter_dfs = (pd.read_csv(i, index_col=0) for i in iter_csvs)
-        data = pd.concat([iter_dfs], ignore_index=True)
+        data = pd.concat(iter_dfs, ignore_index=True)
         outfile = self.outdir / "concat.csv"
         data.to_csv(outfile)
         nfiles = data.shape[0]
