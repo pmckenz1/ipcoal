@@ -259,6 +259,7 @@ class SlurmDistribute:
 
             # skip if results exist for this rep
             resfile = self.outdir / f"res-{name}.csv"
+            logger.info(f"{resfile.exists()}, {resfile}")
             if resfile.exists():
                 logger.info(f"skipping {name}.")
                 continue
