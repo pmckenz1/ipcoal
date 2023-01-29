@@ -258,7 +258,7 @@ class SlurmDistribute:
         for name, script in self.iter_slurm_scripts():
 
             # skip if results exist for this rep
-            resfile = self.outdir / f"res-{name}.csv"
+            resfile = self.outdir / f"{name}.csv"
             logger.info(f"{resfile.exists()}, {resfile}")
             if resfile.exists():
                 logger.info(f"skipping {name}.")
@@ -269,7 +269,7 @@ class SlurmDistribute:
             self.submit_subprocess(name, script, cmd)
 
             # .out file contains log, .err file is errors; remove if empty.
-            logfile = self.outdir / f"res-{name}.err"
+            logfile = self.outdir / f"{name}.err"
             if logfile.exists():
                 if not logfile.stat().st_size():
                     logfile.unlink()
