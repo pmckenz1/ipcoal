@@ -163,9 +163,9 @@ class FiveTipImbTreeAnalyzer:
 
             # skip the chunk if its csv already exists
             outname = self.tmpdir / f"chunk-{lidx}-gene_trees.csv"
-            # if outname.exists():
-                # print("skipping gene trees")
-                # continue
+            if outname.exists():
+                logger.info(f"Resumed job. Skipping {outname}, file exists.")
+                continue
 
             # infer gene trees for every locus and write to CSV.
             raxdf = ipcoal.phylo.infer_raxml_ng_trees(

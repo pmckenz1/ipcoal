@@ -238,14 +238,17 @@ class SlurmDistribute:
                 else:
                     path.unlink()
 
-        # resume removes .sh files and tmpdirs/ but leaves .csv
+        # resume removes .sh files but keeps tmpdirs/ and .csvs
         if resume:
-            for path in self.outdir.glob("*-neff*-ctime*-recomb*-nloci*"):
-                if not path.suffix == ".csv":
-                    if path.is_dir():
-                        shutil.rmtree(path)
-                    else:
-                        path.unlink()
+            pass
+            # for path in self.outdir.glob("*-neff*-ctime*-recomb*-nloci*"):
+                # if path.suffix == ".sh":
+                    # path.unlink()
+                # if not path.suffix == ".csv":
+                #     if path.is_dir():
+                #         shutil.rmtree(path)
+                #     else:
+                #         path.unlink()
 
         # iterate over all jobs to submit
         nfin = len(list(self.outdir.glob("*-neff*-ctime*-recomb*-nloci*.csv")))

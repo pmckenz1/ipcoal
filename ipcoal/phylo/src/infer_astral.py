@@ -91,7 +91,7 @@ def infer_astral_tree(
     # run ASTRAL on treefile
     tree_file = fname.with_suffix(".astral")
     cmd = [
-        "java", "-jar", binary_path,
+        "java", "-jar", str(binary_path),
         "--input", str(fname.with_suffix(".trees")),
         "--output", str(tree_file),
         "--branch-annotate", str(annotation),
