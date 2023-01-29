@@ -96,10 +96,6 @@ class FiveTipImbTreeAnalyzer:
         self.tmpdir = self.outdir / f"tmp-{self.params}"
         self.tmpdir.mkdir(exist_ok=True)
 
-        # logging file
-        # self.logfile = self.outdir / f"res-{self.params}.log"
-        # logger.info(f"initiating: {self.params}")
-
         # create a 5-tip imbalanced tree
         imbtree = toytree.rtree.imbtree(ntips=5)
 
@@ -111,7 +107,7 @@ class FiveTipImbTreeAnalyzer:
         sptree = imbtree.set_node_data("height", dict(zip(range(5, 9), heights)))
 
         # transform all edges so that root height in generations 
-        # scales to ctime coal units.
+        # scales to ctime coal units (2 * diploid Ne)
         root_in_gens = self.ctime * 2 * self.neff
         self.sptree = sptree.mod.edges_scale_to_root_height(root_in_gens)
 
@@ -133,7 +129,9 @@ class FiveTipImbTreeAnalyzer:
             f"neff={self.neff:.12g}, "
             f"theta={theta:.12g}, "
             f"rho={rho:.12g}, "
-            f"rho/theta={(rho / theta):.12g}"
+            f"rho/theta={(rho / theta):.12g}",
+            f"rep={self.rep}",
+            f"seed={self.seed}"
         )
 
     def get_raxdf(self) -> pd.DataFrame:
