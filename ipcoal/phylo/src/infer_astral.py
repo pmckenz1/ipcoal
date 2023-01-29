@@ -119,6 +119,17 @@ def infer_astral_tree(
         tmp.unlink()
     return tree
 
+# def sim_test():
+#     import ipcoal
+
+#     sptree = toytree.rtree.imbtree(ntips=5)
+#     sptree.mod.edges_scale_to_root_height(1e6, inplace=True)
+#     model = ipcoal.Model(sptree, Ne=1e5, nsamples=2)
+#     model.sim_trees(100)
+#     imap = model.get_imap_dict()
+#     atre = infer_astral_tree(trees, binary_path=ASTRAL, imap=imap)
+
+
 
 if __name__ == "__main__":
 
