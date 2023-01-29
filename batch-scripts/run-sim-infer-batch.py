@@ -265,7 +265,7 @@ class SlurmDistribute:
             resfile = self.outdir / f"{name}.csv"
             # logger.info(f"{resfile.exists()}, {resfile}")
             if resfile.exists():
-                logger.info(f"skipping {name}.")
+                logger.info(f"skipping {name}")
                 continue
 
             # submit job to run and remove .sh file when done.
