@@ -8,6 +8,7 @@ from typing import Union, Sequence, Optional
 import os
 import sys
 import tempfile
+from itertools import chain
 from pathlib import Path
 from subprocess import Popen, PIPE, STDOUT
 from concurrent.futures import ProcessPoolExecutor
@@ -68,7 +69,7 @@ def infer_raxml_ng_tree_from_alignment(
     cleanup: bool=True,
     ) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng from a phylip string.
-    
+
     This takes an alignment string and creates a temporary phylip file
     that is automatically cleaned up afterwards. The other tmp and result
     files created by raxml-ng can also be cleaned up automatically.
@@ -83,7 +84,7 @@ def infer_raxml_ng_tree_from_alignment(
 
         tree = infer_raxml_ng_tree_from_phylip(
             alignment=fname, nboots=nboots, nthreads=nthreads,
-            nworkers=nworkers, seed=seed, subst_model=subst_model, 
+            nworkers=nworkers, seed=seed, subst_model=subst_model,
             binary_path=binary_path,
         )
     if cleanup:
@@ -133,7 +134,7 @@ def infer_raxml_ng_tree_from_phylip(
     if nboots:
         cmd.extend(["--all", "--bs-trees", str(nboots)])
 
-    # 
+    #
     with Popen(cmd, stderr=STDOUT, stdout=PIPE) as proc:
         out, _ = proc.communicate()
 
@@ -149,7 +150,7 @@ def infer_raxml_ng_tree_from_phylip(
 
     # raxml bestTree has randomly resolved nodes when no info exists
     # but we instead want unresolved info for unresolved nodes which,
-    # if any exist, it writes to the Collapsed output file. 
+    # if any exist, it writes to the Collapsed output file.
     if nboots:
         treefile = fpath.with_suffix(".phy.raxml.support")
     else:
@@ -205,7 +206,7 @@ def infer_raxml_ng_tree(
     nthreads: int
         Number of threads used for parallelization.
     diploid: bool
-        If True then pairs of samples belonging to the same lineage 
+        If True then pairs of samples belonging to the same lineage
         are grouped to create diploid genotype calls in the phylip
         file. This will raise an error if nsamples is not even.
     binary_path: None, str, or Path
@@ -243,7 +244,7 @@ def infer_raxml_ng_tree(
 # def infer_raxml_ng_trees_from_sliding_windows():
 #     pass
 
-def  infer_raxml_ng_trees(
+def infer_raxml_ng_trees(
     model: ipcoal.Model,
     idxs: Union[Sequence[int], None]=None,
     nboots: int=0,
@@ -305,7 +306,7 @@ def  infer_raxml_ng_trees(
     # store arguments to infer method
     kwargs = dict(
         nboots=nboots, nthreads=nthreads, nworkers=nworkers,
-        seed=seed, subst_model=subst_model, 
+        seed=seed, subst_model=subst_model,
         binary_path=binary_path, tmpdir=tmpdir, cleanup=cleanup)
 
     # distribute jobs in parallel
@@ -329,15 +330,13 @@ def  infer_raxml_ng_trees(
         for lidx in idxs:
             if lidx not in pidxs:
                 continue
-            locus = model.df[model.df.locus == lidx]
-
             # if no data then return a star tree.
-            if not locus.nsnps.sum():
-                tree = toytree.tree(locus.genealogy.iloc[0])
-                # tree = tree.mod.collapse_nodes(*range(tree.ntips, tree.nnodes))
-                rasyncs[lidx] = pool.submit(tree.mod.collapse_nodes, **{'min_support': 1000})
-                empty += 1
-            else:
+            # locus = model.df[model.df.locus == lidx]
+            # if not locus.nsnps.sum():
+            #     names = list(chain(*model.get_imap_dict(diploid=diploid).values()))
+            #     rasyncs[lidx] = pool.submit(get_star_tree, names)
+            #     empty += 1
+            # else:
                 # disk-crushing mode.
                 # fname = _write_tmp_phylip_file(model, int(lidx), diploid, tmpdir)
                 # kwargs['alignment'] = fname
@@ -345,12 +344,12 @@ def  infer_raxml_ng_trees(
                 # rasync = pool.submit(infer_raxml_ng_tree_from_phylip, **kwargs)
                 # rasyncs[lidx] = rasync
 
-                # disk-friendly mode, but higher memory-usage.
-                ali = model.write_concat_to_phylip(idxs=int(lidx), diploid=diploid, quiet=True)
-                kwargs['alignment'] = ali
-                kwargs['seed'] = rng.integers(1e12)
-                rasync = pool.submit(infer_raxml_ng_tree_from_alignment, **kwargs)
-                rasyncs[lidx] = rasync
+            # disk-friendly mode, but higher memory-usage.
+            ali = model.write_concat_to_phylip(idxs=int(lidx), diploid=diploid, quiet=True)
+            kwargs['alignment'] = ali
+            kwargs['seed'] = rng.integers(1e12)
+            rasync = pool.submit(infer_raxml_ng_tree_from_alignment, **kwargs)
+            rasyncs[lidx] = rasync
 
     # check for failures
     for job, rasync in rasyncs.items():
@@ -376,6 +375,14 @@ def  infer_raxml_ng_trees(
         rasyncs[i].result().write() for i in sorted(rasyncs)
     ]
     return data
+
+def get_star_tree(names: Sequence[str]) -> toytree.ToyTree:
+    """Return a ToyTree w/ start topology for a list of names."""
+    treenode = toytree.Node(dist=0)
+    for tip in names:
+        treenode._add_child(toytree.Node(name=tip, dist=0))
+    tree = toytree.ToyTree(treenode)
+    return tree
 
 
 if __name__ == "__main__":
