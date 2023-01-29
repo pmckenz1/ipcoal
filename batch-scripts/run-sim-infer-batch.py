@@ -245,6 +245,13 @@ class SlurmDistribute:
         # iterate over all jobs to submit
         nfin = len(list(self.outdir.glob("*-neff*-ctime*-recomb*-nloci*.csv")))
         njobs = self._count_njobs()
+
+        # if all jobs are finished then run concatenation and end.
+        if nfin == njobs:
+            self.combine()
+            sys.exit(0)
+
+        # else run all jobs
         resuming = "Resuming." if resume else ""
         logger.info(f"Submitting {njobs - nfin} jobs. {resuming}")
         for name, script in self.iter_slurm_scripts():
@@ -272,8 +279,12 @@ class SlurmDistribute:
     def combine(self) -> None:
         """Concatenate all CSVs into a one large file."""
         iter_csvs = self.outdir.glob("*.csv")
-        iter_dfs = (pd.read_csv(i, index_col=0) for i in iter_csvs)
-        data = pd.concat(iter_dfs, ignore_index=True)
+        iter_dfs = [pd.read_csv(i, index_col=0) for i in iter_csvs]
+        data = pd.concat([iter_dfs], ignore_index=True)
+        outfile = self.outdir / "concat.csv"
+        data.to_csv(outfile)
+        nfiles = data.shape[0]
+        logger.info(f"All jobs finished. Wrote {nfiles} results to concat file: {outfile}")
 
 def distributed_command_line_parser():
     """Parse command line arguments and return.
