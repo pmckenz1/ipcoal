@@ -119,7 +119,7 @@ def infer_raxml_ng_tree_from_phylip(
 
     # run `raxml-ng [search|all] ...`
     cmd = [
-        binary_path,
+        str(binary_path),
         "--msa", str(fpath),
         "--model", str(subst_model),
         "--redo",
