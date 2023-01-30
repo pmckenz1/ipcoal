@@ -8,7 +8,6 @@ from typing import Union, Sequence, Optional
 import os
 import sys
 import tempfile
-from itertools import chain
 from pathlib import Path
 from subprocess import Popen, PIPE, STDOUT
 from concurrent.futures import ProcessPoolExecutor
@@ -119,12 +118,13 @@ def infer_raxml_ng_tree_from_phylip(
         tmp.unlink()
 
     # run `raxml-ng [search|all] ...`
+    # I believe '--threads auto{X}' is max X threads.
     cmd = [
         str(binary_path),
         "--msa", str(fpath),
         "--model", str(subst_model),
         "--redo",
-        "--threads", str(nthreads),
+        "--threads", f"auto{{nthreads}}",
         "--workers", str(nworkers) if nworkers else 'auto',
         "--nofiles", "interim",
         "--log", "ERROR"
@@ -354,8 +354,8 @@ def infer_raxml_ng_trees(
     # check for failures
     for job, rasync in rasyncs.items():
         if rasync.exception():
-            result = rasync.result()
-            logger.warning(f"fail: {result} locus {job}")
+            logger.error(f"raxml-ng error on loc {job}: {kwargs}")
+            _ = rasync.result()
 
     # log report of empty windows.
     if empty:
