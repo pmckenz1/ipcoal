@@ -132,13 +132,13 @@ def get_admix_interval_as_gens(
     optionally trimmed. If user enters admix times as integers then 
     they are checked only for validation, no trimming.
     """
-    if tree.idx_dict[idx0].is_root() or tree.idx_dict[idx1].is_root():
+    if tree[idx0].is_root() or tree[idx1].is_root():
         raise IpcoalError(f"no shared admix interval for idxs: {idx0} {idx1}")
 
     # get full possible intervals for these two nodes from the tree
-    node0 = tree.idx_dict[idx0]
+    node0 = tree[idx0]
     ival0 = (node0.height, node0.up.height)
-    node1 = tree.idx_dict[idx1]
+    node1 = tree[idx1]
     ival1 = (node1.height, node1.up.height)
 
     low_bin = max([ival0[0], ival1[0]])
