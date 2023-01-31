@@ -411,13 +411,12 @@ class Model:
 
         if not isinstance(self.admixture_edges[0], (list, tuple)):
             raise TypeError("admixture_edges should be a list of tuples.")
-        if isinstance(admixture_edges, tuple):
-            admixture_edges = [admixture_edges]
-        for edge in admixture_edges:
+        if isinstance(self.admixture_edges, tuple):
+            self.admixture_edges = [self.admixture_edges]
+        for edge in self.admixture_edges:
             if len(edge) != 4:
                 raise ValueError(
                     "admixture edges should each be a tuple with 4 values")
-            self.admixture_edges = admixture_edges
 
     def _set_migration(self):
         """Checks admixture tuples for proper configuration.
