@@ -270,7 +270,7 @@ def _get_fast_probability_topology_unchanged_given_b(
     else:
         brlen = t_ub-t_lb
 
-    return (1 / (t_ub - t_lb)) * (pb1 + pb2)
+    return (1 / brlen) * (pb1 + pb2)
 
 
 @njit(parallel=True)
@@ -385,10 +385,12 @@ def _get_fast_probability_tree_unchanged_given_b(arr: np.ndarray) -> float:
     # account for possible 0-length branches
     if tbu == tbl:
         brlen = 1e-9
+        print("0 length edge detected")
     else:
         brlen = tbu-tbl
+        print("nah")
 
-    return (1 / (tbu - tbl)) * sumval
+    return (1 / brlen) * sumval
 
 
 @njit(parallel=True)

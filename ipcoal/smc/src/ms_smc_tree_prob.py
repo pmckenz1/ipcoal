@@ -133,7 +133,12 @@ def get_prob_tree_unchanged_given_b_from_arrays(
         term3 = _get_fij_set_sum(gemb, jidxs, jidxs)
         sumval += term1 + (term2_inner * term2_outer * term3)
         # print(bidx, sumval)
-    return (1 / (tbu - tbl)) * sumval
+
+    if tbu == tbl:
+        brlen = 1e-9
+    else:
+        brlen = tbu-tbl
+    return (1 / brlen) * sumval
 
 
 #####################################################################
