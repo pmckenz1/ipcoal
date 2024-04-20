@@ -489,7 +489,13 @@ def get_probability_tree_unchanged_given_b_from_table(
         # pij component
         term3 = sum(_get_pij(btab, idx, jdx) for jdx in btab.loc[idx:].index)
         prob += term1 + (term2_inner * term2_outer * term3)
-    return (1 / (tbu - tbl)) * prob
+
+        # account for possible 0-length branches
+        if tbu == tbl:
+            brlen = 1e-9
+        else:
+            brlen = tbu-tbl
+    return (1 / brlen) * prob
 
 def get_probability_topology_unchanged_given_b(
     species_tree: ToyTree, genealogy: ToyTree, imap: Dict[str,Sequence[str]], 
@@ -555,7 +561,14 @@ def get_probability_topology_unchanged_given_b_from_table(
     # get sum pb2 from m to end of b
     pb2 = _get_sum_pb2(btab, ptab, mtab)
     # logger.info(f"branch {branch}, sum-pb2={pb2:.3f}")
-    return (1 / (t_ub - t_lb)) * (pb1 + pb2)
+
+    # account for possible 0-length branches
+    if t_ub == t_lb:
+        brlen = 1e-9
+    else:
+        brlen = t_ub-t_lb
+
+    return (1 / brlen) * (pb1 + pb2)
 
 ###################################################################
 # Get probability given genealogy
