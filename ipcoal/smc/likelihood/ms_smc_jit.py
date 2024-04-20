@@ -263,6 +263,13 @@ def _get_fast_probability_topology_unchanged_given_b(
     # get sum pb2 from m to end of b
     pb2 = _get_fast_sum_pb2(btab, ftab, mtab)
     # logger.info(f"branch {branch}, sum-pb2={pb2:.3f}")
+
+    # account for possible 0-length branches
+    if t_ub == t_lb:
+        brlen = 1e-9
+    else:
+        brlen = t_ub-t_lb
+
     return (1 / (t_ub - t_lb)) * (pb1 + pb2)
 
 
@@ -373,6 +380,14 @@ def _get_fast_probability_tree_unchanged_given_b(arr: np.ndarray) -> float:
         for jdx in range(idx, arr.shape[0]):
             term3 += _get_fast_pij(arr, idx, jdx)
         sumval += term1 + (term2_inner * term2_outer * term3)
+
+
+    # account for possible 0-length branches
+    if tbu == tbl:
+        brlen = 1e-9
+    else:
+        brlen = tbu-tbl
+
     return (1 / (tbu - tbl)) * sumval
 
 

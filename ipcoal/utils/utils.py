@@ -139,6 +139,7 @@ def get_admix_interval_as_gens(
     except KeyError as inst:
         raise ValueError("Admixture nodes must be in the tree.") from inst
 
+
     # get full possible intervals for these two nodes from the tree
     node0 = tree[idx0]
     ival0 = (node0.height, node0.up.height)

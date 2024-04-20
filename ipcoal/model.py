@@ -421,7 +421,7 @@ class Model:
             if len(edge) != 4:
                 raise ValueError(
                     "admixture edges should each be a tuple with 4 values")
-            # self.admixture_edges = admixture_edges
+
 
     def _set_migration(self):
         """Checks admixture tuples for proper configuration.
