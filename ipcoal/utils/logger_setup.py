@@ -53,6 +53,28 @@ def set_log_level(
         Option to log to stderr, stdout, or None.
     log_file: Path
         Option to log to a file, or None.
+
+    Examples
+    --------
+    # set ipcoal to log INFO to stderr
+    >>> import ipcoal
+    >>> ipcoal.set_log_level("DEBUG")
+
+    # set ipcoal to log DEBUG to a file. Note: a file logger can be
+    # created alongside the stream logger above and with a different
+    # log_level.
+    >>> ipcoal.set_log_level("DEBUG", log_file="/tmp/log.txt")
+
+    # set ipcoal to log WARNING to stdout. Note: this overrides the
+    # first logger above, as this function will only create one stream
+    # logger and one file logger at a time.
+    >>> import sys
+    >>> ipcoal.set_log_level("INFO", log_out=sys.stdout)
+
+    # get ipcoal logger object and send custom logging messages 
+    >>> from loguru import logger
+    >>> logger = logger.bind(name="ipcoal")
+    >>> logger.info("adding my own custom message to logging.")
     """
     for idx in LOGGERS:
         try:

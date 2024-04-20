@@ -5,6 +5,7 @@
 """
 
 from .src.infer_astral import infer_astral_tree
+from .src.infer_snaq import infer_snaq_network
 from .src.infer_raxml_ng import (
 	infer_raxml_ng_tree, 
 	infer_raxml_ng_trees, 

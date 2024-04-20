@@ -22,22 +22,24 @@ from ipcoal.utils.utils import IpcoalError
 logger = logger.bind(name="ipcoal")
 RAXML = Path(sys.prefix) / "bin" / "raxml-ng"
 BINARY_MISSING = """
-    Cannot find raxml-ng binary {}. Make sure you have
-    raxml-ng installed, which you can do with the following command
-    which also installs required dependencies:
+    Cannot find raxml-ng binary at ({}).
+    Make sure raxml-ng is installed, which you can do with the
+    following command which also installs required dependencies:
 
     >>> conda install raxml-ng -c conda-forge -c bioconda
 
-    Then find the full path where the binary is installed and
-    enter it to this function as the `binary_path` argument.
+    This function should then be able to find the raxml-ng binary
+    in your PATH, but if not, you can enter the full path to the
+    binary as the arg `binary_path` to this function.
 """
+
 
 def _write_tmp_phylip_file(
     model: ipcoal.Model,
-    idxs: Union[int, Sequence[int], None]=None,
-    diploid: bool=False,
-    tmpdir: Optional[Path]=None,
-    ) -> Path:
+    idxs: Union[int, Sequence[int], None] = None,
+    diploid: bool = False,
+    tmpdir: Optional[Path] = None,
+) -> Path:
     """Write concat matrix to a random/tmp named file and return Path.
 
     This is used to separate the phylip writing step from the
@@ -56,17 +58,20 @@ def _write_tmp_phylip_file(
     fname = Path(tmp.name).with_suffix(".phy")
     return fname
 
+
 def infer_raxml_ng_tree_from_alignment(
     alignment: str,
-    nboots: int=0,
-    nthreads: int=4,
-    nworkers: int=4,
-    seed: Optional[int]=None,
-    subst_model: str="GTR+G",
-    binary_path: Union[str, Path]=None,
-    tmpdir: Optional[Path]=None,
-    cleanup: bool=True,
-    ) -> toytree.ToyTree:
+    nboots: int = 0,
+    nthreads: int = 4,
+    nworkers: int = 4,
+    seed: Optional[int] = None,
+    subst_model: str = "GTR+G",
+    binary_path: Union[str, Path] = None,
+    tmpdir: Optional[Path] = None,
+    cleanup: bool = True,
+    do_not_autoscale_threads: bool = False,
+    perf_threads: bool = False,
+) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng from a phylip string.
 
     This takes an alignment string and creates a temporary phylip file
@@ -82,9 +87,15 @@ def infer_raxml_ng_tree_from_alignment(
             out.write(alignment)
 
         tree = infer_raxml_ng_tree_from_phylip(
-            alignment=fname, nboots=nboots, nthreads=nthreads,
-            nworkers=nworkers, seed=seed, subst_model=subst_model,
+            alignment=fname,
+            nboots=nboots,
+            nthreads=nthreads,
+            nworkers=nworkers,
+            seed=seed,
+            subst_model=subst_model,
             binary_path=binary_path,
+            do_not_autoscale_threads=do_not_autoscale_threads,
+            perf_threads=perf_threads,
         )
     if cleanup:
         for tmpf in fname.parent.glob(fname.name + "*"):
@@ -93,15 +104,18 @@ def infer_raxml_ng_tree_from_alignment(
         fname.unlink()
     return tree
 
+
 def infer_raxml_ng_tree_from_phylip(
     alignment: Union[str, Path],
-    nboots: int=0,
-    nthreads: int=4,
-    nworkers: int=4,
-    seed: Optional[int]=None,
-    subst_model: str="GTR+G",
-    binary_path: Union[str, Path]=None,
-    ) -> toytree.ToyTree:
+    nboots: int = 0,
+    nthreads: int = 4,
+    nworkers: int = 4,
+    seed: Optional[int] = None,
+    subst_model: str = "GTR+G",
+    binary_path: Union[str, Path] = None,
+    do_not_autoscale_threads: bool = False,
+    perf_threads: bool = False,
+) -> toytree.ToyTree:
     """Return a single ML tree inferred by raxml-ng.
 
     This is a convenience function for inferring gene trees for loci
@@ -117,14 +131,20 @@ def infer_raxml_ng_tree_from_phylip(
     for tmp in fpath.parent.glob(f"{fpath.name}.*"):
         tmp.unlink()
 
+    # '--threads auto{X}' will use more than X if available, but also
+    # prevents from crashing if X is not available...
+    if do_not_autoscale_threads:
+        threads = str(nthreads)
+    else:
+        threads = f"auto{{nthreads}}"
+
     # run `raxml-ng [search|all] ...`
-    # I believe '--threads auto{X}' is max X threads.
     cmd = [
         str(binary_path),
         "--msa", str(fpath),
         "--model", str(subst_model),
         "--redo",
-        "--threads", f"auto{{nthreads}}",
+        "--threads", threads,
         "--workers", str(nworkers) if nworkers else 'auto',
         "--nofiles", "interim",
         "--log", "ERROR"
@@ -133,6 +153,8 @@ def infer_raxml_ng_tree_from_phylip(
         cmd.extend(["--seed", str(seed)])
     if nboots:
         cmd.extend(["--all", "--bs-trees", str(nboots)])
+    if perf_threads:
+        cmd.extend(["--force", "perf_threads"])
 
     #
     with Popen(cmd, stderr=STDOUT, stdout=PIPE) as proc:
@@ -163,19 +185,22 @@ def infer_raxml_ng_tree_from_phylip(
     tree = toytree.tree(treefile)
     return tree
 
+
 def infer_raxml_ng_tree(
     model: ipcoal.Model,
-    idxs: Union[int, Sequence[int], None]=None,
-    nboots: int=0,
-    nthreads: int=4,
-    nworkers: Optional[int]=None,
-    seed: int=None,
-    diploid: bool=False,
-    subst_model: str="GTR+G",
-    binary_path: Union[str, Path]=None,
-    tmpdir: Optional[Path]=None,
-    remove_tmp_files: bool=True,
-    ) -> toytree.ToyTree:
+    idxs: Union[int, Sequence[int], None] = None,
+    nboots: int = 0,
+    nthreads: int = 4,
+    nworkers: Optional[int] = None,
+    seed: int = None,
+    diploid: bool = False,
+    subst_model: str = "GTR+G",
+    binary_path: Union[str, Path] = None,
+    tmpdir: Optional[Path] = None,
+    remove_tmp_files: bool = True,
+    do_not_autoscale_threads: bool = False,
+    perf_threads: bool = False,
+) -> toytree.ToyTree:
     """Return a gene tree inferred by raxml-ng for one or more loci.
 
     Sequence data is extracted from the model.seqs array and written
@@ -211,6 +236,9 @@ def infer_raxml_ng_tree(
         file. This will raise an error if nsamples is not even.
     binary_path: None, str, or Path
         Path to the raxa binary.
+    perf_threads: bool
+        Override raxml-ng error of suspected CPU oversubscription. This
+        is useful when working on HPC nodes.
 
     Examples
     --------
@@ -225,9 +253,16 @@ def infer_raxml_ng_tree(
 
     # dict w/ TMP file path and params args.
     kwargs = dict(
-        alignment=fpath, nboots=nboots, nthreads=nthreads,
-        nworkers=nworkers, seed=seed, subst_model=subst_model,
-        binary_path=binary_path)
+        alignment=fpath,
+        nboots=nboots,
+        nthreads=nthreads,
+        nworkers=nworkers,
+        seed=seed,
+        subst_model=subst_model,
+        binary_path=binary_path,
+        do_not_autoscale_threads=do_not_autoscale_threads,
+        perf_threads=perf_threads,
+    )
 
     # get result as ToyTree and remove all tmp files.
     tree = infer_raxml_ng_tree_from_phylip(**kwargs)
@@ -244,20 +279,23 @@ def infer_raxml_ng_tree(
 # def infer_raxml_ng_trees_from_sliding_windows():
 #     pass
 
+
 def infer_raxml_ng_trees(
     model: ipcoal.Model,
-    idxs: Union[Sequence[int], None]=None,
-    nboots: int=0,
-    nproc: int=1,
-    seed: int=None,
-    diploid: bool=False,
-    subst_model: str="GTR+G",
-    binary_path: Union[str, Path]=None,
-    tmpdir: Optional[Path]=None,
-    nthreads: int=4,
-    nworkers: int=4,
-    cleanup: bool=True,
-    ) -> pd.DataFrame:
+    idxs: Union[Sequence[int], None] = None,
+    nboots: int = 0,
+    nproc: int = 1,
+    seed: int = None,
+    diploid: bool = False,
+    subst_model: str = "GTR+G",
+    binary_path: Union[str, Path] = None,
+    tmpdir: Optional[Path] = None,
+    nthreads: int = 4,
+    nworkers: int = 4,
+    cleanup: bool = True,
+    do_not_autoscale_threads: bool = False,
+    perf_threads: bool = False,
+) -> pd.DataFrame:
     r"""Return a DataFrame w/ inferred gene trees at every locus.
 
     Sequence data is extracted from the model.seqs array and written
@@ -286,8 +324,12 @@ def infer_raxml_ng_trees(
         ...
     binary_path: None, str, or Path
         Path to the raxml binary.
+    nproc: int
+        Number of workers used here to distribute parallel raxml jobs
+    nthreads: int
+        Number of threads per raxml tree inference job.
     nworkers: int
-        ...
+        Number of workers used by raxml to distribute bootstrap jobs.
     tmpdir: Path or None
         Path to store temporary files. Default is tempdir (/tmp).
     cleanup: bool
@@ -305,9 +347,17 @@ def infer_raxml_ng_trees(
 
     # store arguments to infer method
     kwargs = dict(
-        nboots=nboots, nthreads=nthreads, nworkers=nworkers,
-        seed=seed, subst_model=subst_model,
-        binary_path=binary_path, tmpdir=tmpdir, cleanup=cleanup)
+        nboots=nboots,
+        nthreads=nthreads,
+        nworkers=nworkers,
+        seed=seed,
+        subst_model=subst_model,
+        binary_path=binary_path,
+        tmpdir=tmpdir,
+        cleanup=cleanup,
+        do_not_autoscale_threads=do_not_autoscale_threads,
+        perf_threads=perf_threads,
+    )
 
     # distribute jobs in parallel
     rng = np.random.default_rng(seed)
@@ -365,7 +415,8 @@ def infer_raxml_ng_trees(
 
     # create results as a dataframe
     data = model.df[model.df.locus.isin(idxs)]
-    data = (data
+    data = (
+        data
         .groupby("locus")
         .agg({"start": "min", "end": "max", "nbps": "sum", "nsnps": "sum"})
         .reset_index()
@@ -375,6 +426,7 @@ def infer_raxml_ng_trees(
         rasyncs[i].result().write() for i in sorted(rasyncs)
     ]
     return data
+
 
 def get_star_tree(names: Sequence[str]) -> toytree.ToyTree:
     """Return a ToyTree w/ start topology for a list of names."""
@@ -387,11 +439,11 @@ def get_star_tree(names: Sequence[str]) -> toytree.ToyTree:
 
 if __name__ == "__main__":
 
-    BIN = "/home/deren/miniconda3/envs/ipyrad/bin/raxml-ng"
+    # BIN = "/home/deren/miniconda3/envs/ipyrad/bin/raxml-ng"
     TREE = toytree.rtree.unittree(ntips=5, seed=123, treeheight=1e6)
     MODEL = ipcoal.Model(TREE, Ne=5e4, subst_model="jc69")
     MODEL.sim_loci(nloci=10, nsites=200)
-    TREES = infer_raxml_ng_trees(MODEL, binary_path=BIN, nthreads=2, nworkers=2, nboots=10, seed=1)
+    TREES = infer_raxml_ng_trees(MODEL, nthreads=2, nworkers=1, nproc=2, nboots=10, seed=1)
     print(TREES)
 
     # print({i: j.result().write(None) for (i, j) in TREES.items()})

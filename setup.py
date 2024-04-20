@@ -41,7 +41,7 @@ setup(
     author="Patrick McKenzie and Deren Eaton",
     author_email="p.mckenzie@columbia.edu",
     install_requires=install_requires,
-    entry_points={'console_scripts': ['ms-smc-mcmc = ipcoal.smc.likelihood.mcmc:cli']},    
+    entry_points={'console_scripts': ['ms-smc-mcmc = ipcoal.smc.likelihood.mcmc:cli']},
     license='GPL',
     classifiers=[
         'Programming Language :: Python',
@@ -50,6 +50,6 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',        
+        'Programming Language :: Python :: 3.11',
     ],
 )

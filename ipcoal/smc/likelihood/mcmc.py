@@ -2,6 +2,7 @@
 
 """Posterior sampling of demographic model parameters under the MS-SMC' by Metropolis-Hastings MCMC
 
+This is loaded as a CLI tool when ipcoal is installed.
 """
 
 from typing import Tuple, Dict, Sequence, Any
@@ -46,6 +47,7 @@ class Prior(ABC):
     def get_dist_rv(self) -> stats._distn_infrastructure.rv_frozen:
         """Return loglik of the params given the prior."""
 
+
 class PriorUniform(Prior):
     """A uniform prior..."""
 
@@ -53,11 +55,13 @@ class PriorUniform(Prior):
         """Return loglik of the params given the prior."""
         return stats.uniform.freeze(*self.params)
 
+
 class PriorGamma(Prior):
     """A gamma prior."""
     def get_dist_rv(self) -> stats._distn_infrastructure.rv_frozen:
         """Return loglik of the params given the prior."""
         return stats.gamma.freeze(a=self.params[0], scale=self.params[1])
+
 
 def get_prior(distribution: str, *params: float) -> Prior:
     """Return a Prior distribution object for the specified distribution."""
@@ -65,6 +69,7 @@ def get_prior(distribution: str, *params: float) -> Prior:
     if distribution.startswith("u"):
         return PriorUniform(*params)
     return PriorGamma(*params)
+
 
 #########################################################################
 #########################################################################
@@ -92,7 +97,7 @@ class Mcmc(ABC):
         seed: int,
         jumpsize: int,
         outpath: Path,
-        ):
+    ):
         # store the inputs
         self.recomb = recomb
         self.lengths = lengths
@@ -125,7 +130,7 @@ class Mcmc(ABC):
         """Return log-likelihood of the data given the params."""
         return self.prior.log_likelihood(params)
 
-    def run(self, nsamples: int=1000, burnin=2000, sample_interval=5, print_interval=25):
+    def run(self, nsamples: int = 1000, burnin: int = 2000, sample_interval: int = 5, print_interval: int = 25):
         """Run to sample from the posterior distribution.
 
         Parameters
@@ -248,6 +253,7 @@ class McmcTree(Mcmc):
             )
         return loglik
 
+
 class McmcTopology(Mcmc):
     def log_likelihood(self, params) -> float:
         """Return log-likelihood of the data (lengths, edicts) given the params."""
@@ -260,6 +266,7 @@ class McmcTopology(Mcmc):
                 lengths=lengths
             )
         return loglik
+
 
 class McmcCombined(Mcmc):
     def log_likelihood(self, params) -> float:
@@ -291,7 +298,7 @@ def simulate_and_get_embeddings(
     data_type: str,
     threads: int,
     nloci: int,
-    ) -> Tuple[np.ndarray, ipcoal.smc.likelihood.Embedding]:
+) -> Tuple[np.ndarray, ipcoal.smc.likelihood.Embedding]:
     """Simulate a tree sequence, get embedding info, and return.
     """
     # set Ne values on species tree
@@ -353,7 +360,7 @@ def simulate_and_get_embeddings(
 def get_species_tree(
     ntips: int,
     root_height: float,
-    ) -> toytree.ToyTree:
+) -> toytree.ToyTree:
     """Return a species tree with same height given ntips."""
     if ntips == 1:
         sptree = toytree.tree("(r);")
@@ -384,7 +391,7 @@ def main(
     nloci: int,
     *args,
     **kwargs,
-    ) -> None:
+) -> None:
     """Run the main function of the script.
 
     This simulates a tree sequence under a given demographic model
@@ -475,7 +482,7 @@ def main(
 
     # if adding to existing data then concatenate first.
     # if outpath.exists():
-        # posterior = np.concatenate([sampled, posterior])
+    #     posterior = np.concatenate([sampled, posterior])
     np.save(outpath, posterior)
     logger.info(f"saved posterior w/ {posterior.shape[0]} samples to {outpath}.")
 

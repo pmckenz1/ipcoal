@@ -21,7 +21,7 @@ logger = logger.bind(name="ipcoal")
 
 ################################################################
 ################################################################
-## Piece-wise constants function
+# Piece-wise constants function
 ################################################################
 ################################################################
 
@@ -77,6 +77,7 @@ def _get_fast_pij(itab: np.ndarray, idx: int, jdx: int) -> float:
     term3 = np.exp(term3_inner_a - term3_inner_b)
     return term1 * term2 * term3
 
+
 @njit
 def _get_fast_sum_pb1(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> float:
     """Return value for the $p_{b,1}$ variable.
@@ -130,6 +131,7 @@ def _get_fast_sum_pb1(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> f
         pbval += (1 / row[4]) * (row[5] + (first_term * second_term))
     return pbval
 
+
 @njit
 def _get_fast_sum_pb2(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> float:
     """Return value for the $p_{b,2}$ variable.
@@ -179,7 +181,7 @@ def _get_fast_sum_pb2(btab: np.ndarray, ftab: np.ndarray, mtab: np.ndarray) -> f
 
 ################################################################
 ################################################################
-## TOPOLOGY CHANGE
+# TOPOLOGY CHANGE
 ################################################################
 ################################################################
 
@@ -190,7 +192,7 @@ def _get_fast_probability_of_topology_change(
     barr: np.ndarray,
     sumlen: float,
     rarr: np.ndarray,
-    ) -> float:
+) -> float:
     """Return probability that recombination causes a topology-change.
 
     """
@@ -228,7 +230,7 @@ def _get_fast_probability_topology_unchanged_given_b(
     branch: int,
     sibling: int,
     parent: int,
-    ) -> float:
+) -> float:
     """Return probability of tree-change that does not change topology.
 
     Parameters
@@ -271,7 +273,7 @@ def get_fast_waiting_distance_to_topology_change_rates(
     sarr: np.ndarray,
     rarr: np.ndarray,
     recombination_rate: float,
-    ) -> np.ndarray:
+) -> np.ndarray:
     """return LAMBDA rate parameters for waiting distance prob density.
 
     """
@@ -292,7 +294,7 @@ def get_fast_waiting_distance_to_topology_change_rates(
 
 ################################################################
 ################################################################
-## TREE CHANGE
+# TREE CHANGE
 ################################################################
 ################################################################
 
@@ -301,7 +303,7 @@ def _get_fast_probability_of_tree_change(
     garr: np.ndarray,
     barr: np.array,
     sumlen: float,
-    ) -> float:
+) -> float:
     """Return probability that recombination causes a tree-change.
 
     Returns the probability that recombination occurring on this
@@ -380,7 +382,7 @@ def get_fast_waiting_distance_to_tree_change_rates(
     barr: np.ndarray,
     sarr: np.ndarray,
     recombination_rate: float,
-    ) -> np.ndarray:
+) -> np.ndarray:
     """Return LAMBDA rate parameters for waiting distance prob. density.
 
     Note
@@ -429,7 +431,7 @@ def get_tree_distance_loglik(
     params: np.ndarray,
     recomb: float,
     lengths: np.ndarray,
-    ) -> float:
+) -> float:
     """Return -loglik of tree-sequence waiting distances between
     tree change events given species tree parameters.
 
@@ -463,7 +465,7 @@ def get_tree_distance_loglik(
         earr, barr, sarr, recomb)
 
     # get logpdf of observed waiting distances given rates (lambdas)
-    logliks = stats.expon.logpdf(scale=1/rates, x=lengths)
+    logliks = stats.expon.logpdf(scale=1 / rates, x=lengths)
     return -np.sum(logliks)
 
 
@@ -472,7 +474,7 @@ def get_topology_distance_loglik(
     params: np.ndarray,
     recomb: float,
     lengths: np.ndarray,
-    ) -> float:
+) -> float:
     """Return -loglik of tree-sequence waiting distances between
     topology change events given species tree parameters.
 
@@ -503,7 +505,7 @@ def get_topology_distance_loglik(
     rates = get_fast_waiting_distance_to_topology_change_rates(
         earr, barr, sarr, rarr, recomb)
     # get logpdf of observed waiting distances given rates (lambdas)
-    logliks = stats.expon.logpdf(scale=1/rates, x=lengths)
+    logliks = stats.expon.logpdf(scale=1 / rates, x=lengths)
     return -np.sum(logliks)
 
 
@@ -522,18 +524,28 @@ if __name__ == "__main__":
 
     RECOMB = 2e-9
     SEED = 123
-    NEFF = 150_000
+    # NEFF = 150_000
     ROOT_HEIGHT = 1e6
     NSPECIES = 2
     NSAMPLES = 4
-    NSITES = 1e5
+    NSITES = 2e5
 
-    sptree = toytree.rtree.baltree(NSPECIES).mod.edges_scale_to_root_height(ROOT_HEIGHT, include_stem=True)
-
-    sptree.set_node_data("Ne", {0: 2e5, 1: 3e5, 2: 4e5}, inplace=True)
+    sptree = toytree.rtree.baltree(NSPECIES, treeheight=ROOT_HEIGHT)
+    sptree.set_node_data("Ne", {0: 2e5, 1: 2e5, 2: 2e5}, inplace=True)
     model = ipcoal.Model(sptree, nsamples=NSAMPLES, recomb=RECOMB, seed_trees=SEED)
     model.sim_trees(1, NSITES)
     imap = model.get_imap_dict()
+
+    genealogies = toytree.mtree(model.df.genealogy)
+    glens = model.df.nbps.values
+    G = TreeEmbedding(model.tree, genealogies, imap)
+    print(G.table, G.earr.shape)
+
+    values = np.linspace(10_000, 400_000, 31)
+    for val in values:
+        loglik = get_tree_distance_loglik(G, np.array([val, val, val]), 2e-9, glens)
+        print(f"{val:.2e} {loglik:.2f}")
+    raise SystemExit(0)
 
     # genealogy topo change interval lengths
     topo_lengths = ipcoal.smc.likelihood.get_topology_interval_lengths(model)
@@ -544,19 +556,23 @@ if __name__ == "__main__":
     # load all genealogies as Toytrees
     genealogies = toytree.mtree(model.df.genealogy)
 
+
+
+
     tdata = TopologyEmbedding(model.tree, genealogies, imap, nproc=4)
     tdata.table[tdata.table.gindex == 10]
 
     g = tdata._get_genealogies()
 
-    print([ipcoal.smc.get_probability_of_topology_change(model.tree, g[i], imap) for i in range(10)])
+    # NOTE SLIGHT FLOATING POINT VARIATION AT >16th decimal
+    print([ipcoal.smc.get_probability_topology_change(model.tree, g[i], imap) for i in range(10)])
     print(
-    [ipcoal.smc.likelihood.ms_smc_jit._get_fast_probability_of_topology_change(
-        tdata.earr[tdata.earr[:, 6] == i],
-        tdata.barr[i],
-        tdata.sarr[i],
-        tdata.rarr[i],
-    ) for i in range(10)]
+        [ipcoal.smc.likelihood.ms_smc_jit._get_fast_probability_of_topology_change(
+            tdata.earr[tdata.earr[:, 6] == i],
+            tdata.barr[i],
+            tdata.sarr[i],
+            tdata.rarr[i],
+        ) for i in range(10)]
     )
 
     # # Setup a species tree with edge lengths in generations

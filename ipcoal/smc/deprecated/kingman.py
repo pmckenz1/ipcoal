@@ -2,7 +2,7 @@
 
 """Kingman n-coalescent probability functions.
 
-NOT YET IMPLEMENTED.
+DEPRECATED. The msc likelihood function can apply similarly to single pops.
 
 References
 ----------
@@ -27,20 +27,19 @@ import ipcoal
 logger = logger.bind(name="ipcoal")
 
 
-
-def get_gene_tree_log_prob_single_pop(neff: float, coal_times: np.ndarray):
+def get_loglik_gene_tree_kingman(neff: float, coal_times: np.ndarray):
     r"""Return log prob density of a gene tree in a single population.
 
     All labeled histories have equal probability in a single population
-    model, and so the probability of a gene tree is calculated only 
+    model, and so the probability of a gene tree is calculated only
     from the coalescent times.
 
     Time to the first coalescent event is geometric with parameter
-    k_choose_2 * 1 / 2N. Kingman's coalescent makes a continous 
+    k_choose_2 * 1 / 2N. Kingman's coalescent makes a continous
     approximation of this function, where waiting time is exponentially
     distributed.
 
-    Modified from equation 5 of Rannala et al. (2020) to use edge 
+    Modified from equation 5 of Rannala et al. (2020) to use edge
     lens in units of gens, and population neffs, instead of thetas.
 
     $ {2 \choose \theta}^{n-1} e^{-\frac{2}{\theta}} $
@@ -51,7 +50,7 @@ def get_gene_tree_log_prob_single_pop(neff: float, coal_times: np.ndarray):
         Effective population size
     coal_times: np.ndarray, shape=2, dtype=float
         An array of ordered coalescent times for all internal nodes
-        in a tree except the root, where n = ntips in the tree the 
+        in a tree except the root, where n = ntips in the tree the
         order of times represents when n= [n-1, n-2, ..., 2].
 
     Example
@@ -106,7 +105,7 @@ def optim_func(neff: float, coal_times: np.ndarray):
     >>> axes.vlines([neff]);
     """
     assert coal_times.ndim == 2, "coal_times must be shape: (ntrees, ncoals)"
-    logprobs = [get_gene_tree_log_prob_single_pop(neff, i) for i in coal_times]
+    logprobs = [get_loglik_gene_tree_kingman(neff, i) for i in coal_times]
     loglik = np.sum(logprobs)
     if loglik == np.inf:
         return loglik
@@ -114,7 +113,7 @@ def optim_func(neff: float, coal_times: np.ndarray):
 
 
 if __name__ == "__main__":
-    
+
     ipcoal.set_log_level("INFO")
 
     # simulate genealogies
@@ -141,12 +140,18 @@ if __name__ == "__main__":
     neff = 1e6
 
     # simulate a genealogy
-    model = ipcoal.Model(None, Ne=neff, nsamples=25)
-    model.sim_trees(1)
-    gtree = toytree.tree(model.df.genealogy[0])
-    coals = np.array(sorted(gtree.get_node_data("height")[gtree.ntips:]))
-    xs = np.logspace(np.log10(neff) - 1, np.log10(neff) + 1, 10)
-    logliks = [get_gene_tree_log_prob_single_pop(i, coals) for i in xs]
+    model = ipcoal.Model(None, Ne=neff, nsamples=10)
+
+    model.sim_trees(500)
+    logliks = []
+    for idx in model.df.index:
+        gtree = toytree.tree(model.df.genealogy[idx])
+        coals = np.array(sorted(gtree.get_node_data("height")[gtree.ntips:]))
+        xs = np.logspace(np.log10(neff) - 1, np.log10(neff) + 1, 20)
+        logliks.append([get_loglik_gene_tree_kingman(i, coals) for i in xs])
+
+    logliks = np.array(logliks).sum(axis=0)
+
     canvas, axes, mark = toyplot.plot(
         xs, logliks,
         xscale="log", height=300, width=400,

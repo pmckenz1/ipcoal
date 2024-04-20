@@ -8,12 +8,14 @@ downstream analyses.
 """
 
 from typing import List, Tuple, Optional, Dict, Union, Iterator
-import os
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import msprime as ms
 from msprime.mutations import mutation_model_factory
 import toytree
+from toytree.color import ColorType
+from toytree.drawing.src.draw_demography import EmbeddingPlot
 from loguru import logger
 
 from ipcoal.io.writer import Writer
@@ -135,26 +137,27 @@ class Model:
     """
     def __init__(
         self,
-        tree: Optional[toytree.ToyTree]=None,
+        tree: Optional[toytree.ToyTree] = None,
         Ne: Optional[int] = None,
-        nsamples: Union[int, Dict[Union[str,int],int]]=1,
-        admixture_edges: Optional[List[Tuple[int,int,float,float]]]=None,
-        mut: Union[float, ms.RateMap]=1e-8,
-        recomb: Union[float, ms.RateMap]=1e-9,
-        ancestry_model: Union[str, ms.AncestryModel]="hudson",
-        subst_model: Union[str, ms.MutationModel]="JC69",
-        seed_trees: Optional[int]=None,
-        seed_mutations: Optional[int]=None,
-        store_tree_sequences: bool=False,
-        record_full_arg: bool=False,
+        nsamples: Union[int, Dict[Union[str, int], int]] = 1,
+        admixture_edges: Optional[List[Tuple[int, int, float, float]]] = None,
+        mut: Union[float, ms.RateMap] = 1e-8,
+        recomb: Union[float, ms.RateMap] = 1e-9,
+        ancestry_model: Union[str, ms.AncestryModel] = "hudson",
+        subst_model: Union[str, ms.MutationModel] = "JC69",
+        seed_trees: Optional[int] = None,
+        seed_mutations: Optional[int] = None,
+        store_tree_sequences: bool = False,
+        record_full_arg: bool = False,
+        discrete_genome: bool = True,
         **kwargs,
-        ):
+    ):
 
         # legacy support warning messages
         self._warn_bad_kwargs(kwargs)
 
         # store user input args
-        self.tree = tree if tree is not None else "(p);"
+        self.tree = tree if tree is not None else "(p:0);"
         self.neff = Ne       # upper-case only used in input arg.
         self.nsamples = nsamples
         self.admixture_edges = admixture_edges
@@ -164,6 +167,7 @@ class Model:
         self.subst_model = subst_model
         self.store_tree_sequences = store_tree_sequences
         self.record_full_arg = record_full_arg
+        self.discrete_genome = discrete_genome
 
         # public attrs to be filled, or storing init args.
         self.samples: List[ms.SampleSet] = None
@@ -324,7 +328,7 @@ class Model:
                 "  nsamples=2 \n"
                 "  nsamples={'A': 2, 'B': 2} \n"
                 "  nsamples={0: 2, 1: 2}\n"
-                )
+            )
 
         # samples is now a dict {spnames: int}, e.g., {n0: 2, n1: 2, ...}
         # store sum n samples
@@ -411,13 +415,13 @@ class Model:
 
         if not isinstance(self.admixture_edges[0], (list, tuple)):
             raise TypeError("admixture_edges should be a list of tuples.")
-        if isinstance(admixture_edges, tuple):
-            admixture_edges = [admixture_edges]
-        for edge in admixture_edges:
+        if isinstance(self.admixture_edges, tuple):
+            self.admixture_edges = [self.admixture_edges]
+        for edge in self.admixture_edges:
             if len(edge) != 4:
                 raise ValueError(
                     "admixture edges should each be a tuple with 4 values")
-            self.admixture_edges = admixture_edges
+            # self.admixture_edges = admixture_edges
 
     def _set_migration(self):
         """Checks admixture tuples for proper configuration.
@@ -478,7 +482,8 @@ class Model:
         events = []
 
         # add split events
-        for node in self.tree.traverse("levelorder"):
+        # for node in self.tree.traverse("levelorder"):
+        for node in self.tree.traverse("postorder"):
             if len(node.children) > 1:
                 events.append({
                     'type': 'split',
@@ -596,16 +601,16 @@ class Model:
 
     def draw_seqview(
         self,
-        idx: Optional[int]=None,
-        start: Optional[int]=None,
-        end: Optional[int]=None,
-        width: Optional[int]=None,
-        height: Optional[int]=None,
-        show_text: bool=False,
-        scrollable: bool=True,
-        max_width: int=1_000,
+        idx: Optional[int] = None,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        show_text: bool = False,
+        scrollable: bool = True,
+        max_width: int = 1_000,
         **kwargs,
-        ) -> ('toyplot.Canvas', 'toyplot.Table'):
+    ) -> ('toyplot.Canvas', 'toyplot.Table'):
         """Returns a toyplot visualization of the simulated sequences.
 
         Parameters
@@ -646,12 +651,12 @@ class Model:
         return canvas, table
 
     def draw_genealogy(
-        self, 
-        idx: Optional[int]=None, 
-        show_substitutions: bool=False, 
+        self,
+        idx: Optional[int] = None,
+        show_substitutions: bool = False,
         **kwargs,
-        ):
-        """Return a toytree drawing of the genealogy.
+    ):
+        """Return a toytree drawing of a single genealogy.
 
         Parameters
         ----------
@@ -659,16 +664,12 @@ class Model:
             index of the genealogy to draw from the (Model.df) dataframe.
         show_substitutions: bool
             If True then substitutions are shown on the branches of the
-            genealogy. For this you must have initialized the Model 
+            genealogy. For this you must have initialized the Model
             with `store_tree_sequences=True` to retain substitutions.
         """
         return draw_genealogy(self, idx, show_substitutions, **kwargs)
-        # idx = idx if idx else 0
-        # tree = toytree.tree(self.df.genealogy[idx])
-        # canvas, axes, mark = tree.draw(ts='c', tip_labels=True, **kwargs)
-        # return canvas, axes, mark
 
-    def draw_genealogies(self, idxs: Optional[List[int]]=None, **kwargs):
+    def draw_genealogies(self, idxs: Optional[List[int]] = None, **kwargs):
         """Returns a toytree multitree drawing of several genealogies.
 
         Parameters
@@ -679,7 +680,7 @@ class Model:
         """
         if idxs is None:
             idxs = list(self.df.index)[:4]
-        mtre = toytree.mtree(self.df.genealogy[idxs].tolist())
+        mtre = toytree.mtree(self.df.genealogy[idxs])
         canvas, axes, mark = mtre.draw(ts='c', tip_labels=True, **kwargs)
         return canvas, axes, mark
 
@@ -697,7 +698,36 @@ class Model:
             **kwargs)
         return canvas, axes, mark
 
-    def draw_demography(self, idx=None, spacer=0.25, ymax=None, **kwargs):
+    def draw_demography(
+        self,
+        idx=None,
+        # spacer=0.25,
+        container_width: int = 350,
+        container_height: int = 300,
+        container_blend: bool = False,
+        container_fill: ColorType = "black",
+        container_fill_opacity: float = 0.25,
+        container_fill_opacity_alternate: bool = True,
+        container_stroke: ColorType = "black",
+        container_stroke_opacity: float = 1.0,
+        container_stroke_width: float = 2,
+        container_root_height: Union[int, bool] = True,
+        container_interval_spacing: float = 1.5,
+        container_interval_minwidth: float = 2,
+        container_interval_maxwidth: float = 8,
+        node_fill: ColorType = "black",
+        node_fill_opacity: float = 1.0,
+        node_stroke: ColorType = None,
+        node_stroke_width: int = 1,
+        node_size: int = 5,
+        edge_stroke: ColorType = "black",
+        edge_stroke_width: int = 2,
+        edge_stroke_inherit: bool = True,
+        edge_stroke_opacity: float = 1.0,
+        edge_samples: int = 10,
+        edge_variance: float = 0.0,
+        tip_labels_size: int = 10,
+    ):
         """Return drawing of parameterized demographic model.
 
         A genealogy can also be embedded in the demographic model by
@@ -711,25 +741,89 @@ class Model:
         --------
         >>> ...
         """
-        # bail out if self.admixture_edges
-        if self.admixture_edges:
-            raise NotImplementedError(
-                "admixture_edges are not yet supported in demography drawing.")
+        if (self.df is None) and (idx is not None):
+            raise IpcoalError("You must first call a simulation method.")
+
+        # # bail out if self.admixture_edges
+        # if self.admixture_edges:
+        #     raise NotImplementedError(
+        #         "admixture_edges are not yet supported in demography drawing.")
 
         # return only the container
         if idx is None:
-            ctre = toytree.container(self.tree, idx=0, spacer=spacer, **kwargs)
+
+            if self.tree.ntips == 1:
+                gtree = toytree.rtree.coaltree(5)
+                emb = EmbeddingPlot(
+                    self.tree.treenode.Ne, gtree, None,
+                    blend=container_blend,
+                    spacing=container_interval_spacing,
+                    min_width=container_interval_minwidth,
+                    max_width=container_interval_maxwidth,
+                )
+            else:
+                imap = self.get_imap_dict()
+                if self.df is None:
+                    self.sim_trees(1)
+                    gtree = self.df.genealogy[0]
+                    self.seqs = None
+                    self.df = None
+                else:
+                    gtree = self.df.genealogy[0]
+                emb = EmbeddingPlot(
+                    self.tree, gtree, imap,
+                    blend=container_blend,
+                    spacing=container_interval_spacing,
+                    min_width=container_interval_minwidth,
+                    max_width=container_interval_maxwidth,
+                )
+                container_root_height = self.tree.treenode.height * 0.2
+            emb.add_container(
+                container_width,
+                container_height,
+                container_fill,
+                container_fill_opacity,
+                container_fill_opacity_alternate,
+                container_stroke,
+                container_stroke_opacity,
+                container_stroke_width,
+                container_root_height,
+            )
 
         # return genealogy within container
         else:
-            ctre = toytree.container(self, idx=idx, spacer=spacer, **kwargs)
-
-        # scale ymax to not require all coalescences
-        if ymax is None:
-            ctre.axes.y.domain.max = self.tree.treenode.height
-        elif isinstance(ymax, (int, float)):
-            ctre.axes.y.domain.max = ymax
-        return ctre.canvas, ctre.axes
+            if self.tree.ntips == 1:
+                sptree = self.tree.treenode.Ne
+                imap = None
+            else:
+                sptree = self.tree
+                imap = self.get_imap_dict()
+            gtree = toytree.tree(self.df.genealogy[idx])
+            emb = EmbeddingPlot(sptree, gtree, imap, blend=container_blend)
+            emb.draw(
+                container_width,
+                container_height,
+                container_fill,
+                container_fill_opacity,
+                container_fill_opacity_alternate,
+                container_stroke,
+                container_stroke_opacity,
+                container_stroke_width,
+                container_root_height,
+                node_fill,
+                node_fill_opacity,
+                node_stroke,
+                node_stroke_width,
+                node_size,
+                edge_stroke,
+                edge_stroke_width,
+                edge_stroke_inherit,
+                edge_stroke_opacity,
+                edge_samples,
+                edge_variance,
+                tip_labels_size,
+            )
+        return emb.canvas, emb.axes
 
     def draw_tree_sequence(self, **kwargs):
         """Return a toytree TreeSequence drawing."""
@@ -739,7 +833,7 @@ class Model:
     # MSPRIME simulation methods
     # ----------------------------------------------------------------
 
-    def get_tree_sequence(self, nsites: int=1) -> 'tskit.trees.TreeSequence':
+    def get_tree_sequence(self, nsites: int = 1) -> 'tskit.trees.TreeSequence':
         """Return a mutated TreeSequence from this demographic model.
 
         Note
@@ -762,7 +856,7 @@ class Model:
             sequence_length=(None if self._recomb_is_map else nsites),
             recombination_rate=(None if self._recomb_is_map else self.recomb),
             random_seed=self.rng_trees.integers(2**31),
-            discrete_genome=True,
+            discrete_genome=self.discrete_genome,
             record_full_arg=self.record_full_arg,
             model=self.ancestry_model,
         )
@@ -771,27 +865,33 @@ class Model:
             rate=self.mut,
             model=self.subst_model,
             random_seed=self.rng_muts.integers(2**31),
-            discrete_genome=True,
+            discrete_genome=self.discrete_genome,
         )
         return mutated_ts
 
     def _get_tree_sequence_generator(
         self,
-        # seed: int,
-        nsites: int=1,
-        snp: bool=False,
-        ) -> Iterator['tskit.trees.TreeSequence']:
+        nsites: int = 1,
+        snp: bool = False,
+        seed: Optional[int] = None,
+    ) -> Iterator['tskit.trees.TreeSequence']:
         """Return a TreeSequence generator from `ms.sim_ancestry`.
 
         This function is used internally in `sim_trees`, `sim_loci`
         and `sim_snps` to sample genealogies for N unlinked regions.
+        In contrast to .get_tree_sequence() this is faster if you
+        want many independent tree sequences with the same parameters
+        but with different starting seeds.
 
         Parameters
         ----------
-        seed: int
-            This requires a seed, and the internal functions that
-            use this function should pre-generate the seeds
+        seed: None, int, or numpy RNG
+            If None then an integer is drawn from the Model.rng_trees
+            generator. If a seed is entered it is used instead of this.
         """
+        # sample from RNG if no seed is provided
+        if seed is None:
+            seed = self.rng_trees.integers(2**31)
         # snp flag to ensure a single genealogy is returned
         if snp and nsites != 1:
             raise IpcoalError(
@@ -802,8 +902,8 @@ class Model:
             sequence_length=(None if self._recomb_is_map else nsites),
             recombination_rate=(None if snp or self._recomb_is_map else self.recomb),
             num_replicates=(int(1e20) if snp else 1),
-            random_seed=self.rng_trees.integers(2**31),
-            discrete_genome=True,
+            random_seed=seed,
+            discrete_genome=self.discrete_genome,
             record_full_arg=self.record_full_arg,
             model=self.ancestry_model,
         )
@@ -811,10 +911,11 @@ class Model:
 
     def sim_trees(
         self,
-        nloci: int=1,
-        nsites: int=1,
-        precision: int=14,
-        ) -> None:
+        nloci: int = 1,
+        nsites: int = 1,
+        precision: int = 14,
+        nproc: int = 1,
+    ) -> None:
         """Simulate tree sequence without mutations
 
         Record tree sequence without simulating any sequence data.
@@ -831,6 +932,10 @@ class Model:
         precision: float
             The precision of float values recorded in newick tree
             strings in the .df output summary table.
+        nproc: int
+            Number of parallel jobs. Default=1 (no parallel). The same
+            exact result is returned based on rng_trees regardless of
+            parallelization. Speed-up is less than linear with nproc.
 
         See Also
         --------
@@ -844,14 +949,14 @@ class Model:
         >>> mod.sim_trees(nloci=1, nsites=1000)
         >>> mod.df
         """
-        sim_trees(self, nloci, nsites, precision)
+        sim_trees(self, nloci, nsites, precision, nproc)
 
     def sim_loci(
         self,
-        nloci: int=1,
-        nsites: int=1,
-        precision: int=14,
-        ) -> None:
+        nloci: int = 1,
+        nsites: int = 1,
+        precision: int = 14,
+    ) -> None:
         """Simulate tree sequence for N loci of length M sites.
 
         Parameters
@@ -889,7 +994,7 @@ class Model:
         repeat_on_trees: bool = False,
         precision: int = 14,
         # exclude_fixed: bool = False,
-        ) -> None:
+    ) -> None:
         """Simulate N *unlinked* variable sites (SNPs).
 
         Parameters
@@ -1014,13 +1119,13 @@ class Model:
 
     def write_vcf(
         self,
-        name: str=None,
-        outdir: str="./",
-        diploid: bool=False,
-        bgzip: bool=False,
-        quiet: bool=False,
-        fill_missing_alleles: bool=True,
-        ):
+        name: str = None,
+        outdir: str = "./",
+        diploid: bool = False,
+        bgzip: bool = False,
+        quiet: bool = False,
+        fill_missing_alleles: bool = True,
+    ):
         """Writes variant sites to VCF (variant call format) file.
 
         Parameters
@@ -1059,13 +1164,13 @@ class Model:
 
     def write_loci_to_phylip(
         self,
-        outdir: str="./",
-        idxs: List[int]=None,
-        name_prefix: str=None,
-        name_suffix: str=None,
-        diploid: bool=False,
-        quiet: bool=False,
-        ):
+        outdir: str = "./",
+        idxs: List[int] = None,
+        name_prefix: str = None,
+        name_suffix: str = None,
+        diploid: bool = False,
+        quiet: bool = False,
+    ):
         """Write loci in .phy format to separate files in shared dir.
 
         Parameters
@@ -1097,12 +1202,12 @@ class Model:
 
     def write_concat_to_phylip(
         self,
-        name: str=None,
-        outdir: str="./",
-        idxs: List[int]=None,
-        diploid: bool=False,
-        quiet: bool=False,
-        ):
+        name: str = None,
+        outdir: str = "./",
+        idxs: List[int] = None,
+        diploid: bool = False,
+        quiet: bool = False,
+    ):
         """Write concatenated sequence data to a single phylip file.
 
         Parameters
@@ -1130,7 +1235,7 @@ class Model:
         outdir="./",
         idxs=None,
         diploid=None,
-        ):
+    ):
         """Write concatenated sequence data to a single nexus file.
 
         Parameters
@@ -1152,7 +1257,7 @@ class Model:
             return nexstring
         return None
 
-    def get_imap_dict(self, diploid: bool=False):
+    def get_imap_dict(self, diploid: bool = False):
         """Return a dictionary mapping population names to sample names
 
         Parameters
@@ -1180,7 +1285,13 @@ class Model:
                 imap[key].append(name)
         return imap
 
-    def write_popfile(self, name:str, outdir:str="./", diploid:bool=False):
+    def write_popfile(
+        self,
+        name: Optional[str] = None,
+        outdir: str = "./",
+        diploid: bool = False,
+        invert: bool = False,
+    ) -> str:
         """Writes popfile mapping species tree tips to sample names.
 
         The sample names here represent those that are in the written
@@ -1205,6 +1316,8 @@ class Model:
         diploid: bool
             If diploid=True was used when writing the data files then
             it should also be used when writing the popfile.
+        invert: bool
+            If True then maps "sample\tpop" instead of "pop\tsample".
         """
         name = name.rsplit(".tsv")[0].rsplit(".popfile")[0]
         popdata = []
@@ -1214,17 +1327,49 @@ class Model:
             alleles=self.alleles,
             diploid=diploid,
         )
-        for tip in txf.names:
-            popdata.append(f"{tip.rsplit('_')[0]}\t{tip}")
-        outname = os.path.join(outdir, name + ".popfile.tsv")
-        with open(outname, 'w', encoding="utf-8") as out:
-            out.write("\n".join(popdata))
-        print(f"wrote popfile to {outname}")
+        if not invert:
+            for tip in txf.names:
+                popdata.append(f"{tip.rsplit('_')[0]}\t{tip}")
+        else:
+            for tip in txf.names:
+                popdata.append(f"{tip}\t{tip.rsplit('_')[0]}")
+        outdir = Path(outdir)
+        outname = outdir / f"{name}.popfile.tsv"
+
+        # ...
+        if name:
+            with open(outname, 'w', encoding="utf-8") as out:
+                out.write("\n".join(popdata))
+            return outname
+        else:
+            return "\n".join(popdata)
+
+    def write_sites_file(
+        self,
+        name: Path,
+        outdir: Path = "./",
+    ) -> Path:
+        """Write variants to a sites file (used by ARGWeaver).
+
+        """
+        from ipcoal.io.transformer import convert_intarr_to_bytearr
+        def get_variants(model, i):
+            return b"".join(convert_intarr_to_bytearr(model.seqs[:, :, i - 1])).decode()
+
+        outname = Path(outdir) / f"{name}.sites"
+        vdf = self.write_vcf()
+        with open(outname, 'w') as out:
+            names = '\t'.join(self.alpha_ordered_names)
+            out.write(f"NAMES\t{names}\n")
+            out.write(f"REGION\tchr\t1\t{self.seqs.shape[2]}\n")
+            for idx in vdf.index:
+                pos = vdf.POS[idx]
+                out.write(f"{pos}\t{get_variants(self, pos)}\n")
+        return outname
 
     # ---------------------------------------------------------------
     # post-sim methods
     # ---------------------------------------------------------------
-
 
     # def get_pairwise_distances(self, model=None):
     #     """
@@ -1246,11 +1391,11 @@ class Model:
     def apply_missing_mask(
         self,
         coverage=1.0,
-        cut_sites: Tuple[int,int]=(0, 0),
-        distance: Optional[Tuple[str,float]]=None,
-        coverage_type: str='locus',
-        seed: Optional[int]=None,
-        ):
+        cut_sites: Tuple[int, int] = (0, 0),
+        distance: Optional[Tuple[str, float]] = None,
+        coverage_type: str = 'locus',
+        seed: Optional[int] = None,
+    ):
         """Mask some data by marking it as missing.
 
         Several optional are available for dropping genotypes to
@@ -1345,7 +1490,7 @@ if __name__ == "__main__":
     MODEL = ipcoal.Model(TREE, Ne=10000, nsamples=2)
     MODEL = ipcoal.Model(TREE, nsamples=2)
 
-    MODEL.sim_trees(5)
+    MODEL.sim_trees(5, 1000)
     print(MODEL.df)
     print(MODEL.seqs)
     MODEL.sim_snps(10)
@@ -1354,5 +1499,5 @@ if __name__ == "__main__":
     print(MODEL.write_vcf())
 
     MODEL.sim_loci(2, 1000)
-    MODEL.infer_gene_trees(diploid=True)
-    print(MODEL.df)
+    raxdf = ipcoal.phylo.infer_raxml_ng_trees(MODEL, diploid=True)
+    print(raxdf)

@@ -5,6 +5,8 @@
 """
 
 from typing import Union, TypeVar, Optional, Dict, Sequence
+import os
+import sys
 from pathlib import Path
 from subprocess import Popen, PIPE, STDOUT
 import tempfile
@@ -13,29 +15,31 @@ import toytree
 from ipcoal.utils.utils import IpcoalError
 
 MultiTree = TypeVar("MultiTree")
+CONDABIN = Path(sys.prefix) / "bin"
 
 
 BINARY_MISSING = """
-    Cannot find astral binary {}. Make sure you have
-    astral installed, which you can do with the following command
+    Cannot find astral binary. Make sure you have astral
+    installed, which you can do with the following command
     which also installs required dependencies (e.g., java):
 
     >>> conda install astral3 -c conda-forge -c eaton-lab
 
-    Then find the full path where the binary is installed and 
+    After installing this function should be able to find astral,
+    but if not, find the full path where the binary is installed
     enter it to this function as the `binary_path` argument.
 """
 
 
 def infer_astral_tree(
     trees: Union[str, Path, MultiTree],
-    binary_path: Union[str, Path],
-    nboots: int=1000,
-    annotation: int=3,
-    seed: Optional[int]=None,
-    imap: Dict[str, Sequence[str]]=None,
-    tmpdir: Optional[Path]=None,
-    ) -> toytree.ToyTree:
+    binary_path: Union[str, Path] = None,
+    nboots: int = 1000,
+    annotation: int = 3,
+    seed: Optional[int] = None,
+    imap: Dict[str, Sequence[str]] = None,
+    tmpdir: Optional[Path] = None,
+) -> toytree.ToyTree:
     """Return tree inferred by astral from a collection of gene trees.
 
     java -jar {binary_path} -i {trees} -t {annotation} -r {nboots} ...
@@ -75,11 +79,11 @@ def infer_astral_tree(
     >>> astree.draw();
     """
     tmpdir = tmpdir if tmpdir is not None else tempfile.gettempdir()
-    binary_path = binary_path if binary_path else "NO PATH PROVIDED"
+    binary_path = binary_path if binary_path else CONDABIN / "astral.5.7.1.jar"
     assert Path(binary_path).exists(), BINARY_MISSING.format(binary_path)
 
     # write trees input as a newline separated file
-    with tempfile.NamedTemporaryFile(dir=tmpdir) as tmpfile:
+    with tempfile.NamedTemporaryFile(dir=tmpdir, suffix=f"-{os.getpid()}") as tmpfile:
         fname = Path(tmpfile.name)
 
         # write trees to a file separated by newlines w/o edge lens/labels
@@ -106,13 +110,13 @@ def infer_astral_tree(
             for key, vals in imap.items():
                 out.write(f"{key}: {','.join(vals)}\n")
         cmd.extend(["--namemapfile", str(fimap)])
-        
+
     # run ASTRAL and parse and return the result
     with Popen(cmd, stderr=STDOUT, stdout=PIPE) as proc:
         out, _ = proc.communicate()
         if proc.returncode:
             raise IpcoalError(out.decode())
-    tree = toytree.io.read_newick(tree_file, internal_labels="support")
+    tree = toytree.tree(tree_file, internal_labels="support")
 
     # cleanu tmpfiles
     for tmp in fname.parent.glob(fname.name + "*"):
