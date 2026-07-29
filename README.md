@@ -1,7 +1,7 @@
 ## ipcoal
 ### Python package to interactively simulate genealogies and sequence data under the multispecies coalescent
 
-Full documentation here: [https://ipcoal.readthedocs.io](https://ipcoal.readthedocs.io)
+Full documentation here: [https://eaton-lab.org/ipcoal/](https://eaton-lab.org/ipcoal/)
 
 ```python
 import ipcoal
@@ -20,10 +20,7 @@ model.sim_loci(nloci=5, nsites=1e5)
 model.df
 
 # infer gene trees for each locus, or in sliding windows
-model.infer_gene_trees()
-
-# write sequences to a file
-model.write_loci_to_phylip()
+gtree = ipcoal.phylo.infer_raxml_ng_trees(model, idxs=[0, 1, 2, 3])
 ```
 
 

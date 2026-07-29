@@ -3,24 +3,48 @@
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
 
 
-# CURRENTLY NOT USED (NOT ON GITHUB)
-
-# Required
 version: 2
 
+# Define the build system
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.12"
+
+# Optionally, you can define the path to the source code for the docs
+sphinx:
+  configuration: old-docs/conf.py
+
+# Define the dependencies required for building the docs
 python:
-  version: 3.7
-  install: 
-    - requirements: docs/sphinx-requirements.txt
+  install:
+    - requirements: old-docs/sphinx-requirements.txt
     - method: pip
       path: .
-  system_packages: true
+  # system_packages: true
 
-# conda:
-  # environment: docs/environment.yml
+#   system_packages: true
+# dependencies:
 
-build:
-  image: latest
 
-sphinx:
-  configuration: docs/conf.py
+# OLD # CURRENTLY NOT USED (NOT ON GITHUB)
+
+# # Required
+# version: 2
+
+# python:
+#   version: 3.9
+#   install: 
+#     - requirements: old-docs/sphinx-requirements.txt
+#     - method: pip
+#       path: .
+#   system_packages: true
+
+# # conda:
+#   # environment: docs/environment.yml
+
+# build:
+#   image: latest
+
+# sphinx:
+#   configuration: old-docs/conf.py

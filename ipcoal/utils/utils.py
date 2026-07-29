@@ -22,14 +22,13 @@ except ImportError:
     pass
 
 
-
 ABBA_IDX = [
     (1, 4), (2, 8), (3, 12), (4, 1),
     (6, 9), (7, 13), (8, 2), (9, 6),
     (11, 14), (12, 3), (13, 7), (14, 11),
 ]
 BABA_IDX = [
-    (1, 1), (2, 2), (3, 3), (4, 4), 
+    (1, 1), (2, 2), (3, 3), (4, 4),
     (6, 6), (7, 7), (8, 8), (9, 9),
     (11, 11), (12, 12), (13, 13), (14, 14),
 ]
@@ -56,9 +55,9 @@ class Progress:
         self.message = message
         self.start = time.time()
 
-        # the progress bar 
+        # the progress bar
         self.prog = IntProgress(
-            value=0, min=0, max=self.njobs, 
+            value=0, min=0, max=self.njobs,
             layout={
                 "width": "350px",
                 "height": "30px",
@@ -67,7 +66,7 @@ class Progress:
 
         # the message above progress bar
         self.label = HTML(
-            self.printstr, 
+            self.printstr,
             layout={
                 "height": "25px",
                 "margin": "0px",
@@ -75,7 +74,7 @@ class Progress:
 
         # the box widget container
         heights = [
-            int(i.layout.height[:-2]) for i in 
+            int(i.layout.height[:-2]) for i in
             children + [self.label, self.prog]
         ]
         self.widget = Box(
@@ -96,7 +95,7 @@ class Progress:
         str1 = "<span style='font-size:14px; font-family:monospace'>"
         str2 = "</span>"
         inner = "{} | {:>3}% | {}".format(
-            self.message, 
+            self.message,
             int(100 * (self.prog.value / self.njobs)),
             elapsed,
         )
@@ -118,27 +117,32 @@ class Progress:
         self.label.value = self.printstr
 
 
-
 def get_admix_interval_as_gens(
-    tree: 'ToyTree', 
-    idx0:int, 
-    idx1:int, 
-    heights:Optional[Tuple[int, int]]=None,
-    props:Optional[Tuple[float, float]]=None,
-    ) -> Tuple[int, int]:
+    tree: 'ToyTree',
+    idx0: int,
+    idx1: int,
+    heights: Optional[Tuple[int, int]] = None,
+    props: Optional[Tuple[float, float]] = None,
+) -> Tuple[int, int]:
     """
-    Returns the branch interval in units of generations that two 
+    Returns the branch interval in units of generations that two
     edges of a tree are overlapping, with the lower and upper edges
-    optionally trimmed. If user enters admix times as integers then 
+    optionally trimmed. If user enters admix times as integers then
     they are checked only for validation, no trimming.
     """
-    if tree.idx_dict[idx0].is_root() or tree.idx_dict[idx1].is_root():
-        raise IpcoalError(f"no shared admix interval for idxs: {idx0} {idx1}")
+    try:
+        # ensure nodes are idx labels
+        idx0 = tree.get_nodes(idx0)[0].idx
+        idx1 = tree.get_nodes(idx1)[0].idx
+        if tree[idx0].is_root() or tree[idx1].is_root():
+            raise IpcoalError(f"no shared admix interval for idxs: {idx0} {idx1}")
+    except KeyError as inst:
+        raise ValueError("Admixture nodes must be in the tree.") from inst
 
     # get full possible intervals for these two nodes from the tree
-    node0 = tree.idx_dict[idx0]
+    node0 = tree[idx0]
     ival0 = (node0.height, node0.up.height)
-    node1 = tree.idx_dict[idx1]
+    node1 = tree[idx1]
     ival1 = (node1.height, node1.up.height)
 
     low_bin = max([ival0[0], ival1[0]])
@@ -166,11 +170,11 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
     Find all possible admixture edges on a tree.
 
     Edges are unidirectional, so the source and dest need to overlap in
-    time interval. To retrict migration to occur away from nodes (these 
-    can be harder to detect when validating methods) you can set upper 
+    time interval. To retrict migration to occur away from nodes (these
+    can be harder to detect when validating methods) you can set upper
     and lower limits. For example, to make all source migrations to occur
     at the midpoint of overlapping intervals in which migration can occur
-    you can set upper=.5, lower=.5.   
+    you can set upper=.5, lower=.5.
     """
     # bounds on edge overlaps
     if lower is None:
@@ -201,7 +205,7 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
 
                 # find if nodes have interval where admixture can occur
                 low_bin = np.max([smin, dmin])
-                top_bin = np.min([smax, dmax])              
+                top_bin = np.min([smax, dmax])
                 if top_bin > low_bin:
 
                     # restrict migration within bin to a smaller interval
@@ -212,10 +216,9 @@ def get_all_admix_edges(ttree, lower=0.25, upper=0.75, exclude_sisters=False):
     return intervals
 
 
-
 def get_snps_count_matrix(tree, seqs):
     """
-    Return a multidimensional SNP count matrix (sensu simcat and SVDquartets).    
+    Return a multidimensional SNP count matrix (sensu simcat and SVDquartets).
     Compiles SNP data into a nquartets x 16 x 16 count matrix with the order
     of quartets determined by the shape of the tree.
     """
@@ -244,7 +247,7 @@ def get_snps_count_matrix(tree, seqs):
 
 def calculate_dstat(seqs, p1, p2, p3, p4):
     """
-    Calculate ABBA-BABA (D-statistic) from a count matrix. 
+    Calculate ABBA-BABA (D-statistic) from a count matrix.
     """
     # order tips into ab|cd tree based on hypothesis
     mat = get_snps_count_matrix([(0, 1, 2, 3)], seqs[[p1, p2, p3, p4], :])[0]
@@ -267,23 +270,23 @@ def abba_baba(model, testtuples):
     Parameters:
     -----------
     model (ipcoal.Model Class object):
-        A model class object from ipcoal that has generated sequence data by 
-        calling either .sim_loci() or .sim_snps(). 
+        A model class object from ipcoal that has generated sequence data by
+        calling either .sim_loci() or .sim_snps().
 
     testtuples (tuple, list):
         A tuple or list of tuples with the ordered taxon names for each test.
-        The order should be (P1, P2, P3, P4). You can see the names of taxa 
+        The order should be (P1, P2, P3, P4). You can see the names of taxa
         from the tree on which data were simulated from the model object using
         model.treeorig.draw();
 
-    Returns: 
+    Returns:
     ---------
     pandas.DataFrame
 
     """
     # check that data was simulated
-    if not model.seqs:
-        raise ipcoalError(
+    if model.seqs is None:
+        raise ValueError(
             "you must first simulate data with .sim_snps() or .sim_loci()")
 
     # ensure testtuples is a list of tuples
@@ -293,11 +296,9 @@ def abba_baba(model, testtuples):
     # get tip order of tree and check that testtuple names are in tips
     tips = [i for i in model.treeorig.get_tip_labels()]
     for tup in testtuples:
-        for name in tup:        
+        for name in tup:
             if name not in tips:
-                raise ipcoalError(
-                    "name {} is not in the tree {}"
-                    .format(name, tips))
+                raise ValueError(f"name {name} is not in the tree {tips}")
 
     # get counts matrix
     counts = get_snps_count_matrix(model.tree, model.seqs)
@@ -335,7 +336,7 @@ def abba_baba(model, testtuples):
         p4[idx] = tips[qrt[3]]
         idx += 1
 
-    # convert to dataframe   
+    # convert to dataframe
     data = pd.DataFrame({
         "ABBA": np.array(abbas, dtype=int),
         "BABA": np.array(babas, dtype=int),
@@ -344,7 +345,7 @@ def abba_baba(model, testtuples):
         "p2": p2,
         "p3": p3,
         "p4": p4,
-        }, 
+    },
         columns=["ABBA", "BABA", "D", "p1", "p2", "p3", "p4"],
     )
     return data
@@ -352,11 +353,11 @@ def abba_baba(model, testtuples):
 
 
 class Params(object):
-    """ 
+    """
     A dict-like object for storing params values with a custom repr
     that shortens file paths, and which makes attributes easily viewable
     through tab completion in a notebook while hiding other funcs, attrs, that
-    are in normal dicts. 
+    are in normal dicts.
     """
     def __len__(self):
         return len(self.__dict__)
@@ -386,7 +387,7 @@ class Params(object):
 def calculate_pairwise_dist(mod, model=None, locus=None):
     """
     Return a pandas dataframe with pairwise distances between taxa.
-    The model object should have already run sim.snps or sim.loci to 
+    The model object should have already run sim.snps or sim.loci to
     generate sequence data in .seqs. The returned distance is approx
     2X the distance from each tip to their common ancestor, so you can
     divide by 2 to get dist to mrca.
@@ -498,7 +499,7 @@ def generate_recomb_map(length, num_pos, num_peaks, min_rate, max_rate, even_spa
     })
     return recomb_map
 
-  
+
 
 def convert_intarr_to_bytearr(iarr):
     """

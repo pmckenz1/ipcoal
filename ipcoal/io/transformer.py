@@ -108,6 +108,13 @@ class Transformer:
         Transforms seqs from ints to strings. If using diploid map this also
         combines the two alleles to represent ambiguity codes for hetero sites,
         which changes the dimension of both .seqs and .names.
+
+        Note:
+            When converting to two haploid sequences to a diploid there
+            are two options for how to treat an individual w/ missing
+            values for one copy (e.g., [0, 9]); we could assign the
+            geno to the observed base ([0, 0]), or we could treat it as
+            missing for both [9, 9]. The former seems more realistic.
         """
         # simply convert to bytes
         if not self.diploid:
@@ -142,3 +149,37 @@ class Transformer:
 
             # store diploid copy over the original
             self.seqs = dseqs
+
+
+if __name__ == "__main__":
+
+    import ipcoal
+    import toytree
+
+    tree = toytree.rtree.imbtree(4, treeheight=1e5)
+    tree.set_node_data("Ne", {1: 1e5, 3: 2e5, 4: 2e5, 5: 3e5}, default=1e4, inplace=True)
+
+    model = ipcoal.Model(tree, nsamples=20, mut=5e-8)
+    model.sim_snps(20)
+    model.apply_missing_mask(0.5)
+
+
+    if model.seqs.ndim == 2:
+        model.seqs = model.seqs.T.reshape(
+            model.seqs.shape[1], model.seqs.shape[0], 1)
+        model.ancestral_seq = model.ancestral_seq.reshape(
+            model.ancestral_seq.size, 1)    
+    # model.write_snps_to_hdf5(name="full", outdir="/tmp", diploid=True)
+
+    txf = Transformer(
+        seqs=model.seqs,
+        names=model.alpha_ordered_names,
+        alleles=model.alleles,
+        diploid=True,
+    )
+    txf.transform_seqs()
+
+
+
+
+

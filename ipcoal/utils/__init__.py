@@ -1,5 +1,4 @@
 #!/usr/bin/env python
 
-"""
-General utilities for ipcoal
+"""General utilities for ipcoal
 """

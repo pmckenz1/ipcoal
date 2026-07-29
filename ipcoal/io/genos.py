@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-A class for encoding genotype calls for writing 
+A class for encoding genotype calls for writing
 data to VCF or HDF5 output formats.
 """
 
@@ -11,8 +11,8 @@ from ipcoal.utils.utils import convert_intarr_to_bytearr
 
 
 class Genos:
-    """Get genotype calls by comparing the simulated sequence to the 
-    ancestral sequence. These geno calls are used in VCF and HDF5 
+    """Get genotype calls by comparing the simulated sequence to the
+    ancestral sequence. These geno calls are used in VCF and HDF5
     output files, and often filter out non-biallelic variants.
 
     Parameters
@@ -26,7 +26,7 @@ class Genos:
     dindex_map: dict
         Map of diploid index to haploid indices, e.g., {0: [0, 1], ..}
     fill_missing_alleles: bool
-        write diploids with missing alleles (0|.) as (0|0).    
+        write diploids with missing alleles (0|.) as (0|0).
     """
     def __init__(self, seqs, ancestral, snpidxs, dindex_map, fill_missing_alleles=False):
         self.seqs = seqs
@@ -39,13 +39,13 @@ class Genos:
         """Return a tuple with alt alleles and genos as a numpy array.
 
         This runs a bit slow b/c it accomodates missing values (9).
-        snpidxs has already been computed on a masked array. 
+        snpidxs has already been computed on a masked array.
 
-        The first returned array has the ALT alleles observed. The REF 
+        The first returned array has the ALT alleles observed. The REF
         allele is the one in the ancestral_seq. If more than one ALT
         allele was observed the site is not bi-allelic. The second
         array includes the index of allele calls in each sample. If
-        0 it is the REF allele, 1 the first ALT allele, 2 is the 
+        0 it is the REF allele, 1 the first ALT allele, 2 is the
         second ALT allele, and 3 the last possible allele, assuming
         the ACTG alleles.
         """

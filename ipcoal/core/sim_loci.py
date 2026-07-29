@@ -27,6 +27,9 @@ def sim_loci(model: Model, nloci: int=1, nsites: int=1, precision: int=14) -> No
                 "specify nsites=None.")
         nsites = model.recomb.sequence_length
 
+    # clear any existing stored tree sequences
+    model.ts_dict = {}
+
     # allow scientific notation, e.g., 1e6
     nsites = int(nsites)
     nloci = int(nloci)
@@ -117,8 +120,15 @@ if __name__ == "__main__":
 
     import toytree
     import ipcoal
+    import msprime
 
+    # TREE = toytree.rtree.unittree(ntips=6, treeheight=1e6)
+    # MODEL = ipcoal.Model(TREE, Ne=1e4)
+    # sim_loci(MODEL, 10, 10)
+    # print(MODEL.df)
+
+    RMAP = msprime.RateMap(position=[0, 10_000, 20_000], rate=[0., 1e-6])
     TREE = toytree.rtree.unittree(ntips=6, treeheight=1e6)
-    MODEL = ipcoal.Model(TREE, Ne=1e4)
-    sim_loci(MODEL, 10, 10)
+    MODEL = ipcoal.Model(TREE, Ne=1e4, recomb=RMAP)
+    sim_loci(MODEL, 3, None)
     print(MODEL.df)
